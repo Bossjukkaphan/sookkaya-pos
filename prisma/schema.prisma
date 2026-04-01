@@ -1,0 +1,162 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  username     String   @unique
+  passwordHash String
+  role         String   @default("staff")
+  name         String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  sales    Sale[]
+  bookings Booking[]
+}
+
+model Customer {
+  id        Int      @id @default(autoincrement())
+  name      String
+  nickname  String?
+  phone     String?
+  lineId    String?
+  birthday  String?
+  notes     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sales    Sale[]
+  bookings Booking[]
+}
+
+model Therapist {
+  id           Int     @id @default(autoincrement())
+  name         String  @unique
+  type         String  @default("staff")
+  dailyMinimum Int     @default(500)
+  requestFee   Int     @default(40)
+  active       Boolean @default(true)
+
+  sales    Sale[]
+  bookings Booking[]
+  payItems TherapistPayItem[]
+}
+
+model Service {
+  id          Int     @id @default(autoincrement())
+  name        String
+  durationMin Int
+  price       Int
+  commission  Int
+  active      Boolean @default(true)
+
+  sales    Sale[]
+  bookings Booking[]
+}
+
+model Promotion {
+  id          Int       @id @default(autoincrement())
+  name        String
+  type        String
+  value       Float     @default(0)
+  description String?
+  active      Boolean   @default(true)
+  startDate   DateTime?
+  endDate     DateTime?
+
+  sales Sale[]
+}
+
+model Sale {
+  id            Int      @id @default(autoincrement())
+  receiptNo     String   @unique
+  date          DateTime
+  time          String
+  customerId    Int?
+  customerName  String?
+  customerPhone String?
+  therapistId   Int
+  serviceId     Int
+  normalPrice   Int
+  promotionId   Int?
+  promoLabel    String?
+  discount      Int      @default(0)
+  actualAmount  Int
+  commission    Int
+  paymentMethod String   @default("QR Code")
+  isRequest     Boolean  @default(false)
+  requestFee    Int      @default(0)
+  bookingId     Int?
+  createdById   Int?
+  createdAt     DateTime @default(now())
+
+  customer  Customer?  @relation(fields: [customerId], references: [id])
+  therapist Therapist  @relation(fields: [therapistId], references: [id])
+  service   Service    @relation(fields: [serviceId], references: [id])
+  promotion Promotion? @relation(fields: [promotionId], references: [id])
+  createdBy User?      @relation(fields: [createdById], references: [id])
+}
+
+model Booking {
+  id            Int      @id @default(autoincrement())
+  date          DateTime
+  time          String
+  customerId    Int?
+  customerName  String
+  customerPhone String?
+  therapistId   Int?
+  serviceId     Int
+  notes         String?
+  status        String   @default("pending")
+  source        String   @default("walkin")
+  createdById   Int?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  customer  Customer?  @relation(fields: [customerId], references: [id])
+  therapist Therapist? @relation(fields: [therapistId], references: [id])
+  service   Service    @relation(fields: [serviceId], references: [id])
+  createdBy User?      @relation(fields: [createdById], references: [id])
+}
+
+model Expense {
+  id          Int      @id @default(autoincrement())
+  date        DateTime
+  description String
+  category    String
+  amount      Float
+  paidBy      String?
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+model TherapistPayItem {
+  id          Int      @id @default(autoincrement())
+  therapistId Int
+  date        DateTime
+  sessions    Int      @default(0)
+  commission  Int      @default(0)
+  guarantee   Int      @default(500)
+  netPay      Int      @default(500)
+  requestFees Int      @default(0)
+
+  therapist Therapist @relation(fields: [therapistId], references: [id])
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
