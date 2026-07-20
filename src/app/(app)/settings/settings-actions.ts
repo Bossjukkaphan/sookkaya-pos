@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { promoKey } from "@/lib/promo"
 import { createClient } from "@/lib/supabase/server"
 import type { TablesInsert } from "@/types/database"
 
@@ -194,5 +195,82 @@ export async function saveSetting(key: string, value: string): Promise<ActionRes
 
   if (error) return fail(error)
   refresh()
+  return { ok: true }
+}
+
+/* ---------------- โปรโมชั่น ---------------- */
+
+const PROMO_KINDS = ["promotion", "channel", "internal"] as const
+
+function refreshPromo() {
+  revalidatePath("/settings")
+  revalidatePath("/pos")
+  revalidatePath("/insights/promotions")
+}
+
+export async function savePromotion(formData: FormData): Promise<ActionResult> {
+  const supabase = await createClient()
+  const id = String(formData.get("id") ?? "").trim()
+  const name = String(formData.get("name") ?? "").trim()
+  const kind = String(formData.get("kind") ?? "promotion")
+  const isActive = formData.get("is_active") === "on"
+
+  if (!name) return { ok: false, error: "กรุณากรอกชื่อโปรโมชั่น" }
+  if (!PROMO_KINDS.includes(kind as (typeof PROMO_KINDS)[number])) {
+    return { ok: false, error: "ประเภทโปรโมชั่นไม่ถูกต้อง" }
+  }
+
+  const { data: saved, error } = id
+    ? await supabase
+        .from("promotions")
+        .update({ name, kind, is_active: isActive })
+        .eq("id", id)
+        .select("id")
+        .single()
+    : await supabase
+        .from("promotions")
+        .insert({ name, kind, is_active: isActive })
+        .select("id")
+        .single()
+
+  if (error) return fail(error)
+  if (!saved) return { ok: false, error: "บันทึกไม่สำเร็จ" }
+
+  // ชื่อมาตรฐานต้องจับคู่กับตัวเองเสมอ ไม่งั้นรายการที่บันทึกผ่าน dropdown
+  // จะกลายเป็น "ยังไม่จับคู่" ทันทีที่บันทึก
+  const { error: aliasError } = await supabase
+    .from("promotion_aliases")
+    .upsert(
+      { raw_key: promoKey(name), promotion_id: saved.id, sample_text: name },
+      { onConflict: "raw_key" }
+    )
+
+  if (aliasError) return fail(aliasError)
+
+  refreshPromo()
+  return { ok: true }
+}
+
+/** `promotionId` = null แปลว่า "ตรวจแล้ว ข้อความนี้ไม่ใช่โปรโมชั่น" */
+export async function saveAlias(
+  rawKey: string,
+  promotionId: string | null,
+  sampleText: string
+): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("promotion_aliases")
+    .upsert(
+      {
+        raw_key: rawKey,
+        promotion_id: promotionId,
+        sample_text: sampleText,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "raw_key" }
+    )
+
+  if (error) return fail(error)
+  refreshPromo()
   return { ok: true }
 }

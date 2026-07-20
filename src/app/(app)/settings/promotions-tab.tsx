@@ -1,0 +1,197 @@
+"use client"
+
+import { useRouter } from "next/navigation"
+import { useState, useTransition } from "react"
+import { toast } from "sonner"
+
+import { saveAlias, savePromotion } from "./settings-actions"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+
+type Promotion = { id: string; name: string; kind: string; is_active: boolean }
+type Unmatched = { raw_key: string; sample_text: string; uses: number }
+
+const KIND_LABELS: Record<string, string> = {
+  promotion: "โปรโมชั่น",
+  channel: "ช่องทางขาย",
+  internal: "ใช้ภายใน",
+}
+
+const NOT_A_PROMO = "__none__"
+
+export function PromotionsTab({
+  promotions,
+  unmatched,
+}: {
+  promotions: Promotion[]
+  unmatched: Unmatched[]
+}) {
+  const router = useRouter()
+  const [newName, setNewName] = useState("")
+  const [newKind, setNewKind] = useState("promotion")
+  const [savingKey, setSavingKey] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+
+  function handleCreate(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    setSavingKey("new")
+    startTransition(async () => {
+      const result = await savePromotion(formData)
+      if (result.ok) {
+        toast.success("เพิ่มโปรโมชั่นแล้ว")
+        setNewName("")
+        router.refresh()
+      } else {
+        toast.error(result.error)
+      }
+      setSavingKey(null)
+    })
+  }
+
+  function handleAlias(row: Unmatched, value: string) {
+    setSavingKey(row.raw_key)
+    startTransition(async () => {
+      const result = await saveAlias(
+        row.raw_key,
+        value === NOT_A_PROMO ? null : value,
+        row.sample_text
+      )
+      if (result.ok) {
+        toast.success("จับคู่แล้ว")
+        router.refresh()
+      } else {
+        toast.error(result.error)
+      }
+      setSavingKey(null)
+    })
+  }
+
+  return (
+    <div className="space-y-8">
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">รายการโปรโมชั่น</h2>
+          <p className="text-xs text-slate-500">
+            ชื่อในรายการนี้จะขึ้นเป็นตัวเลือกในหน้าบันทึกขาย
+            และเป็นชื่อที่ใช้รวมยอดในรายงาน ROI
+          </p>
+        </div>
+
+        <ul className="space-y-2">
+          {promotions.map((p) => (
+            <li key={p.id}>
+              <Card>
+                <CardContent className="flex items-center justify-between gap-2 py-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{p.name}</p>
+                    <p className="text-xs text-slate-500">
+                      {KIND_LABELS[p.kind] ?? p.kind}
+                      {!p.is_active && " · ปิดใช้แล้ว"}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ul>
+
+        <form onSubmit={handleCreate} className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">เพิ่มโปรโมชั่นใหม่</p>
+          <div className="space-y-1">
+            <Label htmlFor="promo-name">ชื่อ</Label>
+            <Input
+              id="promo-name"
+              name="name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="เช่น ลด 20% วันเกิด"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="promo-kind">ประเภท</Label>
+            <input type="hidden" name="kind" value={newKind} />
+            <Select value={newKind} onValueChange={setNewKind}>
+              <SelectTrigger id="promo-kind" className="h-10 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(KIND_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <input type="hidden" name="is_active" value="on" />
+          <Button type="submit" disabled={savingKey === "new" || !newName.trim()}>
+            เพิ่ม
+          </Button>
+        </form>
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">ข้อความที่ยังไม่จับคู่</h2>
+          <p className="text-xs text-slate-500">
+            ข้อความที่เคยพิมพ์ในช่องโปรโมชั่นแต่ยังไม่รู้ว่าเป็นโปรฯ ตัวไหน
+            ตราบใดที่ยังไม่จับคู่ ยอดพวกนี้จะไม่ถูกนับในรายงาน ROI
+          </p>
+        </div>
+
+        {unmatched.length === 0 && (
+          <p className="py-6 text-center text-sm text-slate-500">
+            จับคู่ครบทุกข้อความแล้ว
+          </p>
+        )}
+
+        <ul className="space-y-2">
+          {unmatched.map((row) => (
+            <li key={row.raw_key}>
+              <Card>
+                <CardContent className="space-y-2 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="min-w-0 font-medium break-words">
+                      {row.sample_text}
+                    </p>
+                    <span className="shrink-0 text-xs text-slate-500">
+                      {row.uses} ครั้ง
+                    </span>
+                  </div>
+                  <Select
+                    disabled={savingKey === row.raw_key}
+                    onValueChange={(v) => handleAlias(row, v)}
+                  >
+                    <SelectTrigger className="h-10 w-full">
+                      <SelectValue placeholder="— เลือกว่าเป็นโปรฯ ตัวไหน —" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {promotions.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value={NOT_A_PROMO}>
+                        ไม่ใช่โปรโมชั่น (เป็นโน้ต)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </div>
+  )
+}
