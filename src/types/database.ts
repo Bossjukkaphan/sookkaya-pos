@@ -79,10 +79,26 @@ export type Database = {
         }
         Relationships: []
       }
+      expense_category_types: {
+        Row: {
+          category: string
+          cost_type: string
+        }
+        Insert: {
+          category: string
+          cost_type: string
+        }
+        Update: {
+          category?: string
+          cost_type?: string
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           amount: number
           category: string
+          cost_type: string
           created_at: string
           expense_date: string
           id: string
@@ -93,6 +109,7 @@ export type Database = {
         Insert: {
           amount: number
           category: string
+          cost_type?: string
           created_at?: string
           expense_date: string
           id?: string
@@ -103,6 +120,7 @@ export type Database = {
         Update: {
           amount?: number
           category?: string
+          cost_type?: string
           created_at?: string
           expense_date?: string
           id?: string

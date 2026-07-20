@@ -3,6 +3,7 @@ import { TherapistsTab } from "./therapists-tab"
 import { ServicesTab } from "./services-tab"
 import { UsersTab } from "./users-tab"
 import { GeneralTab } from "./general-tab"
+import { CostTypesTab } from "./cost-types-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export const metadata = { title: "ตั้งค่า · สุขกายา POS" }
@@ -17,6 +18,8 @@ export default async function SettingsPage() {
     { data: settingsRows },
     { data: allowed },
     { data: profiles },
+    { data: categoryTypes },
+    { data: recentExpenses },
   ] = await Promise.all([
     supabase.from("profiles").select("email, role").single(),
     supabase.from("therapists").select("id, name, status").order("name"),
@@ -27,6 +30,12 @@ export default async function SettingsPage() {
     supabase.from("settings").select("key, value"),
     supabase.from("allowed_users").select("email, role, full_name").order("email"),
     supabase.from("profiles").select("email"),
+    supabase.from("expense_category_types").select("category, cost_type").order("category"),
+    supabase
+      .from("expenses")
+      .select("id, expense_date, item, category, amount, cost_type")
+      .order("expense_date", { ascending: false })
+      .limit(60),
   ])
 
   const role = profile?.role ?? "staff"
@@ -54,6 +63,11 @@ export default async function SettingsPage() {
               ผู้ใช้
             </TabsTrigger>
           )}
+          {canEditCatalog && (
+            <TabsTrigger value="cost-types" className="flex-1">
+              ต้นทุน
+            </TabsTrigger>
+          )}
           <TabsTrigger value="general" className="flex-1">
             ทั่วไป
           </TabsTrigger>
@@ -78,6 +92,15 @@ export default async function SettingsPage() {
                 .map((p) => p.email?.toLowerCase())
                 .filter((e): e is string => Boolean(e))}
               myEmail={profile?.email ?? null}
+            />
+          </TabsContent>
+        )}
+
+        {canEditCatalog && (
+          <TabsContent value="cost-types" className="pt-4">
+            <CostTypesTab
+              categoryTypes={categoryTypes ?? []}
+              expenses={recentExpenses ?? []}
             />
           </TabsContent>
         )}
