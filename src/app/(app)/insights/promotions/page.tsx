@@ -1,0 +1,133 @@
+import Link from "next/link"
+
+import { createClient } from "@/lib/supabase/server"
+import { InsightsAccessDenied, canSeeInsights } from "../shared"
+import { formatBaht } from "@/lib/constants"
+import { formatThaiDate } from "@/lib/datetime"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
+export const metadata = { title: "ROI ส่วนลด · สุขกายา POS" }
+
+const KIND_LABELS: Record<string, string> = {
+  promotion: "โปรโมชั่น",
+  channel: "ช่องทางขาย",
+  internal: "ใช้ภายใน",
+}
+
+export default async function PromotionsInsightPage() {
+  const supabase = await createClient()
+  const { data: profile } = await supabase.from("profiles").select("role").single()
+
+  if (!canSeeInsights(profile?.role)) {
+    return <InsightsAccessDenied title="ROI ส่วนลด" />
+  }
+
+  const [{ data: roi }, { data: unmatchedRows }] = await Promise.all([
+    supabase
+      .from("v_promo_roi")
+      .select(
+        "promotion_id, promotion_name, kind, uses, discount_given, revenue, customers, returning_customers, first_used, last_used"
+      ),
+    supabase.from("v_promo_unmatched").select("uses"),
+  ])
+
+  // นับใน SQL เพราะ supabase-js ดึงได้ทีละ 1,000 แถว — นับฝั่งหน้าเว็บจะเพี้ยนเมื่อร้านโต
+  const unmatchedCount = (unmatchedRows ?? []).reduce(
+    (sum, r) => sum + Number(r.uses ?? 0),
+    0
+  )
+
+  // เรียงตามส่วนลดที่จ่ายไป — โปรฯ ที่กินส่วนลดมากที่สุดคือตัวที่ต้องตัดสินใจก่อน
+  const rows = [...(roi ?? [])].sort(
+    (a, b) => Number(b.discount_given ?? 0) - Number(a.discount_given ?? 0)
+  )
+  const totalDiscount = rows.reduce((s, r) => s + Number(r.discount_given ?? 0), 0)
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h1 className="text-xl font-bold">ROI ส่วนลด</h1>
+        <p className="text-sm text-slate-600">
+          ส่วนลดที่จ่ายไปทั้งหมด {formatBaht(totalDiscount)} บาท
+        </p>
+      </div>
+
+      {unmatchedCount > 0 && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="py-3 text-xs text-amber-900">
+            มี {unmatchedCount} รายการที่พิมพ์ชื่อโปรฯ ไว้แต่ยังไม่ได้จับคู่
+            จึงยังไม่ถูกนับในตารางนี้ —{" "}
+            <Link href="/settings" className="underline">
+              ไปจับคู่ที่หน้าตั้งค่า
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {rows.map((r) => {
+        const customers = Number(r.customers ?? 0)
+        const returning = Number(r.returning_customers ?? 0)
+        const returnRate = customers > 0 ? Math.round((returning / customers) * 100) : 0
+        return (
+          <Card key={r.promotion_id}>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-baseline justify-between gap-2 text-base">
+                <span className="min-w-0 truncate">{r.promotion_name}</span>
+                <span className="shrink-0 text-xs font-normal text-slate-500">
+                  {KIND_LABELS[r.kind ?? ""] ?? r.kind}
+                </span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                <Stat label="ใช้ไป" value={`${r.uses ?? 0} ครั้ง`} />
+                <Stat
+                  label="ส่วนลดที่ให้"
+                  value={`${formatBaht(Number(r.discount_given ?? 0))} ฿`}
+                />
+                <Stat
+                  label="ยอดขายที่เกิด"
+                  value={`${formatBaht(Number(r.revenue ?? 0))} ฿`}
+                />
+                <Stat label="ลูกค้าที่ใช้" value={`${customers} คน`} />
+              </div>
+
+              <div className="border-t pt-2">
+                <div className="flex items-baseline justify-between">
+                  <span className="text-slate-600">กลับมาซื้อซ้ำหลังใช้โปรฯ</span>
+                  <span
+                    className={`font-semibold ${
+                      returnRate >= 50 ? "text-emerald-800" : "text-slate-700"
+                    }`}
+                  >
+                    {returning} คน ({returnRate}%)
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500">
+                  {r.first_used && r.last_used
+                    ? `ใช้ครั้งแรก ${formatThaiDate(r.first_used)} · ล่าสุด ${formatThaiDate(r.last_used)}`
+                    : null}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )
+      })}
+
+      {rows.length === 0 && (
+        <p className="py-6 text-center text-sm text-slate-500">
+          ยังไม่มีโปรโมชั่นที่จับคู่ไว้
+        </p>
+      )}
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-2">
+      <span className="text-slate-600">{label}</span>
+      <span className="font-medium">{value}</span>
+    </div>
+  )
+}
