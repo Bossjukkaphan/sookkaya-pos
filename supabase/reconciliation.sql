@@ -10,11 +10,15 @@ with expected(check_name, expected_value) as (values
   ('net_revenue_2026_04', 316123),
   ('net_revenue_2026_05', 286158),
   ('net_revenue_2026_06', 347018),
-  -- Excel ระบุ 231,947 แต่ค่าที่ถูกคือ 232,337 (ต่าง 390)
+  -- ก.ค. ตรวจเฉพาะ 1-19 ซึ่งเป็นช่วงที่ไฟล์ Excel ครอบคลุม
+  -- (ตั้งแต่ 20 ก.ค. เป็นต้นไปเป็นข้อมูลที่บันทึกผ่านแอป ยอดขยับทุกวัน
+  --  ถ้าเอามารวมด้วย การตรวจจะ FAIL ทุกครั้งที่มีการขายใหม่)
+  --
+  -- Excel ระบุยอดทั้งเดือน 231,947 ค่าที่ถูกคือ 232,337 (ต่าง 390)
   -- สาเหตุ: ใบเสร็จ #97287-116 (5 ก.ค. · นวดแผนไทย 60 นาที · ปิ่น · QR Code · 390 บาท)
   -- ช่อง "รายได้ Recognize" ในชีทบันทึกขายเว้นว่างไว้ ทั้งที่รับเงินจริงผ่าน QR
   -- เป็นช่องโหว่ของสูตรใน Excel ไม่ใช่การตัดสินใจทางบัญชี — ฐานข้อมูลถูกกว่า
-  ('net_revenue_2026_07', 232337),
+  ('net_revenue_2026_07_partial', 232337),
   ('member_credit_used',  209410),
   ('commission_2026_06',  140415),
   ('expenses_fixed_06',   104648),
@@ -25,8 +29,13 @@ actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
          round(sum(net_revenue))
   from public.v_daily_summary
-  where sale_date between '2026-03-01' and '2026-07-31'
+  where sale_date between '2026-03-01' and '2026-06-30'
   group by to_char(sale_date,'YYYY-MM')
+
+  union all
+  select 'net_revenue_2026_07_partial', round(sum(net_revenue))
+  from public.v_daily_summary
+  where sale_date between '2026-07-01' and '2026-07-19'
 
   union all
   select 'member_credit_used', round(sum(credit_used)) from public.sales
