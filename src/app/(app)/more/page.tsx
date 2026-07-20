@@ -1,5 +1,15 @@
 import Link from "next/link"
-import { CreditCard, FileBarChart, PiggyBank, Settings, TrendingUp, Wallet } from "lucide-react"
+import {
+  BadgePercent,
+  CalendarClock,
+  CreditCard,
+  FileBarChart,
+  PiggyBank,
+  Settings,
+  TrendingUp,
+  Users,
+  Wallet,
+} from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
 
@@ -17,6 +27,24 @@ const ITEMS = [
     label: "การเงิน",
     description: "กำไรรายเดือน กระแสเงินสด จุดคุ้มทุน",
     icon: PiggyBank,
+  },
+  {
+    href: "/insights/heatmap",
+    label: "ชั่วโมงคนแน่น",
+    description: "ดูว่าวันไหนเวลาไหนลูกค้าเยอะที่สุด",
+    icon: CalendarClock,
+  },
+  {
+    href: "/insights/promotions",
+    label: "ROI ส่วนลด",
+    description: "โปรฯ ไหนคุ้ม โปรฯ ไหนแค่แจกส่วนลด",
+    icon: BadgePercent,
+  },
+  {
+    href: "/insights/customers",
+    label: "ลูกค้าและคนที่หายไป",
+    description: "ยอดสะสมรายคน และคนที่ควรตามกลับ",
+    icon: Users,
   },
   {
     href: "/members",

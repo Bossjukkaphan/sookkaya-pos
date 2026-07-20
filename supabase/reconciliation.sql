@@ -28,7 +28,14 @@ with expected(check_name, expected_value) as (values
   ('profit_cash_2026_03', -107695),
   ('profit_cash_2026_04',  -70428),
   ('profit_cash_2026_05',  -27606),
-  ('profit_cash_2026_06',   88991)
+  ('profit_cash_2026_06',   88991),
+  -- เฟส 3: การจับคู่ชื่อโปรโมชั่น — ตรวจเฉพาะข้อมูลถึง 19 ก.ค. ซึ่งเป็นข้อมูลที่ import มา
+  -- ถ้าตัวเลขเหล่านี้ตก แปลว่า alias หลุดหรือ promo_key เปลี่ยนพฤติกรรม
+  -- Happy Hours เคยรายงานได้แค่ 38 เพราะพนักงานพิมพ์ชื่อไว้ 8 แบบ
+  ('promo_happy_hours_uses',     89),
+  ('promo_happy_hours_discount', 17960),
+  ('promo_1get1_uses',           253),
+  ('promo_unmatched_rows',       20)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -59,6 +66,37 @@ actual(check_name, actual_value) as (
   union all
   select 'profit_cash_' || replace(month,'-','_'), round(profit_cash)
   from public.v_monthly_pl where month between '2026-03' and '2026-06'
+
+  union all
+  select 'promo_happy_hours_uses', count(*)
+  from public.sales s
+  join public.promotion_aliases a on a.raw_key = public.promo_key(s.coupon_promo)
+  join public.promotions p on p.id = a.promotion_id
+  where p.name = 'Happy Hours' and s.sale_date <= '2026-07-19'
+
+  union all
+  select 'promo_happy_hours_discount', round(sum(s.discount))
+  from public.sales s
+  join public.promotion_aliases a on a.raw_key = public.promo_key(s.coupon_promo)
+  join public.promotions p on p.id = a.promotion_id
+  where p.name = 'Happy Hours' and s.sale_date <= '2026-07-19'
+
+  union all
+  select 'promo_1get1_uses', count(*)
+  from public.sales s
+  join public.promotion_aliases a on a.raw_key = public.promo_key(s.coupon_promo)
+  join public.promotions p on p.id = a.promotion_id
+  where p.name = '1 แถม 1' and s.sale_date <= '2026-07-19'
+
+  union all
+  select 'promo_unmatched_rows', count(*)
+  from public.sales s
+  where s.coupon_promo is not null and btrim(s.coupon_promo) <> ''
+    and s.sale_date <= '2026-07-19'
+    and not exists (
+      select 1 from public.promotion_aliases a
+      where a.raw_key = public.promo_key(s.coupon_promo)
+    )
 )
 select
   e.check_name,
