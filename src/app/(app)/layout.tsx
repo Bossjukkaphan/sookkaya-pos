@@ -1,0 +1,54 @@
+import { createClient } from "@/lib/supabase/server"
+import { signOut } from "@/app/actions"
+import { AppNav } from "@/components/app-nav"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+
+const ROLE_LABEL: Record<string, string> = {
+  admin: "เจ้าของร้าน",
+  manager: "ผู้จัดการ",
+  staff: "พนักงาน",
+}
+
+export default async function AppLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  const supabase = await createClient()
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name, role")
+    .single()
+
+  return (
+    <div className="flex min-h-full flex-1 flex-col sm:flex-col-reverse sm:justify-end">
+      <header className="border-b bg-white">
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold text-emerald-800">สุขกายา</span>
+            {profile?.role && (
+              <Badge variant="secondary">
+                {ROLE_LABEL[profile.role] ?? profile.role}
+              </Badge>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-sm text-slate-600 sm:inline">
+              {profile?.full_name}
+            </span>
+            <form action={signOut}>
+              <Button type="submit" variant="outline" size="sm">
+                ออกจากระบบ
+              </Button>
+            </form>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto w-full max-w-3xl flex-1 p-4">{children}</main>
+
+      <AppNav />
+    </div>
+  )
+}
