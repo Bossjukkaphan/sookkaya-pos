@@ -6,6 +6,7 @@ import { DEFAULT_MIN_COMMISSION, formatBaht } from "@/lib/constants"
 import { PayToggle } from "./pay-toggle"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 
 export const metadata = { title: "ค่ามือรายวัน · สุขกายา POS" }
 
@@ -100,6 +101,9 @@ export default async function CommissionPage({
           >
             ถัดไป →
           </Link>
+          <Button asChild size="sm" variant="outline">
+            <Link href="/commission/summary">ดูสรุปข้ามวัน</Link>
+          </Button>
         </div>
       </div>
 
