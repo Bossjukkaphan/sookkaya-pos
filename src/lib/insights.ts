@@ -1,7 +1,7 @@
 export const WEEKDAY_LABELS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."] as const
 
 /** ชั่วโมงที่ร้านเปิดจริง — ข้อมูลนอกช่วงนี้คือเวลาที่กรอกผิด ไม่เอามาระบายสี */
-export const OPEN_HOURS = Array.from({ length: 12 }, (_, i) => i + 10) // 10:00–21:00
+export const OPEN_HOURS = Array.from({ length: 13 }, (_, i) => i + 10) // 10:00–22:00
 
 /**
  * ระดับความเข้มของสีในตาราง heatmap 0-4 เทียบกับช่องที่แน่นที่สุด

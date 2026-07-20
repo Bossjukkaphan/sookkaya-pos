@@ -70,7 +70,7 @@ export default async function HeatmapPage() {
           {total > 0 ? Math.round((counted / total) * 100) : 0}%) —
           ข้อมูลที่ import จากไฟล์เก่าบางส่วนไม่มีเวลาขาย
           {outsideHours > 0 &&
-            ` · อีก ${outsideHours} รายการมีเวลานอกเวลาทำการ ไม่ถูกนำมาแสดง`}
+            ` · ในจำนวนนี้มี ${outsideHours} รายการที่เวลาอยู่นอกเวลาทำการ ไม่ถูกนำมาแสดงในตาราง`}
         </CardContent>
       </Card>
 
