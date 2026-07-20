@@ -167,7 +167,15 @@ export function PosForm({
               type="button"
               variant={paymentMethod === m ? "default" : "outline"}
               className="h-12 text-xs sm:text-sm"
-              onClick={() => setPaymentMethod(m)}
+              onClick={() => {
+                // ช่องนี้เปลี่ยนความหมายระหว่าง "รหัสจอง Gowabi" กับ "ชื่อโปรโมชั่น"
+                // ถ้าไม่ล้างค่าเดิม ค่าที่ค้างจะถูกบันทึกข้ามประเภทกันโดยไม่มีอะไรเตือน
+                if ((m === GOWABI_METHOD) !== isGowabi) {
+                  setCouponPromo("")
+                  setCustomPromo(false)
+                }
+                setPaymentMethod(m)
+              }}
               aria-pressed={paymentMethod === m}
             >
               {m}
