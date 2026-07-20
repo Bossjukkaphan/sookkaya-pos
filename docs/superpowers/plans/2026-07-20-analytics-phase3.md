@@ -413,6 +413,13 @@ Expected: ไม่มี ERROR ใหม่ (view ทั้ง 3 เป็น `
 
 เพิ่มใน `Views` (ต่อจาก `v_daily_summary`):
 
+> **แก้ระหว่างทาง (20 ก.ค.):** เพิ่ม view ที่ 4 `v_promo_unmatched` ด้วย —
+> เดิมแผนให้หน้าเว็บนับข้อความที่ยังไม่จับคู่เองจาก `sales` แต่ `supabase-js`
+> ดึงได้ทีละ 1,000 แถวเท่านั้น พอยอดขายที่มีโปรฯ โตเกินพันรายการ
+> รายการที่ยังไม่จับคู่จะหายไปเงียบๆ จึงย้ายไปนับใน SQL ตามกฎของโปรเจกต์
+> (migration `create_promo_unmatched_view` apply แล้ว) type ของมันคือ
+> `{ raw_key: string | null; sample_text: string | null; uses: number | null }`
+
 ```ts
       v_customer_ltv: {
         Row: {
@@ -632,7 +639,7 @@ Expected: FAIL — `Failed to resolve import "./insights"`
 export const WEEKDAY_LABELS = ["อา.", "จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส."] as const
 
 /** ชั่วโมงที่ร้านเปิดจริง — ข้อมูลนอกช่วงนี้คือเวลาที่กรอกผิด ไม่เอามาระบายสี */
-export const OPEN_HOURS = Array.from({ length: 12 }, (_, i) => i + 10) // 10:00–21:00
+export const OPEN_HOURS = Array.from({ length: 13 }, (_, i) => i + 10) // 10:00–22:00
 
 /**
  * ระดับความเข้มของสีในตาราง heatmap 0-4 เทียบกับช่องที่แน่นที่สุด
@@ -640,10 +647,11 @@ export const OPEN_HOURS = Array.from({ length: 12 }, (_, i) => i + 10) // 10:00�
  */
 export function heatIntensity(sessions: number, max: number): 0 | 1 | 2 | 3 | 4 {
   if (max <= 0 || sessions <= 0) return 0
+  // ขอบล่างของแต่ละช่วงนับรวม — ช่องที่แน่นครึ่งหนึ่งของช่องที่แน่นที่สุด ต้องได้ระดับ 3
   const ratio = sessions / max
-  if (ratio > 0.75) return 4
-  if (ratio > 0.5) return 3
-  if (ratio > 0.25) return 2
+  if (ratio >= 0.75) return 4
+  if (ratio >= 0.5) return 3
+  if (ratio >= 0.25) return 2
   return 1
 }
 
@@ -1065,8 +1073,9 @@ Expected: ผ่านทั้งหมด · เทส 33 ข้อ
 
 - [ ] **Step 5: ตรวจบนหน้าจริง** — เปิด `/settings` แท็บ "โปรฯ"
 
-ต้องเห็นโปรโมชั่น 10 ตัว และรายการ "ยังไม่จับคู่" **20 รายการ**
-ลองจับคู่ 1 รายการแล้วรีเฟรช ต้องเหลือ 19
+ต้องเห็นโปรโมชั่น 10 ตัว และการ์ด "ยังไม่จับคู่" **19 ใบ**
+(19 ข้อความไม่ซ้ำ = 20 รายการขาย เพราะ `ค่าห้องสปา` ถูกพิมพ์ 2 ครั้ง)
+ลองจับคู่ 1 ใบแล้วรีเฟรช ต้องเหลือ 18
 
 - [ ] **Step 6: Commit**
 
@@ -1419,8 +1428,9 @@ Expected: ผ่านทั้งหมด
 
 - [ ] **Step 4: ตรวจบนหน้าจริง** — เปิด `/insights/heatmap`
 
-ต้องเห็นแถบเหลืองบอก "คำนวณจาก 1,578 รายการ ... (70%)" และตาราง 7 แถว × 12 คอลัมน์
-ตัวเลขรวมทุกช่องต้องเท่ากับ 1,577 (1,578 ลบ 1 รายการเวลา 01:xx ที่นับเป็นนอกเวลาทำการ)
+ต้องเห็นแถบเหลืองบอก "คำนวณจาก 1,578 รายการ ... (70%)" และตาราง 7 แถว × 13 คอลัมน์ (10–22 น.)
+ตัวเลขรวมทุกช่องต้องเท่ากับ 1,577 และแถบเหลืองต้องบอกว่า "ในจำนวนนี้มี 1 รายการ
+ที่เวลาอยู่นอกเวลาทำการ" — 1,577 + 1 = 1,578 บวกกลับได้พอดี
 
 - [ ] **Step 5: Commit**
 
@@ -1443,7 +1453,6 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
-import { promoKey } from "@/lib/promo"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -1464,22 +1473,20 @@ export default async function PromotionsInsightPage() {
     return <InsightsAccessDenied title="ROI ส่วนลด" />
   }
 
-  const [{ data: roi }, { data: promoSales }, { data: aliases }] =
-    await Promise.all([
-      supabase
-        .from("v_promo_roi")
-        .select(
-          "promotion_id, promotion_name, kind, uses, discount_given, revenue, customers, returning_customers, first_used, last_used"
-        ),
-      supabase.from("sales").select("coupon_promo").not("coupon_promo", "is", null),
-      supabase.from("promotion_aliases").select("raw_key"),
-    ])
+  const [{ data: roi }, { data: unmatchedRows }] = await Promise.all([
+    supabase
+      .from("v_promo_roi")
+      .select(
+        "promotion_id, promotion_name, kind, uses, discount_given, revenue, customers, returning_customers, first_used, last_used"
+      ),
+    supabase.from("v_promo_unmatched").select("uses"),
+  ])
 
-  const knownKeys = new Set((aliases ?? []).map((a) => a.raw_key))
-  const unmatchedCount = (promoSales ?? []).filter((row) => {
-    const text = (row.coupon_promo ?? "").trim()
-    return text !== "" && !knownKeys.has(promoKey(text))
-  }).length
+  // นับใน SQL เพราะ supabase-js ดึงได้ทีละ 1,000 แถว — นับฝั่งหน้าเว็บจะเพี้ยนเมื่อร้านโต
+  const unmatchedCount = (unmatchedRows ?? []).reduce(
+    (sum, r) => sum + Number(r.uses ?? 0),
+    0
+  )
 
   // เรียงตามส่วนลดที่จ่ายไป — โปรฯ ที่กินส่วนลดมากที่สุดคือตัวที่ต้องตัดสินใจก่อน
   const rows = [...(roi ?? [])].sort(
