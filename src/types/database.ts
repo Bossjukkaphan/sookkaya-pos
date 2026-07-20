@@ -311,6 +311,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          material_cost: number | null
           name: string
           price: number
           price_old: number | null
@@ -321,6 +322,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          material_cost?: number | null
           name: string
           price: number
           price_old?: number | null
@@ -331,6 +333,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          material_cost?: number | null
           name?: string
           price?: number
           price_old?: number | null
