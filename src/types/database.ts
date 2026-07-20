@@ -450,6 +450,24 @@ export type Database = {
         }
         Relationships: []
       }
+      v_monthly_pl: {
+        Row: {
+          cash_in: number | null
+          commission_cost: number | null
+          expense_total: number | null
+          fixed_cost: number | null
+          guarantee_topup: number | null
+          month: string | null
+          net_revenue: number | null
+          onetime_cost: number | null
+          payroll_paid: number | null
+          profit_accrual: number | null
+          profit_cash: number | null
+          sessions: number | null
+          variable_cost: number | null
+        }
+        Relationships: []
+      }
       v_therapist_daily: {
         Row: {
           guarantee_amount: number | null
