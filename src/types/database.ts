@@ -439,6 +439,17 @@ export type Database = {
         }
         Relationships: []
       }
+      v_daily_summary: {
+        Row: {
+          cash_in: number | null
+          discount_total: number | null
+          gross_sales: number | null
+          net_revenue: number | null
+          sale_date: string | null
+          sessions: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       app_role: { Args: never; Returns: string }
