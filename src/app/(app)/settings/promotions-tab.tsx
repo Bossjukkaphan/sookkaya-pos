@@ -19,6 +19,7 @@ import {
 
 type Promotion = { id: string; name: string; kind: string; is_active: boolean }
 type Unmatched = { raw_key: string; sample_text: string; uses: number }
+type Alias = { raw_key: string; sample_text: string; promotion_id: string | null }
 
 const KIND_LABELS: Record<string, string> = {
   promotion: "โปรโมชั่น",
@@ -32,9 +33,11 @@ const NOT_A_PROMO = "__none__"
 export function PromotionsTab({
   promotions,
   unmatched,
+  aliases,
 }: {
   promotions: Promotion[]
   unmatched: Unmatched[]
+  aliases: Alias[]
 }) {
   const router = useRouter()
   const [newName, setNewName] = useState("")
@@ -169,24 +172,45 @@ export function PromotionsTab({
                       {row.uses} ครั้ง
                     </span>
                   </div>
-                  <Select
+                  <AliasPicker
+                    value={null}
                     disabled={savingKey === row.raw_key}
-                    onValueChange={(v) => handleAlias(row, v)}
-                  >
-                    <SelectTrigger className="h-10 w-full">
-                      <SelectValue placeholder="— เลือกว่าเป็นโปรฯ ตัวไหน —" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {promotions.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                      <SelectItem value={NOT_A_PROMO}>
-                        ไม่ใช่โปรโมชั่น (เป็นโน้ต)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                    promotions={promotions}
+                    onSelect={(v) => handleAlias(row, v)}
+                  />
+                </CardContent>
+              </Card>
+            </li>
+          ))}
+        </ul>
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">ข้อความที่จับคู่ไว้แล้ว</h2>
+          <p className="text-xs text-slate-500">
+            กดเปลี่ยนได้ถ้าจับคู่ผิด — ยอดในรายงาน ROI จะขยับตามทันที
+            ({aliases.length} ข้อความ)
+          </p>
+        </div>
+
+        <ul className="space-y-2">
+          {aliases.map((a) => (
+            <li key={a.raw_key}>
+              <Card>
+                <CardContent className="space-y-2 py-3">
+                  <p className="min-w-0 font-medium break-words">{a.sample_text}</p>
+                  <AliasPicker
+                    value={a.promotion_id ?? NOT_A_PROMO}
+                    disabled={savingKey === a.raw_key}
+                    promotions={promotions}
+                    onSelect={(v) =>
+                      handleAlias(
+                        { raw_key: a.raw_key, sample_text: a.sample_text, uses: 0 },
+                        v
+                      )
+                    }
+                  />
                 </CardContent>
               </Card>
             </li>
@@ -194,5 +218,39 @@ export function PromotionsTab({
         </ul>
       </section>
     </div>
+  )
+}
+
+function AliasPicker({
+  value,
+  disabled,
+  promotions,
+  onSelect,
+}: {
+  value: string | null
+  disabled: boolean
+  promotions: Promotion[]
+  onSelect: (value: string) => void
+}) {
+  return (
+    <Select
+      // null = ยังไม่เคยเลือก จึงปล่อยให้ Select ว่างไว้ ถ้าใส่ค่าไปเลย
+      // radix จะถือว่าเลือกค่านั้นอยู่แล้ว แล้วกดซ้ำจะไม่ยิง onValueChange
+      value={value ?? undefined}
+      disabled={disabled}
+      onValueChange={onSelect}
+    >
+      <SelectTrigger className="h-10 w-full">
+        <SelectValue placeholder="— เลือกว่าเป็นโปรฯ ตัวไหน —" />
+      </SelectTrigger>
+      <SelectContent>
+        {promotions.map((p) => (
+          <SelectItem key={p.id} value={p.id}>
+            {p.name}
+          </SelectItem>
+        ))}
+        <SelectItem value={NOT_A_PROMO}>ไม่ใช่โปรโมชั่น (เป็นโน้ต)</SelectItem>
+      </SelectContent>
+    </Select>
   )
 }

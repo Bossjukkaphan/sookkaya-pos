@@ -61,12 +61,20 @@ export default async function PromotionsInsightPage() {
     .filter((r) => r.kind === "promotion")
     .reduce((s, r) => s + Number(r.discount_given ?? 0), 0)
 
+  // แยกให้เห็นทั้งสองก้อน — ของแถมก็เป็นเงินที่ร้านออกเองเหมือนกัน ไม่ใช่ศูนย์
+  const totalGiveaway = rows
+    .filter((r) => r.kind === "giveaway")
+    .reduce((s, r) => s + Number(r.discount_given ?? 0), 0)
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">ROI ส่วนลด</h1>
         <p className="text-sm text-slate-600">
-          ส่วนลดการตลาดที่จ่ายไปทั้งหมด {formatBaht(totalDiscount)} บาท
+          ส่วนลดการตลาด {formatBaht(totalDiscount)} บาท
+          {totalGiveaway > 0 && (
+            <> · ของแถมเพื่อโปรโมท {formatBaht(totalGiveaway)} บาท</>
+          )}
         </p>
       </div>
 

@@ -23,6 +23,7 @@ export default async function SettingsPage() {
     { data: recentExpenses },
     { data: promotions },
     { data: unmatchedRows },
+    { data: aliasRows },
   ] = await Promise.all([
     supabase.from("profiles").select("email, role").single(),
     supabase.from("therapists").select("id, name, status").order("name"),
@@ -47,6 +48,10 @@ export default async function SettingsPage() {
       .from("v_promo_unmatched")
       .select("raw_key, sample_text, uses")
       .order("uses", { ascending: false }),
+    supabase
+      .from("promotion_aliases")
+      .select("raw_key, sample_text, promotion_id")
+      .order("raw_key"),
   ])
 
   const role = profile?.role ?? "staff"
@@ -62,6 +67,12 @@ export default async function SettingsPage() {
     raw_key: r.raw_key ?? "",
     sample_text: r.sample_text ?? "",
     uses: Number(r.uses ?? 0),
+  }))
+
+  const aliases = (aliasRows ?? []).map((a) => ({
+    raw_key: a.raw_key,
+    sample_text: a.sample_text ?? a.raw_key,
+    promotion_id: a.promotion_id,
   }))
 
   return (
@@ -133,6 +144,7 @@ export default async function SettingsPage() {
             <PromotionsTab
               promotions={promotions ?? []}
               unmatched={unmatched}
+              aliases={aliases}
             />
           </TabsContent>
         )}

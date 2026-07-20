@@ -220,6 +220,28 @@ export async function savePromotion(formData: FormData): Promise<ActionResult> {
     return { ok: false, error: "ประเภทโปรโมชั่นไม่ถูกต้อง" }
   }
 
+  // ชื่อสองชื่อที่ต่างกันแค่ช่องว่างหรือตัวพิมพ์ (เช่น "ลด 15%" กับ "ลด15%") ให้คีย์เดียวกัน
+  // ถ้าปล่อยผ่าน การจับคู่เดิมจะถูกแย่งไปเงียบๆ แล้วยอดเก่าทั้งก้อนจะย้ายไปโปรฯ ใหม่
+  const key = promoKey(name)
+  const { data: clash } = await supabase
+    .from("promotion_aliases")
+    .select("promotion_id")
+    .eq("raw_key", key)
+    .maybeSingle()
+
+  if (clash?.promotion_id && clash.promotion_id !== id) {
+    const { data: owner } = await supabase
+      .from("promotions")
+      .select("name")
+      .eq("id", clash.promotion_id)
+      .maybeSingle()
+
+    return {
+      ok: false,
+      error: `ชื่อนี้ซ้ำกับ "${owner?.name ?? "โปรโมชั่นที่มีอยู่"}" เมื่อตัดช่องว่างและตัวพิมพ์ใหญ่-เล็กออก กรุณาใช้ชื่ออื่น`,
+    }
+  }
+
   const { data: saved, error } = id
     ? await supabase
         .from("promotions")
@@ -241,7 +263,7 @@ export async function savePromotion(formData: FormData): Promise<ActionResult> {
   const { error: aliasError } = await supabase
     .from("promotion_aliases")
     .upsert(
-      { raw_key: promoKey(name), promotion_id: saved.id, sample_text: name },
+      { raw_key: key, promotion_id: saved.id, sample_text: name },
       { onConflict: "raw_key" }
     )
 
