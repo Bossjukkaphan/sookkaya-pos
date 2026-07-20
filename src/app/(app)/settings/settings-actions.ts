@@ -137,6 +137,53 @@ export async function removeAllowedUser(email: string): Promise<ActionResult> {
   return { ok: true }
 }
 
+/* ---------------- จัดกลุ่มต้นทุน ---------------- */
+
+const COST_TYPES = ["fixed", "variable", "onetime"] as const
+
+export async function saveCategoryType(
+  category: string,
+  costType: string
+): Promise<ActionResult> {
+  if (!COST_TYPES.includes(costType as (typeof COST_TYPES)[number])) {
+    return { ok: false, error: "ประเภทต้นทุนไม่ถูกต้อง" }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("expense_category_types")
+    .upsert({ category, cost_type: costType }, { onConflict: "category" })
+
+  if (error) return fail(error)
+
+  revalidatePath("/settings")
+  revalidatePath("/finance")
+  revalidatePath("/finance/unit-economics")
+  return { ok: true }
+}
+
+export async function saveExpenseCostType(
+  id: string,
+  costType: string
+): Promise<ActionResult> {
+  if (!COST_TYPES.includes(costType as (typeof COST_TYPES)[number])) {
+    return { ok: false, error: "ประเภทต้นทุนไม่ถูกต้อง" }
+  }
+
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("expenses")
+    .update({ cost_type: costType })
+    .eq("id", id)
+
+  if (error) return fail(error)
+
+  revalidatePath("/settings")
+  revalidatePath("/finance")
+  revalidatePath("/finance/unit-economics")
+  return { ok: true }
+}
+
 /* ---------------- ตั้งค่าทั่วไป ---------------- */
 
 export async function saveSetting(key: string, value: string): Promise<ActionResult> {

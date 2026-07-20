@@ -79,10 +79,26 @@ export type Database = {
         }
         Relationships: []
       }
+      expense_category_types: {
+        Row: {
+          category: string
+          cost_type: string
+        }
+        Insert: {
+          category: string
+          cost_type: string
+        }
+        Update: {
+          category?: string
+          cost_type?: string
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           amount: number
           category: string
+          cost_type: string
           created_at: string
           expense_date: string
           id: string
@@ -93,6 +109,7 @@ export type Database = {
         Insert: {
           amount: number
           category: string
+          cost_type?: string
           created_at?: string
           expense_date: string
           id?: string
@@ -103,6 +120,7 @@ export type Database = {
         Update: {
           amount?: number
           category?: string
+          cost_type?: string
           created_at?: string
           expense_date?: string
           id?: string
@@ -311,6 +329,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          material_cost: number | null
           name: string
           price: number
           price_old: number | null
@@ -321,6 +340,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          material_cost?: number | null
           name: string
           price: number
           price_old?: number | null
@@ -331,6 +351,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          material_cost?: number | null
           name?: string
           price?: number
           price_old?: number | null
@@ -447,6 +468,24 @@ export type Database = {
           net_revenue: number | null
           sale_date: string | null
           sessions: number | null
+        }
+        Relationships: []
+      }
+      v_monthly_pl: {
+        Row: {
+          cash_in: number | null
+          commission_cost: number | null
+          expense_total: number | null
+          fixed_cost: number | null
+          guarantee_topup: number | null
+          month: string | null
+          net_revenue: number | null
+          onetime_cost: number | null
+          payroll_paid: number | null
+          profit_accrual: number | null
+          profit_cash: number | null
+          sessions: number | null
+          variable_cost: number | null
         }
         Relationships: []
       }

@@ -23,7 +23,12 @@ with expected(check_name, expected_value) as (values
   ('commission_2026_06',  140415),
   ('expenses_fixed_06',   104648),
   ('expenses_variable_06',125059),
-  ('expenses_onetime_06',  28320)
+  ('expenses_onetime_06',  28320),
+  -- เฟส 2: กำไรสุทธิแบบ Excel (รายได้ที่รับรู้ − รายจ่ายที่จ่ายจริงทั้งหมด)
+  ('profit_cash_2026_03', -107695),
+  ('profit_cash_2026_04',  -70428),
+  ('profit_cash_2026_05',  -27606),
+  ('profit_cash_2026_06',   88991)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -50,6 +55,10 @@ actual(check_name, actual_value) as (
   from public.expenses
   where expense_date between '2026-06-01' and '2026-06-30'
   group by cost_type
+
+  union all
+  select 'profit_cash_' || replace(month,'-','_'), round(profit_cash)
+  from public.v_monthly_pl where month between '2026-03' and '2026-06'
 )
 select
   e.check_name,

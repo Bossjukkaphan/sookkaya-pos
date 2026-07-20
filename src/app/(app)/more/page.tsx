@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { CreditCard, FileBarChart, Settings, TrendingUp, Wallet } from "lucide-react"
+import { CreditCard, FileBarChart, PiggyBank, Settings, TrendingUp, Wallet } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
 
@@ -11,6 +11,12 @@ const ITEMS = [
     label: "ยอดขายย้อนหลัง",
     description: "เลือกช่วงเวลาเอง เทียบกับช่วงก่อนหน้า",
     icon: TrendingUp,
+  },
+  {
+    href: "/finance",
+    label: "การเงิน",
+    description: "กำไรรายเดือน กระแสเงินสด จุดคุ้มทุน",
+    icon: PiggyBank,
   },
   {
     href: "/members",
