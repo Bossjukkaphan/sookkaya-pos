@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { daysSince, heatIntensity, isDormant } from "./insights"
+import { daysSince, dormantCutoff, heatIntensity, isDormant } from "./insights"
 
 describe("heatIntensity", () => {
   it("ไล่ระดับ 0-4 ตามสัดส่วนของช่องที่แน่นที่สุด", () => {
@@ -36,5 +36,16 @@ describe("isDormant", () => {
   it("ใช้เกณฑ์ 'เกิน N วัน' ไม่ใช่ 'ครบ N วัน'", () => {
     expect(isDormant({ visits: 3, lastVisit: "2026-05-21" }, "2026-07-20", 60)).toBe(false)
     expect(isDormant({ visits: 3, lastVisit: "2026-05-20" }, "2026-07-20", 60)).toBe(true)
+  })
+})
+
+describe("dormantCutoff", () => {
+  it("คืนวันที่ที่ใช้กรองใน SQL ได้ตรงกับที่ isDormant ตัดสิน", () => {
+    expect(dormantCutoff("2026-07-20", 60)).toBe("2026-05-21")
+    expect(dormantCutoff("2026-07-20", 30)).toBe("2026-06-20")
+  })
+
+  it("ข้ามเดือนและข้ามปีได้ถูกต้อง", () => {
+    expect(dormantCutoff("2026-01-01", 30)).toBe("2025-12-02")
   })
 })

@@ -2,7 +2,7 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
-import { daysSince, isDormant } from "@/lib/insights"
+import { daysSince, dormantCutoff } from "@/lib/insights"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Card, CardContent } from "@/components/ui/card"
@@ -27,25 +27,33 @@ export default async function CustomerInsightPage({
   const tab = params.tab === "dormant" ? "dormant" : "ltv"
   const days = DAY_OPTIONS.includes(Number(params.days)) ? Number(params.days) : 60
 
-  const { data } = await supabase
-    .from("v_customer_ltv")
-    .select(
-      "customer_id, name, nickname, phone, customer_type, visits, lifetime_value, avg_ticket, first_visit, last_visit"
-    )
-    .order("lifetime_value", { ascending: false })
-
-  const rows = data ?? []
   const today = todayInShopTz()
 
-  const dormant = rows.filter((r) =>
-    isDormant(
-      { visits: Number(r.visits ?? 0), lastVisit: r.last_visit ?? today },
-      today,
-      days
-    )
-  )
+  // แท็บ "หายไปนาน" ต้องกรองใน SQL — ดูเหตุผลใน dormantCutoff()
+  const query =
+    tab === "dormant"
+      ? supabase
+          .from("v_customer_ltv")
+          .select(
+            "customer_id, name, nickname, phone, customer_type, visits, lifetime_value, avg_ticket, first_visit, last_visit",
+            { count: "exact" }
+          )
+          .gte("visits", 2)
+          .lt("last_visit", dormantCutoff(today, days))
+          .order("lifetime_value", { ascending: false })
+          .limit(200)
+      : supabase
+          .from("v_customer_ltv")
+          .select(
+            "customer_id, name, nickname, phone, customer_type, visits, lifetime_value, avg_ticket, first_visit, last_visit",
+            { count: "exact" }
+          )
+          .order("lifetime_value", { ascending: false })
+          .limit(50)
 
-  const shown = tab === "dormant" ? dormant : rows.slice(0, 50)
+  const { data, count } = await query
+  const shown = data ?? []
+  const total = count ?? shown.length
 
   return (
     <div className="space-y-4">
@@ -53,8 +61,8 @@ export default async function CustomerInsightPage({
         <h1 className="text-xl font-bold">ลูกค้า</h1>
         <p className="text-sm text-slate-600">
           {tab === "ltv"
-            ? `ลูกค้าที่เคยซื้อ ${rows.length} คน · แสดง 50 อันดับแรกตามยอดสะสม`
-            : `เคยมาอย่างน้อย 2 ครั้ง แต่ไม่มาเกิน ${days} วัน — ${dormant.length} คน`}
+            ? `ลูกค้าที่เคยซื้อ ${total} คน · แสดง 50 อันดับแรกตามยอดสะสม`
+            : `เคยมาอย่างน้อย 2 ครั้ง แต่ไม่มาเกิน ${days} วัน — ${total} คน`}
         </p>
       </div>
 
@@ -123,6 +131,12 @@ export default async function CustomerInsightPage({
           </li>
         ))}
       </ul>
+
+      {total > shown.length && (
+        <p className="text-center text-xs text-slate-500">
+          แสดง {shown.length} คนแรกจากทั้งหมด {total} คน (เรียงตามยอดสะสม)
+        </p>
+      )}
 
       {shown.length === 0 && (
         <p className="py-6 text-center text-sm text-slate-500">

@@ -39,3 +39,19 @@ export function isDormant(
   if (row.visits < 2) return false
   return daysSince(row.lastVisit, todayIso) > thresholdDays
 }
+
+/**
+ * วันตัดของ "หายไปนาน" สำหรับกรองฝั่ง SQL — ลูกค้าที่ `last_visit < cutoff` คือคนที่หายไป
+ *
+ * ต้องให้ผลตรงกับ `isDormant` เป๊ะ ทั้งคู่ใช้เกณฑ์ "เกิน N วัน" ไม่ใช่ "ครบ N วัน"
+ * คนที่มาล่าสุดพอดี N วันจึงยังไม่นับว่าหาย
+ *
+ * ต้องกรองใน SQL ไม่ใช่กรองรายชื่อที่ดึงมาแล้ว เพราะ supabase-js ดึงได้ทีละ 1,000 แถว
+ * และลูกค้าที่หายไปมักเป็นคนยอดสะสมน้อย ซึ่งอยู่ท้ายรายการที่เรียงตามยอดพอดี
+ * ถ้ากรองฝั่งหน้าเว็บ พอลูกค้าเกินพันคน คนที่หายไปจะถูกตัดทิ้งก่อนใครเพื่อน
+ * แล้วตัวเลขจะ "ดูดีขึ้น" ทั้งที่ความจริงแย่ลง
+ */
+export function dormantCutoff(todayIso: string, thresholdDays: number): string {
+  const [y, m, d] = todayIso.split("-").map(Number)
+  return new Date(Date.UTC(y, m - 1, d - thresholdDays)).toISOString().slice(0, 10)
+}
