@@ -4,6 +4,7 @@ import { ServicesTab } from "./services-tab"
 import { UsersTab } from "./users-tab"
 import { GeneralTab } from "./general-tab"
 import { CostTypesTab } from "./cost-types-tab"
+import { PromotionsTab } from "./promotions-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export const metadata = { title: "ตั้งค่า · สุขกายา POS" }
@@ -20,6 +21,9 @@ export default async function SettingsPage() {
     { data: profiles },
     { data: categoryTypes },
     { data: recentExpenses },
+    { data: promotions },
+    { data: unmatchedRows },
+    { data: aliasRows },
   ] = await Promise.all([
     supabase.from("profiles").select("email, role").single(),
     supabase.from("therapists").select("id, name, status").order("name"),
@@ -36,6 +40,18 @@ export default async function SettingsPage() {
       .select("id, expense_date, item, category, amount, cost_type")
       .order("expense_date", { ascending: false })
       .limit(60),
+    supabase
+      .from("promotions")
+      .select("id, name, kind, is_active")
+      .order("name"),
+    supabase
+      .from("v_promo_unmatched")
+      .select("raw_key, sample_text, uses")
+      .order("uses", { ascending: false }),
+    supabase
+      .from("promotion_aliases")
+      .select("raw_key, sample_text, promotion_id")
+      .order("raw_key"),
   ])
 
   const role = profile?.role ?? "staff"
@@ -45,6 +61,19 @@ export default async function SettingsPage() {
   const settings = Object.fromEntries(
     (settingsRows ?? []).map((s) => [s.key, s.value ?? ""])
   )
+
+  // view คืนค่า nullable ตามธรรมชาติของ view ใน Postgres แต่ทุกแถวมีค่าจริงเสมอ
+  const unmatched = (unmatchedRows ?? []).map((r) => ({
+    raw_key: r.raw_key ?? "",
+    sample_text: r.sample_text ?? "",
+    uses: Number(r.uses ?? 0),
+  }))
+
+  const aliases = (aliasRows ?? []).map((a) => ({
+    raw_key: a.raw_key,
+    sample_text: a.sample_text ?? a.raw_key,
+    promotion_id: a.promotion_id,
+  }))
 
   return (
     <div className="space-y-4">
@@ -66,6 +95,11 @@ export default async function SettingsPage() {
           {canEditCatalog && (
             <TabsTrigger value="cost-types" className="flex-1">
               ต้นทุน
+            </TabsTrigger>
+          )}
+          {canEditCatalog && (
+            <TabsTrigger value="promotions" className="flex-1">
+              โปรฯ
             </TabsTrigger>
           )}
           <TabsTrigger value="general" className="flex-1">
@@ -101,6 +135,16 @@ export default async function SettingsPage() {
             <CostTypesTab
               categoryTypes={categoryTypes ?? []}
               expenses={recentExpenses ?? []}
+            />
+          </TabsContent>
+        )}
+
+        {canEditCatalog && (
+          <TabsContent value="promotions" className="pt-4">
+            <PromotionsTab
+              promotions={promotions ?? []}
+              unmatched={unmatched}
+              aliases={aliases}
             />
           </TabsContent>
         )}

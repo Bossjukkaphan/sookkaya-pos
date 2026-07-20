@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache"
 
+import { promoKey } from "@/lib/promo"
 import { createClient } from "@/lib/supabase/server"
 import type { TablesInsert } from "@/types/database"
 
@@ -11,6 +12,11 @@ function fail(error: unknown): ActionResult {
   const e = error as { code?: string; message?: string }
   if (e?.code === "42501") {
     return { ok: false, error: "คุณไม่มีสิทธิ์แก้ไขข้อมูลส่วนนี้" }
+  }
+  // ฐานข้อมูลกันชื่อซ้ำไว้สองชั้น (ชื่อตรงตัว และชื่อที่ตัดช่องว่างแล้วเหมือนกัน)
+  // ข้อความดิบจาก Postgres เป็นภาษาอังกฤษปนชื่อ constraint พนักงานอ่านไม่รู้เรื่อง
+  if (e?.code === "23505") {
+    return { ok: false, error: "มีรายการชื่อนี้อยู่แล้ว กรุณาใช้ชื่ออื่น" }
   }
   return { ok: false, error: e?.message ?? "บันทึกไม่สำเร็จ" }
 }
@@ -194,5 +200,104 @@ export async function saveSetting(key: string, value: string): Promise<ActionRes
 
   if (error) return fail(error)
   refresh()
+  return { ok: true }
+}
+
+/* ---------------- โปรโมชั่น ---------------- */
+
+const PROMO_KINDS = ["promotion", "channel", "giveaway", "internal"] as const
+
+function refreshPromo() {
+  revalidatePath("/settings")
+  revalidatePath("/pos")
+  revalidatePath("/insights/promotions")
+}
+
+export async function savePromotion(formData: FormData): Promise<ActionResult> {
+  const supabase = await createClient()
+  const id = String(formData.get("id") ?? "").trim()
+  const name = String(formData.get("name") ?? "").trim()
+  const kind = String(formData.get("kind") ?? "promotion")
+  const isActive = formData.get("is_active") === "on"
+
+  if (!name) return { ok: false, error: "กรุณากรอกชื่อโปรโมชั่น" }
+  if (!PROMO_KINDS.includes(kind as (typeof PROMO_KINDS)[number])) {
+    return { ok: false, error: "ประเภทโปรโมชั่นไม่ถูกต้อง" }
+  }
+
+  // ชื่อสองชื่อที่ต่างกันแค่ช่องว่างหรือตัวพิมพ์ (เช่น "ลด 15%" กับ "ลด15%") ให้คีย์เดียวกัน
+  // ถ้าปล่อยผ่าน การจับคู่เดิมจะถูกแย่งไปเงียบๆ แล้วยอดเก่าทั้งก้อนจะย้ายไปโปรฯ ใหม่
+  const key = promoKey(name)
+  const { data: clash } = await supabase
+    .from("promotion_aliases")
+    .select("promotion_id")
+    .eq("raw_key", key)
+    .maybeSingle()
+
+  if (clash?.promotion_id && clash.promotion_id !== id) {
+    const { data: owner } = await supabase
+      .from("promotions")
+      .select("name")
+      .eq("id", clash.promotion_id)
+      .maybeSingle()
+
+    return {
+      ok: false,
+      error: `ชื่อนี้ซ้ำกับ "${owner?.name ?? "โปรโมชั่นที่มีอยู่"}" เมื่อตัดช่องว่างและตัวพิมพ์ใหญ่-เล็กออก กรุณาใช้ชื่ออื่น`,
+    }
+  }
+
+  const { data: saved, error } = id
+    ? await supabase
+        .from("promotions")
+        .update({ name, kind, is_active: isActive })
+        .eq("id", id)
+        .select("id")
+        .single()
+    : await supabase
+        .from("promotions")
+        .insert({ name, kind, is_active: isActive })
+        .select("id")
+        .single()
+
+  if (error) return fail(error)
+  if (!saved) return { ok: false, error: "บันทึกไม่สำเร็จ" }
+
+  // ชื่อมาตรฐานต้องจับคู่กับตัวเองเสมอ ไม่งั้นรายการที่บันทึกผ่าน dropdown
+  // จะกลายเป็น "ยังไม่จับคู่" ทันทีที่บันทึก
+  const { error: aliasError } = await supabase
+    .from("promotion_aliases")
+    .upsert(
+      { raw_key: key, promotion_id: saved.id, sample_text: name },
+      { onConflict: "raw_key" }
+    )
+
+  if (aliasError) return fail(aliasError)
+
+  refreshPromo()
+  return { ok: true }
+}
+
+/** `promotionId` = null แปลว่า "ตรวจแล้ว ข้อความนี้ไม่ใช่โปรโมชั่น" */
+export async function saveAlias(
+  rawKey: string,
+  promotionId: string | null,
+  sampleText: string
+): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("promotion_aliases")
+    .upsert(
+      {
+        raw_key: rawKey,
+        promotion_id: promotionId,
+        sample_text: sampleText,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "raw_key" }
+    )
+
+  if (error) return fail(error)
+  refreshPromo()
   return { ok: true }
 }
