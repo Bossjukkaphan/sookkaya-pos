@@ -27,8 +27,7 @@ export default async function CommissionPage({
 
   const [
     { data: therapists },
-    { data: sales },
-    { data: guaranteeSetting },
+    { data: therapistDaily },
     { data: records },
   ] = await Promise.all([
     supabase
@@ -37,45 +36,46 @@ export default async function CommissionPage({
       .eq("status", "active")
       .order("name"),
     supabase
-      .from("sales")
-      .select("therapist_id, commission, request_fee")
-      .eq("sale_date", workDate),
-    supabase
-      .from("settings")
-      .select("value")
-      .eq("key", "min_commission_guarantee")
-      .single(),
+      .from("v_therapist_daily")
+      .select(
+        "therapist_id, sessions, total_commission, request_fee, guarantee_amount, net_commission, total_income, status, is_paid"
+      )
+      .eq("work_date", workDate),
     supabase
       .from("therapist_daily_commission")
       .select("therapist_id, is_paid")
       .eq("work_date", workDate),
   ])
 
-  const guarantee = Number(guaranteeSetting?.value) || DEFAULT_MIN_COMMISSION
+  const dailyRows = therapistDaily ?? []
+  const guarantee =
+    dailyRows.length > 0
+      ? Number(dailyRows[0].guarantee_amount ?? DEFAULT_MIN_COMMISSION)
+      : DEFAULT_MIN_COMMISSION
   const paidMap = new Map((records ?? []).map((r) => [r.therapist_id, r.is_paid]))
+  const dailyMap = new Map(dailyRows.map((d) => [d.therapist_id, d]))
 
   const summary = (therapists ?? []).map((t) => {
-    const own = (sales ?? []).filter((s) => s.therapist_id === t.id)
-    const totalCommission = own.reduce((sum, s) => sum + Number(s.commission ?? 0), 0)
-    const requestFee = own.reduce((sum, s) => sum + Number(s.request_fee), 0)
-
-    // ประกันมือใช้เฉพาะวันที่หมอเข้างานจริง — ไม่เข้างานไม่ได้ประกัน
-    const worked = own.length > 0
-    const netCommission = worked ? Math.max(totalCommission, guarantee) : 0
-    const usedGuarantee = worked && totalCommission < guarantee
+    const d = dailyMap.get(t.id)
+    const worked = !!d
+    const totalCommission = Number(d?.total_commission ?? 0)
+    const requestFee = Number(d?.request_fee ?? 0)
+    const netCommission = Number(d?.net_commission ?? 0)
+    const totalIncome = Number(d?.total_income ?? 0)
+    const usedGuarantee = worked && d?.status === "ใช้ประกัน"
 
     return {
       therapistId: t.id,
       name: t.name,
-      sessions: own.length,
+      sessions: Number(d?.sessions ?? 0),
       worked,
       totalCommission,
       requestFee,
       netCommission,
-      totalIncome: netCommission + requestFee,
-      status: !worked ? "ไม่ได้เข้างาน" : usedGuarantee ? "ใช้ประกัน" : "ค่ามือจริง",
+      totalIncome,
+      status: !worked ? "ไม่ได้เข้างาน" : (d?.status ?? "ค่ามือจริง"),
       usedGuarantee,
-      paid: paidMap.get(t.id) ?? false,
+      paid: paidMap.get(t.id) ?? d?.is_paid ?? false,
     }
   })
 
