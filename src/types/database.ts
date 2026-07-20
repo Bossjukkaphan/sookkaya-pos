@@ -204,6 +204,51 @@ export type Database = {
         }
         Relationships: []
       }
+      promotions: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          kind: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      promotion_aliases: {
+        Row: {
+          promotion_id: string | null
+          raw_key: string
+          sample_text: string | null
+          updated_at: string
+        }
+        Insert: {
+          promotion_id?: string | null
+          raw_key: string
+          sample_text?: string | null
+          updated_at?: string
+        }
+        Update: {
+          promotion_id?: string | null
+          raw_key?: string
+          sample_text?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       receipt_counters: {
         Row: {
           counter_date: string
@@ -471,6 +516,45 @@ export type Database = {
         }
         Relationships: []
       }
+      v_customer_ltv: {
+        Row: {
+          avg_ticket: number | null
+          customer_id: string | null
+          customer_type: string | null
+          first_visit: string | null
+          last_visit: string | null
+          lifetime_value: number | null
+          name: string | null
+          nickname: string | null
+          phone: string | null
+          visits: number | null
+        }
+        Relationships: []
+      }
+      v_hourly_density: {
+        Row: {
+          hour: number | null
+          revenue: number | null
+          sessions: number | null
+          weekday: number | null
+        }
+        Relationships: []
+      }
+      v_promo_roi: {
+        Row: {
+          customers: number | null
+          discount_given: number | null
+          first_used: string | null
+          kind: string | null
+          last_used: string | null
+          promotion_id: string | null
+          promotion_name: string | null
+          returning_customers: number | null
+          revenue: number | null
+          uses: number | null
+        }
+        Relationships: []
+      }
       v_monthly_pl: {
         Row: {
           cash_in: number | null
@@ -508,6 +592,7 @@ export type Database = {
     Functions: {
       app_role: { Args: never; Returns: string }
       next_receipt_no: { Args: { p_date?: string }; Returns: string }
+      promo_key: { Args: { txt: string }; Returns: string }
     }
     Enums: {
       [_ in never]: never
