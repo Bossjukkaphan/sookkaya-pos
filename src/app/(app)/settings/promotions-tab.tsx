@@ -23,6 +23,7 @@ type Unmatched = { raw_key: string; sample_text: string; uses: number }
 const KIND_LABELS: Record<string, string> = {
   promotion: "โปรโมชั่น",
   channel: "ช่องทางขาย",
+  giveaway: "ให้ฟรีเพื่อโปรโมท",
   internal: "ใช้ภายใน",
 }
 

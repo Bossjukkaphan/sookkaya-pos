@@ -200,7 +200,7 @@ export async function saveSetting(key: string, value: string): Promise<ActionRes
 
 /* ---------------- โปรโมชั่น ---------------- */
 
-const PROMO_KINDS = ["promotion", "channel", "internal"] as const
+const PROMO_KINDS = ["promotion", "channel", "giveaway", "internal"] as const
 
 function refreshPromo() {
   revalidatePath("/settings")
