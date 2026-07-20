@@ -8,11 +8,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 export const metadata = { title: "ROI ส่วนลด · สุขกายา POS" }
 
-const KIND_LABELS: Record<string, string> = {
-  promotion: "โปรโมชั่น",
-  channel: "ช่องทางขาย",
-  internal: "ใช้ภายใน",
-}
+const SECTIONS = [
+  { kind: "promotion", heading: "การตลาด", note: null },
+  {
+    kind: "channel",
+    heading: "ช่องทางขาย",
+    note: "ลูกค้าจ่ายเงินให้ช่องทางนี้ ไม่ได้จ่ายที่ร้าน",
+  },
+  {
+    kind: "internal",
+    heading: "ใช้ภายใน",
+    note: "ไม่ใช่โปรโมชั่นการตลาด แยกไว้ไม่ให้ปนกับตัวเลขข้างบน",
+  },
+] as const
 
 export default async function PromotionsInsightPage() {
   const supabase = await createClient()
@@ -31,7 +39,8 @@ export default async function PromotionsInsightPage() {
     supabase.from("v_promo_unmatched").select("uses"),
   ])
 
-  // นับใน SQL เพราะ supabase-js ดึงได้ทีละ 1,000 แถว — นับฝั่งหน้าเว็บจะเพี้ยนเมื่อร้านโต
+  // v_promo_unmatched คืนแถวละ 1 ข้อความที่ไม่ซ้ำกัน (ตอนนี้ 19 แถว) ไม่ใช่แถวละ 1 รายการขาย
+  // จึงไม่ชนเพดาน 1,000 แถวของ supabase-js แม้ยอดขายจะโตขึ้นอีกมาก
   const unmatchedCount = (unmatchedRows ?? []).reduce(
     (sum, r) => sum + Number(r.uses ?? 0),
     0
@@ -41,14 +50,18 @@ export default async function PromotionsInsightPage() {
   const rows = [...(roi ?? [])].sort(
     (a, b) => Number(b.discount_given ?? 0) - Number(a.discount_given ?? 0)
   )
-  const totalDiscount = rows.reduce((s, r) => s + Number(r.discount_given ?? 0), 0)
+
+  // นับเฉพาะโปรฯ การตลาด — ช่องทางขายและรายการใช้ภายในไม่ใช่ส่วนลดที่ร้านออกให้
+  const totalDiscount = rows
+    .filter((r) => r.kind === "promotion")
+    .reduce((s, r) => s + Number(r.discount_given ?? 0), 0)
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">ROI ส่วนลด</h1>
         <p className="text-sm text-slate-600">
-          ส่วนลดที่จ่ายไปทั้งหมด {formatBaht(totalDiscount)} บาท
+          ส่วนลดการตลาดที่จ่ายไปทั้งหมด {formatBaht(totalDiscount)} บาท
         </p>
       </div>
 
@@ -64,53 +77,91 @@ export default async function PromotionsInsightPage() {
         </Card>
       )}
 
-      {rows.map((r) => {
-        const customers = Number(r.customers ?? 0)
-        const returning = Number(r.returning_customers ?? 0)
-        const returnRate = customers > 0 ? Math.round((returning / customers) * 100) : 0
-        return (
-          <Card key={r.promotion_id}>
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-baseline justify-between gap-2 text-base">
-                <span className="min-w-0 truncate">{r.promotion_name}</span>
-                <span className="shrink-0 text-xs font-normal text-slate-500">
-                  {KIND_LABELS[r.kind ?? ""] ?? r.kind}
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-                <Stat label="ใช้ไป" value={`${r.uses ?? 0} ครั้ง`} />
-                <Stat
-                  label="ส่วนลดที่ให้"
-                  value={`${formatBaht(Number(r.discount_given ?? 0))} ฿`}
-                />
-                <Stat
-                  label="ยอดขายที่เกิด"
-                  value={`${formatBaht(Number(r.revenue ?? 0))} ฿`}
-                />
-                <Stat label="ลูกค้าที่ใช้" value={`${customers} คน`} />
-              </div>
+      {SECTIONS.map((section) => {
+        const sectionRows = rows.filter((r) => r.kind === section.kind)
+        if (sectionRows.length === 0) return null
 
-              <div className="border-t pt-2">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-slate-600">กลับมาซื้อซ้ำหลังใช้โปรฯ</span>
-                  <span
-                    className={`font-semibold ${
-                      returnRate >= 50 ? "text-emerald-800" : "text-slate-700"
-                    }`}
-                  >
-                    {returning} คน ({returnRate}%)
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">
-                  {r.first_used && r.last_used
-                    ? `ใช้ครั้งแรก ${formatThaiDate(r.first_used)} · ล่าสุด ${formatThaiDate(r.last_used)}`
-                    : null}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
+        return (
+          <div key={section.kind} className="space-y-2">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-700">
+                {section.heading}
+              </h2>
+              {section.note && (
+                <p className="text-xs text-slate-500">{section.note}</p>
+              )}
+            </div>
+
+            {sectionRows.map((r) => {
+              const customers = Number(r.customers ?? 0)
+              const returning = Number(r.returning_customers ?? 0)
+              const isChannel = r.kind === "channel"
+              const revenue = Number(r.revenue ?? 0)
+              const returnRate =
+                customers > 0 ? Math.round((returning / customers) * 100) : 0
+              return (
+                <Card key={r.promotion_id}>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="truncate text-base">
+                      {r.promotion_name}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                      <Stat label="ใช้ไป" value={`${r.uses ?? 0} ครั้ง`} />
+                      {isChannel ? (
+                        <Stat
+                          label="มูลค่าตั๋วที่ขายผ่านช่องทาง"
+                          value={`${formatBaht(Number(r.discount_given ?? 0))} ฿`}
+                        />
+                      ) : (
+                        <Stat
+                          label="ส่วนลดที่ให้"
+                          value={`${formatBaht(Number(r.discount_given ?? 0))} ฿`}
+                        />
+                      )}
+                      <Stat
+                        label="ยอดขายที่เกิด"
+                        value={
+                          revenue === 0 && Number(r.discount_given ?? 0) > 0
+                            ? "ไม่ได้บันทึก"
+                            : `${formatBaht(revenue)} ฿`
+                        }
+                      />
+                      <Stat label="ลูกค้าที่ใช้" value={`${customers} คน`} />
+                    </div>
+
+                    {revenue === 0 && Number(r.discount_given ?? 0) > 0 && (
+                      <p className="text-xs text-amber-700">
+                        ระบบไม่ได้บันทึกว่าได้รับเงินจากช่องทางนี้เท่าไหร่
+                        ตัวเลขข้างบนจึงเป็นมูลค่าตั๋วตามราคาปกติ ไม่ใช่ส่วนลดที่ร้านออกให้
+                      </p>
+                    )}
+
+                    <div className="border-t pt-2">
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-slate-600">
+                          กลับมาซื้อซ้ำหลังใช้โปรฯ
+                        </span>
+                        <span
+                          className={`font-semibold ${
+                            returnRate >= 50 ? "text-emerald-800" : "text-slate-700"
+                          }`}
+                        >
+                          {returning} คน ({returnRate}%)
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        {r.first_used && r.last_used
+                          ? `ใช้ครั้งแรก ${formatThaiDate(r.first_used)} · ล่าสุด ${formatThaiDate(r.last_used)}`
+                          : null}
+                      </p>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
         )
       })}
 
