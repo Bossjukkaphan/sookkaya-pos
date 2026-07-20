@@ -20,13 +20,16 @@ import { Card, CardContent } from "@/components/ui/card"
 
 type Therapist = { id: string; name: string }
 type Service = { id: string; name: string; price: number; commission: number }
+type Promotion = { id: string; name: string }
 
 export function PosForm({
   therapists,
   services,
+  promotions,
 }: {
   therapists: Therapist[]
   services: Service[]
+  promotions: Promotion[]
 }) {
   const [therapistId, setTherapistId] = useState("")
   const [serviceId, setServiceId] = useState("")
@@ -39,6 +42,9 @@ export function PosForm({
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
   const [couponPromo, setCouponPromo] = useState("")
+  // Gowabi ต้องพิมพ์รหัสจองเป็นเลขเสมอ จึงบังคับเป็นช่องพิมพ์
+  // กรณีอื่นเริ่มจาก dropdown แล้วเปิดช่องพิมพ์เฉพาะเมื่อเลือก "อื่นๆ"
+  const [customPromo, setCustomPromo] = useState(false)
   const [pending, startTransition] = useTransition()
 
   const service = useMemo(
@@ -67,6 +73,7 @@ export function PosForm({
     setCustomerName("")
     setCustomerPhone("")
     setCouponPromo("")
+    setCustomPromo(false)
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -175,14 +182,39 @@ export function PosForm({
           <Label htmlFor="coupon_promo">
             {isGowabi ? "รหัส Gowabi" : "คูปอง / โปรโมชั่น"}
           </Label>
-          <Input
-            id="coupon_promo"
-            name="coupon_promo"
-            className="h-12"
-            value={couponPromo}
-            onChange={(e) => setCouponPromo(e.target.value)}
-            placeholder={isGowabi ? "เช่น GWB-1234" : "ไม่มีก็เว้นว่าง"}
-          />
+          {isGowabi || customPromo ? (
+            <Input
+              id="coupon_promo"
+              name="coupon_promo"
+              className="h-12"
+              value={couponPromo}
+              onChange={(e) => setCouponPromo(e.target.value)}
+              placeholder={isGowabi ? "เช่น Gowabi 517620293" : "พิมพ์ชื่อโปรฯ"}
+            />
+          ) : (
+            <select
+              id="coupon_promo"
+              name="coupon_promo"
+              value={couponPromo}
+              onChange={(e) => {
+                if (e.target.value === "__custom__") {
+                  setCustomPromo(true)
+                  setCouponPromo("")
+                  return
+                }
+                setCouponPromo(e.target.value)
+              }}
+              className="h-12 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <option value="">— ไม่มี —</option>
+              {promotions.map((p) => (
+                <option key={p.id} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+              <option value="__custom__">อื่นๆ (พิมพ์เอง)</option>
+            </select>
+          )}
         </div>
 
         {isGowabi ? (
