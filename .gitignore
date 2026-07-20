@@ -41,3 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .superpowers/
+scripts/sale-times-raw.json
+scripts/sale-time-backfill.sql
+scripts/material-cost.sql
+scripts/sale-times.csv

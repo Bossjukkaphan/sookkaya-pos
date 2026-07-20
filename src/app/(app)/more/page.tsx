@@ -1,11 +1,17 @@
 import Link from "next/link"
-import { CreditCard, FileBarChart, Settings, Wallet } from "lucide-react"
+import { CreditCard, FileBarChart, Settings, TrendingUp, Wallet } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
 
 export const metadata = { title: "เพิ่มเติม · สุขกายา POS" }
 
 const ITEMS = [
+  {
+    href: "/sales",
+    label: "ยอดขายย้อนหลัง",
+    description: "เลือกช่วงเวลาเอง เทียบกับช่วงก่อนหน้า",
+    icon: TrendingUp,
+  },
   {
     href: "/members",
     label: "ระบบสมาชิก",

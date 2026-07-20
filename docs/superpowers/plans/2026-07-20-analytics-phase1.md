@@ -463,6 +463,15 @@ Expected: `category_types = 8` · `expenses_defaulted = 169` · `target = 400000
 **Files:**
 - ใช้ Supabase MCP `apply_migration`
 
+- [ ] **Step 0: สำรองข้อมูลก่อน**
+
+ใช้ MCP `apply_migration` ชื่อ `backup_expenses_costtype`:
+
+```sql
+create table backup_expenses_costtype_20260720 as
+select id, category, item, cost_type from public.expenses;
+```
+
 - [ ] **Step 1: ใช้ migration ชื่อ `backfill_expense_cost_type`**
 
 ```sql
@@ -522,91 +531,114 @@ order by expense_date;
 
 ## Task 6: Backfill เวลาขาย ~1,589 รายการ
 
+**หลักการ:** Python ทำหน้าที่แค่**อ่าน Excel** ส่วนการ**แปลงเวลาใช้ `parseExcelTime`
+ตัวที่มีเทสจาก Task 2** — โค้ดที่มีเทสต้องเป็นโค้ดที่รันจริง ถ้าคัดลอกตรรกะไปเขียนซ้ำ
+ในภาษาอื่น เทสจะผ่านหมดแต่ข้อมูลเขียนผิดโดยไม่มีอะไรจับได้
+
+Node 24 รันไฟล์ `.ts` ได้โดยตรง (type stripping) จึงไม่ต้องติดตั้งอะไรเพิ่ม
+
 **Files:**
-- Create: `scripts/gen-sale-time-backfill.py`
+- Create: `scripts/extract-sale-times.py` (อ่าน Excel → JSON)
+- Create: `scripts/build-sale-time-sql.ts` (แปลงเวลา + สร้าง SQL)
 
-- [ ] **Step 1: เขียนสคริปต์สร้าง SQL**
+- [ ] **Step 1: เขียนตัวอ่าน Excel**
 
-สร้าง `scripts/gen-sale-time-backfill.py`:
+สร้าง `scripts/extract-sale-times.py` — ดึงค่าดิบออกมาเฉยๆ ไม่ตีความ:
 
 ```python
-"""อ่านเวลาขายจาก Excel เดิม แล้วสร้าง SQL อัปเดต sales.sale_time
-จับคู่ด้วย receipt_no ซึ่ง unique และเก็บเลขเดิมไว้ตอน import"""
-import openpyxl, re, pathlib
+"""ดึงเลขที่ใบเสร็จกับค่าเวลาดิบจากชีทบันทึกขาย ออกเป็น JSON
+ไม่แปลงค่าใดๆ ทั้งสิ้น — การตีความเป็นหน้าที่ของ build-sale-time-sql.ts"""
+import openpyxl, json, pathlib, datetime
 from collections import Counter
 
 XLSX = "/Users/jw/Downloads/Final_SOOKKAYA_บันทึกรับจ่าย_v15_Latest 3_5_69.xlsx"
-OUT = pathlib.Path(__file__).parent / "sale-time-backfill.sql"
-
-def parse_excel_time(v):
-    """ตรรกะเดียวกับ src/lib/excel-time.ts — ถ้าแก้ที่นี่ต้องแก้ที่นั่นด้วย"""
-    if v is None or v == "":
-        return None
-    if isinstance(v, str):
-        m = re.match(r"^(\d{1,2})[.:](\d{1,2})\s*(am|pm)?$", v.strip().lower())
-        if not m:
-            return None
-        h, mi, mer = int(m.group(1)), int(m.group(2).ljust(2, "0")[:2]), m.group(3)
-        if mer == "pm" and h < 12: h += 12
-        if mer == "am" and h == 12: h = 0
-        return f"{h:02d}:{mi:02d}" if 0 <= h <= 23 and 0 <= mi <= 59 else None
-    if not isinstance(v, (int, float)) or v < 0:
-        return None
-    if 0 < v < 1:
-        total = round(v * 1440)
-        return f"{total // 60:02d}:{total % 60:02d}"
-    if v >= 100:
-        h, mi = int(v // 100), round(v % 100)
-        return f"{h:02d}:{mi:02d}" if 0 <= h <= 23 and 0 <= mi <= 59 else None
-    whole, _, frac = str(v).partition(".")
-    h = int(whole)
-    mi = int(frac.ljust(2, "0")[:2]) if frac else 0
-    return f"{h:02d}:{mi:02d}" if 0 <= h <= 23 and 0 <= mi <= 59 else None
+OUT = pathlib.Path(__file__).parent / "sale-times-raw.json"
 
 wb = openpyxl.load_workbook(XLSX, data_only=True)
 ws = wb["บันทึกขาย"]
 
-seen, pairs, stats = Counter(), [], Counter()
+seen, rows, skipped = Counter(), [], 0
 for r in range(3, ws.max_row + 1):
     row = [ws.cell(r, c).value for c in range(1, 8)]
     if row[0] is None and row[3] is None and row[6] is None:
         continue
     receipt = str(row[2]).strip() if row[2] else None
     if not receipt:
-        stats["ไม่มีเลขใบเสร็จ"] += 1
+        skipped += 1
         continue
     seen[receipt] += 1
-    if seen[receipt] > 1:                      # ตอน import เลขซ้ำถูกต่อท้าย -2
+    if seen[receipt] > 1:                     # ตอน import เลขซ้ำถูกต่อท้าย -2
         receipt = f"{receipt}-{seen[receipt]}"
-    t = parse_excel_time(row[1])
-    if t is None:
-        stats["แปลงไม่ได้"] += 1
-        continue
-    pairs.append((receipt, t))
-    stats["แปลงได้"] += 1
 
-values = ",\n".join(f"('{r}','{t}')" for r, t in pairs)
-OUT.write_text(f"""update public.sales s
+    raw = row[1]
+    if isinstance(raw, datetime.time):
+        raw = raw.strftime("%H:%M")
+    elif isinstance(raw, datetime.datetime):
+        raw = raw.strftime("%H:%M")
+    rows.append({"receipt_no": receipt, "raw": raw})
+
+OUT.write_text(json.dumps(rows, ensure_ascii=False))
+print(f"อ่านได้ {len(rows)} แถว · ไม่มีเลขใบเสร็จ {skipped} แถว")
+print(f"เขียนไปที่ {OUT}")
+```
+
+- [ ] **Step 2: เขียนตัวสร้าง SQL ที่ใช้ parser ตัวที่มีเทส**
+
+สร้าง `scripts/build-sale-time-sql.ts`:
+
+```ts
+import { readFileSync, writeFileSync } from "node:fs"
+import { parseExcelTime } from "../src/lib/excel-time.ts"
+
+type RawRow = { receipt_no: string; raw: unknown }
+
+const rows: RawRow[] = JSON.parse(
+  readFileSync(new URL("./sale-times-raw.json", import.meta.url), "utf8")
+)
+
+const parsed: { receipt: string; time: string }[] = []
+let unparsed = 0
+
+for (const row of rows) {
+  const time = parseExcelTime(row.raw)
+  if (time === null) {
+    unparsed += 1
+    continue
+  }
+  parsed.push({ receipt: row.receipt_no, time })
+}
+
+const values = parsed
+  .map((p) => `('${p.receipt.replace(/'/g, "''")}','${p.time}')`)
+  .join(",\n")
+
+writeFileSync(
+  new URL("./sale-time-backfill.sql", import.meta.url),
+  `update public.sales s
 set sale_time = v.t::time
 from (values
-{values}
+${values}
 ) as v(receipt_no, t)
 where s.receipt_no = v.receipt_no
   and s.sale_time is null;
-""")
+`
+)
 
-print(dict(stats))
-print(f"เขียน {len(pairs)} แถวไปที่ {OUT}")
+console.log(`แปลงได้ ${parsed.length} · แปลงไม่ได้ ${unparsed}`)
 ```
 
-- [ ] **Step 2: รันสคริปต์**
+- [ ] **Step 3: รันทั้งสองขั้น**
 
-Run: `python3 scripts/gen-sale-time-backfill.py`
+```bash
+python3 scripts/extract-sale-times.py
+node scripts/build-sale-time-sql.ts
+```
+
 Expected: `แปลงได้` ประมาณ **1,589** · `แปลงไม่ได้` ประมาณ **664** (ส่วนใหญ่คือช่องว่าง)
 
 ถ้า `แปลงได้` ต่ำกว่า 1,500 มาก **หยุด** — แปลว่ากฎการแปลงเพี้ยน
 
-- [ ] **Step 3: นับจำนวนก่อนอัปเดต**
+- [ ] **Step 4: นับจำนวนก่อนอัปเดต**
 
 รัน SQL:
 
@@ -616,12 +648,21 @@ select count(sale_time) as before_count from public.sales;
 
 Expected: `6`
 
-- [ ] **Step 4: รัน SQL ที่สร้างไว้**
+- [ ] **Step 5: สำรองข้อมูลก่อนแก้**
+
+ใช้ MCP `apply_migration` ชื่อ `backup_sales_time`:
+
+```sql
+create table backup_sales_time_20260720 as
+select id, receipt_no, sale_time from public.sales;
+```
+
+- [ ] **Step 6: รัน SQL ที่สร้างไว้**
 
 อ่านไฟล์ `scripts/sale-time-backfill.sql` แล้วรันผ่าน MCP `apply_migration`
 ชื่อ migration: `backfill_sale_time`
 
-- [ ] **Step 5: ยืนยันผล**
+- [ ] **Step 7: ยืนยันผล**
 
 รัน SQL:
 
@@ -637,11 +678,15 @@ from public.sales;
 Expected: `with_time` ประมาณ **1,595** (1,589 + 6 เดิม) · `earliest` ไม่ควรก่อน 09:00
 · `outside_hours = 0` (ร้านเปิด 10:00–22:00 ถ้ามีนอกช่วงมากแปลว่าแปลงผิด)
 
-- [ ] **Step 6: Commit สคริปต์**
+- [ ] **Step 8: Commit สคริปต์**
+
+ไฟล์ผลลัพธ์ (`sale-times-raw.json`, `sale-time-backfill.sql`) เป็นของชั่วคราว
+ไม่ต้อง commit — เพิ่มลง `.gitignore` แทน
 
 ```bash
-git add scripts/gen-sale-time-backfill.py
-git commit -m "feat: สคริปต์กู้เวลาขายจาก Excel"
+printf 'scripts/sale-times-raw.json\nscripts/sale-time-backfill.sql\nscripts/material-cost.sql\n' >> .gitignore
+git add scripts/extract-sale-times.py scripts/build-sale-time-sql.ts .gitignore
+git commit -m "feat: กู้เวลาขายจาก Excel โดยใช้ parser ตัวที่มีเทส"
 ```
 
 ---
@@ -719,9 +764,16 @@ print(f"เขียนไปที่ {OUT}")
 Run: `python3 scripts/gen-material-cost.py`
 Expected: `อ่านได้ 34 เมนู · ข้าม 0`
 
-- [ ] **Step 3: รัน SQL ที่สร้างไว้**
+- [ ] **Step 3: สำรองข้อมูลก่อน แล้วรัน SQL ที่สร้างไว้**
 
-อ่าน `scripts/material-cost.sql` แล้วรันผ่าน MCP `apply_migration`
+ใช้ MCP `apply_migration` ชื่อ `backup_services_cost`:
+
+```sql
+create table backup_services_cost_20260720 as
+select id, name, material_cost from public.services;
+```
+
+จากนั้นอ่าน `scripts/material-cost.sql` แล้วรันผ่าน MCP `apply_migration`
 ชื่อ migration: `backfill_service_material_cost`
 
 - [ ] **Step 4: ยืนยันว่าครบทุกเมนู**

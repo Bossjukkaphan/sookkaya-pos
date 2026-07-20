@@ -1,7 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
-import { DEFAULT_MIN_COMMISSION, formatBaht } from "@/lib/constants"
+import { formatBaht } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -45,11 +45,13 @@ export default async function ReportsPage({
     { data: sales },
     { data: expenses },
     { data: therapists },
-    { data: guaranteeSetting },
+    { data: therapistDaily },
   ] = await Promise.all([
     supabase
       .from("sales")
-      .select("sale_date, therapist_id, service_name, net_amount, commission, request_fee, payment_method")
+      .select(
+        "sale_date, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method"
+      )
       .gte("sale_date", from)
       .lte("sale_date", to),
     supabase
@@ -59,48 +61,34 @@ export default async function ReportsPage({
       .lte("expense_date", to),
     supabase.from("therapists").select("id, name"),
     supabase
-      .from("settings")
-      .select("value")
-      .eq("key", "min_commission_guarantee")
-      .single(),
+      .from("v_therapist_daily")
+      .select("work_date, therapist_id, sessions, total_commission, net_commission, request_fee, total_income")
+      .gte("work_date", from)
+      .lte("work_date", to),
   ])
 
   const rows = sales ?? []
-  const guarantee = Number(guaranteeSetting?.value) || DEFAULT_MIN_COMMISSION
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
 
-  const revenue = rows.reduce((sum, s) => sum + Number(s.net_amount), 0)
+  const revenue = rows.reduce(
+    (sum, s) => sum + Number(s.revenue_recognize ?? s.net_amount), 0
+  )
 
-  // ค่ามือต้องคิดประกันรายวันต่อคน ไม่ใช่รวมทั้งเดือนแล้วค่อยเทียบ
-  const perDayTherapist = new Map<string, { commission: number; requestFee: number }>()
-  for (const s of rows) {
-    const key = `${s.sale_date}|${s.therapist_id}`
-    const entry = perDayTherapist.get(key) ?? { commission: 0, requestFee: 0 }
-    entry.commission += Number(s.commission ?? 0)
-    entry.requestFee += Number(s.request_fee)
-    perDayTherapist.set(key, entry)
-  }
+  const commissionCost = (therapistDaily ?? []).reduce(
+    (sum, d) => sum + Number(d.total_income ?? 0), 0
+  )
+  const guaranteeTopUp = (therapistDaily ?? []).reduce(
+    (sum, d) => sum + (Number(d.net_commission ?? 0) - Number(d.total_commission ?? 0)), 0
+  )
 
-  let commissionCost = 0
-  let guaranteeTopUp = 0
   const byTherapist = new Map<string, { income: number; days: number; sessions: number }>()
-
-  for (const [key, v] of perDayTherapist) {
-    const therapistId = key.split("|")[1]
-    const net = Math.max(v.commission, guarantee)
-    guaranteeTopUp += net - v.commission
-    const income = net + v.requestFee
-    commissionCost += income
-
-    const agg = byTherapist.get(therapistId) ?? { income: 0, days: 0, sessions: 0 }
-    agg.income += income
+  for (const d of therapistDaily ?? []) {
+    const id = d.therapist_id ?? ""
+    const agg = byTherapist.get(id) ?? { income: 0, days: 0, sessions: 0 }
+    agg.income += Number(d.total_income ?? 0)
     agg.days += 1
-    byTherapist.set(therapistId, agg)
-  }
-
-  for (const s of rows) {
-    const agg = byTherapist.get(s.therapist_id ?? "")
-    if (agg) agg.sessions += 1
+    agg.sessions += Number(d.sessions ?? 0)
+    byTherapist.set(id, agg)
   }
 
   // รายจ่ายหมวด HR/payroll คือ "ค่ามือที่จ่ายจริง" ซึ่งเป็นตัวเดียวกับ commissionCost

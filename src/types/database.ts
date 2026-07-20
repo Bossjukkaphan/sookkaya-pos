@@ -439,6 +439,32 @@ export type Database = {
         }
         Relationships: []
       }
+      v_daily_summary: {
+        Row: {
+          cash_in: number | null
+          discount_total: number | null
+          gross_sales: number | null
+          net_revenue: number | null
+          sale_date: string | null
+          sessions: number | null
+        }
+        Relationships: []
+      }
+      v_therapist_daily: {
+        Row: {
+          guarantee_amount: number | null
+          is_paid: boolean | null
+          net_commission: number | null
+          request_fee: number | null
+          sessions: number | null
+          status: string | null
+          therapist_id: string | null
+          total_commission: number | null
+          total_income: number | null
+          work_date: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       app_role: { Args: never; Returns: string }
