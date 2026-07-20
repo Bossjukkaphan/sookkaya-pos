@@ -555,6 +555,14 @@ export type Database = {
         }
         Relationships: []
       }
+      v_promo_unmatched: {
+        Row: {
+          raw_key: string | null
+          sample_text: string | null
+          uses: number | null
+        }
+        Relationships: []
+      }
       v_monthly_pl: {
         Row: {
           cash_in: number | null

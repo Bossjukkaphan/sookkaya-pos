@@ -5,7 +5,6 @@ import { UsersTab } from "./users-tab"
 import { GeneralTab } from "./general-tab"
 import { CostTypesTab } from "./cost-types-tab"
 import { PromotionsTab } from "./promotions-tab"
-import { promoKey } from "@/lib/promo"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export const metadata = { title: "ตั้งค่า · สุขกายา POS" }
@@ -23,8 +22,7 @@ export default async function SettingsPage() {
     { data: categoryTypes },
     { data: recentExpenses },
     { data: promotions },
-    { data: promoSales },
-    { data: aliases },
+    { data: unmatchedRows },
   ] = await Promise.all([
     supabase.from("profiles").select("email, role").single(),
     supabase.from("therapists").select("id, name, status").order("name"),
@@ -46,10 +44,9 @@ export default async function SettingsPage() {
       .select("id, name, kind, is_active")
       .order("name"),
     supabase
-      .from("sales")
-      .select("coupon_promo")
-      .not("coupon_promo", "is", null),
-    supabase.from("promotion_aliases").select("raw_key"),
+      .from("v_promo_unmatched")
+      .select("raw_key, sample_text, uses")
+      .order("uses", { ascending: false }),
   ])
 
   const role = profile?.role ?? "staff"
@@ -60,21 +57,12 @@ export default async function SettingsPage() {
     (settingsRows ?? []).map((s) => [s.key, s.value ?? ""])
   )
 
-  // นับข้อความดิบที่ยังไม่มีแถวใน promotion_aliases เพื่อให้เจ้าของร้านมาจับคู่
-  const knownKeys = new Set((aliases ?? []).map((a) => a.raw_key))
-  const unmatchedMap = new Map<string, { sample_text: string; uses: number }>()
-  for (const row of promoSales ?? []) {
-    const text = (row.coupon_promo ?? "").trim()
-    if (!text) continue
-    const key = promoKey(text)
-    if (knownKeys.has(key)) continue
-    const current = unmatchedMap.get(key) ?? { sample_text: text, uses: 0 }
-    current.uses += 1
-    unmatchedMap.set(key, current)
-  }
-  const unmatched = [...unmatchedMap.entries()]
-    .map(([raw_key, v]) => ({ raw_key, ...v }))
-    .sort((a, b) => b.uses - a.uses)
+  // view คืนค่า nullable ตามธรรมชาติของ view ใน Postgres แต่ทุกแถวมีค่าจริงเสมอ
+  const unmatched = (unmatchedRows ?? []).map((r) => ({
+    raw_key: r.raw_key ?? "",
+    sample_text: r.sample_text ?? "",
+    uses: Number(r.uses ?? 0),
+  }))
 
   return (
     <div className="space-y-4">
