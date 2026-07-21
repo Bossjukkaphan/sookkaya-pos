@@ -574,10 +574,13 @@ export type Database = {
           net_revenue: number | null
           onetime_cost: number | null
           payroll_paid: number | null
+          prev_net_revenue: number | null
           profit_accrual: number | null
           profit_cash: number | null
           sessions: number | null
           variable_cost: number | null
+          ytd_net_revenue: number | null
+          ytd_profit_cash: number | null
         }
         Relationships: []
       }

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react"
 import { Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { deleteSale } from "./sale-actions"
+import { deleteSale } from "../sale-actions"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
