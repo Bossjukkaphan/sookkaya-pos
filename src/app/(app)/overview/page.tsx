@@ -2,9 +2,16 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
-import { todayInShopTz } from "@/lib/datetime"
-import { isMonthIncomplete } from "@/lib/finance"
-import { BarChart } from "@/components/charts/bar-chart"
+import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { isMonthIncomplete, targetRunRate } from "@/lib/finance"
+import {
+  BUCKET_CLASS,
+  BUCKET_LABEL,
+  creditBucket,
+  summarizeCredit,
+  type CreditBucket,
+} from "@/lib/member-credit"
+import { GroupedBarChart } from "@/components/charts/grouped-bar-chart"
 import { LineChart } from "@/components/charts/line-chart"
 import { StatCard } from "@/components/stat-card"
 import { InsightsAccessDenied, canSeeInsights } from "../insights/shared"
@@ -15,6 +22,18 @@ import { Button } from "@/components/ui/button"
 export const metadata = { title: "ภาพรวม · สุขกายา POS" }
 
 const n = (x: number | string | null | undefined) => Number(x ?? 0)
+
+/**
+ * เพดาน 1000 แถวของ supabase-js ตัดผลลัพธ์เงียบๆ — ขอมาน้อยกว่านั้นแล้วเทียบกับ
+ * count จริง จะได้รู้ตัวว่าโดนตัดและบอกผู้ใช้ได้ แทนที่จะแสดงตัวเลขที่ขาดไปเฉยๆ
+ */
+const MEMBER_LIMIT = 500
+
+/** ห่างกันกี่วัน · ทั้งสองค่าเป็น YYYY-MM-DD ตามเวลาไทยแล้ว */
+function daysBetween(from: string, to: string): number {
+  const ms = Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)
+  return Math.round(ms / 86_400_000)
+}
 
 export default async function OverviewPage({
   searchParams,
@@ -29,21 +48,102 @@ export default async function OverviewPage({
   }
 
   const params = await searchParams
-  const month = params.month ?? todayInShopTz().slice(0, 7)
+  const today = todayInShopTz()
+  const month = params.month ?? today.slice(0, 7)
 
-  const [{ data: plRows }, { data: targetSetting }, { count: memberCount }] =
-    await Promise.all([
-      supabase.from("v_monthly_pl").select("*").order("month"),
-      supabase
-        .from("settings")
-        .select("value")
-        .eq("key", "monthly_target")
-        .maybeSingle(),
-      supabase
-        .from("customers")
-        .select("id", { count: "exact", head: true })
-        .eq("customer_type", "สมาชิก"),
-    ])
+  // เดือนถัดไปแบบ exclusive — ใช้กรองช่วงวันของ view รายวัน
+  const monthStart = `${month}-01`
+  const nextMonthStart = `${shiftMonth(month, 1)}-01`
+
+  const [
+    { data: plRows },
+    { data: targetSetting },
+    { data: memberRows, count: memberCount },
+    { data: therapistDays },
+  ] = await Promise.all([
+    supabase.from("v_monthly_pl").select("*").order("month"),
+    supabase
+      .from("settings")
+      .select("value")
+      .eq("key", "monthly_target")
+      .maybeSingle(),
+    // member_balances มีหนึ่งแถวต่อ "ลูกค้าทุกคน" (พันกว่าแถว) ไม่ใช่ต่อสมาชิก
+    // ถ้าดึงทั้ง view supabase-js จะตัดที่ 1000 แถวเงียบๆ แล้วยอดคงค้างจะขาด
+    // และ 960 กว่าคนที่ยอดศูนย์คือลูกค้าเดินเข้าร้านที่ไม่เคยเติมเงิน
+    // ไม่ใช่ "สมาชิกที่เครดิตหมด" — จึงต้องคัดจากรายชื่อสมาชิกก่อน
+    supabase
+      .from("customers")
+      .select("id", { count: "exact" })
+      .eq("customer_type", "สมาชิก")
+      .limit(MEMBER_LIMIT),
+    // หนึ่งเดือนมี ~31 วัน × จำนวนหมอนวด (ปัจจุบัน 6 คน) — ห่างจากเพดาน 1000 มาก
+    supabase
+      .from("v_therapist_daily")
+      .select("therapist_id")
+      .gte("work_date", monthStart)
+      .lt("work_date", nextMonthStart)
+      .limit(1000),
+  ])
+
+  const memberIds = (memberRows ?? [])
+    .map((m) => m.id)
+    .filter((id): id is string => id !== null)
+  const memberTruncated = (memberCount ?? 0) > memberIds.length
+
+  const { data: balanceRows } =
+    memberIds.length > 0
+      ? await supabase
+          .from("member_balances")
+          .select("customer_id, name, nickname, credit_balance")
+          .in("customer_id", memberIds)
+      : { data: [] }
+
+  const balances = (balanceRows ?? []).map((b) => ({
+    customerId: b.customer_id,
+    name: b.nickname || b.name || "ไม่ระบุชื่อ",
+    // ยอดมาจาก view ล้วนๆ — หน้านี้ไม่คิดสูตรเครดิตเอง
+    balance: n(b.credit_balance),
+  }))
+
+  const creditSummary = summarizeCredit(balances)
+  const lowest = balances
+    .filter((b) => b.balance > 0)
+    .sort((a, b) => a.balance - b.balance)
+    .slice(0, 10)
+
+  const lowestIds = lowest
+    .map((b) => b.customerId)
+    .filter((id): id is string => id !== null)
+
+  // ระดับสมาชิกไม่มีใน member_balances จึงหยิบจากใบเติมเงินล่าสุดของ 10 คนนี้
+  const [{ data: lastVisits }, { data: tierRows }] =
+    lowestIds.length > 0
+      ? await Promise.all([
+          supabase
+            .from("v_customer_ltv")
+            .select("customer_id, last_visit")
+            .in("customer_id", lowestIds),
+          supabase
+            .from("member_topups")
+            .select("customer_id, tier, topup_date")
+            .in("customer_id", lowestIds)
+            .order("topup_date", { ascending: false }),
+        ])
+      : [{ data: [] }, { data: [] }]
+
+  const lastVisitOf = new Map(
+    (lastVisits ?? []).map((v) => [v.customer_id, v.last_visit])
+  )
+  // เรียงจากใหม่ไปเก่าแล้ว — ใบแรกของแต่ละคนคือระดับล่าสุด
+  const tierOf = new Map<string, string>()
+  for (const t of tierRows ?? []) {
+    if (!tierOf.has(t.customer_id)) tierOf.set(t.customer_id, t.tier)
+  }
+
+  // จำนวนหมอนวดที่มีงานในเดือนนั้น — นับหัวจาก view เดียวกับที่คิดค่ามือ
+  const therapistHeads = new Set(
+    (therapistDays ?? []).map((t) => t.therapist_id)
+  ).size
 
   const rows = (plRows ?? []).filter(
     (r): r is typeof r & { month: string } => r.month !== null
@@ -59,6 +159,13 @@ export default async function OverviewPage({
   const ytdRevenue = n(selected?.ytd_net_revenue)
   const ytdProfit = n(selected?.ytd_profit_cash)
   const fixedCost = n(selected?.fixed_cost)
+  const expenseTotal = n(selected?.expense_total)
+  // commission_cost มาจาก v_therapist_daily ซึ่งรวมประกันมือ 500/วันไว้แล้ว
+  // ถ้าไปบวก sales.commission เองจะได้ต่ำกว่าจริงทุกครั้งที่มีคนทำไม่ถึงประกัน
+  const commissionCost = n(selected?.commission_cost)
+
+  const expensePct = netRevenue > 0 ? (expenseTotal / netRevenue) * 100 : null
+  const hrPct = netRevenue > 0 ? (commissionCost / netRevenue) * 100 : null
 
   // margin เป็นการหารเลขสองตัวที่ view ให้มาแล้ว ไม่ใช่การนิยามสูตรเงินใหม่
   // เดือนที่มีแต่รายจ่ายไม่มียอดขาย หาร margin ไม่ได้ — 0.0% จะอ่านเป็น "เท่าทุน" ซึ่งตรงข้ามกับความจริง
@@ -69,6 +176,8 @@ export default async function OverviewPage({
   // เปอร์เซ็นต์จริงไว้แสดงเป็นข้อความ · หนีบเฉพาะความกว้างแถบ ไม่งั้นแถบล้นกล่อง
   const targetPct = target > 0 ? (netRevenue / target) * 100 : 0
   const targetRemaining = target - netRevenue
+  // วันคิดจากเวลาไทยเท่านั้น · แสดงเฉพาะเดือนปัจจุบันที่ยังไม่ถึงเป้า
+  const runRate = target > 0 ? targetRunRate(today, month, targetRemaining) : null
 
   const precedingFixed = rows
     .filter((r) => r.month < month)
@@ -80,6 +189,14 @@ export default async function OverviewPage({
   const revenuePoints = last6.map((r) => ({
     label: monthShortLabel(r.month),
     value: n(r.net_revenue),
+  }))
+  const expensePoints = last6.map((r) => ({
+    label: monthShortLabel(r.month),
+    value: n(r.expense_total),
+  }))
+  const profitPoints = last6.map((r) => ({
+    label: monthShortLabel(r.month),
+    value: n(r.profit_cash),
   }))
   const marginPoints = last6.map((r) => ({
     label: monthShortLabel(r.month),
@@ -134,6 +251,15 @@ export default async function OverviewPage({
                 ? ` · เหลืออีก ${formatBaht(targetRemaining)} ฿`
                 : ` · เกินเป้า ${formatBaht(-targetRemaining)} ฿`}
             </p>
+            {runRate && (
+              <p className="text-[11px] text-emerald-100">
+                ต้องทำอีกวันละ{" "}
+                <span className="font-semibold text-white">
+                  {formatBaht(runRate.perDay)} ฿
+                </span>{" "}
+                · เหลือ {runRate.daysLeft} วัน
+              </p>
+            )}
           </>
         )}
 
@@ -187,12 +313,37 @@ export default async function OverviewPage({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <StatCard
+          label={`รายจ่าย ${monthShortLabel(month)}`}
+          value={`${formatBaht(expenseTotal)} ฿`}
+          hint={
+            expensePct === null
+              ? "ยังไม่มีรายได้ให้เทียบสัดส่วน"
+              : `${expensePct.toFixed(1)}% ของรายได้`
+          }
+          tone={expensePct !== null && expensePct > 100 ? "bad" : "normal"}
+        />
+        <StatCard
+          label={`ค่ามือหมอนวด ${monthShortLabel(month)}`}
+          value={`${formatBaht(commissionCost)} ฿`}
+          hint={`HR ${hrPct === null ? "—" : hrPct.toFixed(1)}% ของรายได้ · ${therapistHeads} คน`}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">รายได้ 6 เดือนล่าสุด</CardTitle>
+            <CardTitle className="text-base">รายได้ · รายจ่าย · กำไร 6 เดือน</CardTitle>
           </CardHeader>
           <CardContent>
-            <BarChart points={revenuePoints} format={(v) => `${formatBaht(v)} ฿`} />
+            <GroupedBarChart
+              series={[
+                { name: "รายได้", color: "#059669", points: revenuePoints },
+                { name: "รายจ่าย", color: "#f97316", points: expensePoints },
+              ]}
+              line={{ name: "กำไรเงินสด", color: "#1e293b", points: profitPoints }}
+              format={(v) => `${formatBaht(v)} ฿`}
+            />
           </CardContent>
         </Card>
         <Card>
@@ -207,6 +358,97 @@ export default async function OverviewPage({
 
       <Card>
         <CardHeader className="pb-2">
+          <CardTitle className="text-base">เครดิตสมาชิกที่ต้องจับตา</CardTitle>
+          {/* บล็อกนี้ไม่ได้ผูกกับเดือนที่เลือก — ยอดเครดิตมีค่าเดียวคือ ณ ตอนนี้
+              ต้องเขียนบอกให้ชัด ไม่งั้นคนที่กดย้อนไป มี.ค. จะอ่านว่าเป็นยอดของ มี.ค. */}
+          <p className="text-xs text-slate-500">
+            ยอด ณ วันนี้ ({formatThaiDate(today)}) ไม่ใช่ยอดของ{" "}
+            {monthLabel(month)} — เครดิตคงเหลือมีค่าเดียวคือค่าปัจจุบัน
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {memberTruncated && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              แสดงเฉพาะสมาชิก {memberIds.length} คนแรกจากทั้งหมด {memberCount} คน
+              ตัวเลขในบล็อกนี้จึงยังไม่ครบ
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(["empty", "low", "mid", "ok"] as CreditBucket[]).map((b) => (
+              <div key={b} className={`rounded-lg border px-3 py-2 ${BUCKET_CLASS[b]}`}>
+                <p className="text-xs">{BUCKET_LABEL[b]}</p>
+                <p className="text-lg font-bold">{creditSummary.counts[b]} คน</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-baseline justify-between rounded-lg bg-slate-50 px-3 py-2">
+            <span className="text-sm">เครดิตคงค้างทั้งหมด</span>
+            <span className="text-lg font-bold">
+              {formatBaht(creditSummary.liability)} ฿
+            </span>
+          </div>
+          <p className="text-xs text-slate-500">
+            คือภาระที่ร้านต้องให้บริการในอนาคต ไม่ใช่รายได้
+          </p>
+
+          {lowest.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500">
+              ไม่มีสมาชิกที่ยังมีเครดิตเหลือ
+            </p>
+          ) : (
+            <div>
+              <p className="mb-1 text-xs text-slate-500">
+                10 คนที่เครดิตเหลือน้อยที่สุด — ควรชวนเติมก่อนหมด
+              </p>
+              <ul className="divide-y text-sm">
+                {lowest.map((m) => {
+                  const tier = m.customerId ? tierOf.get(m.customerId) : undefined
+                  const lastVisit = m.customerId
+                    ? lastVisitOf.get(m.customerId)
+                    : undefined
+                  const gap = lastVisit ? daysBetween(lastVisit, today) : null
+                  return (
+                    <li
+                      key={m.customerId ?? m.name}
+                      className="flex items-center justify-between gap-3 py-1.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {m.name}
+                          {tier && (
+                            <span className="ml-1.5 text-[11px] font-normal text-slate-500">
+                              {tier}
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-[11px] text-slate-500">
+                          {gap === null
+                            ? "ยังไม่เคยมาใช้บริการ"
+                            : `มาล่าสุด ${gap} วันก่อน`}
+                        </p>
+                      </div>
+                      <span
+                        className={`shrink-0 font-semibold ${
+                          creditBucket(m.balance) === "low"
+                            ? "text-amber-700"
+                            : "text-slate-700"
+                        }`}
+                      >
+                        {formatBaht(m.balance)} ฿
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
           <CardTitle className="text-base">สรุปรายเดือน</CardTitle>
         </CardHeader>
         <CardContent className="px-0">
@@ -215,6 +457,7 @@ export default async function OverviewPage({
               <tr className="text-xs text-slate-500">
                 <th className="px-4 py-1 text-left font-normal">เดือน</th>
                 <th className="px-4 py-1 text-right font-normal">รายได้</th>
+                <th className="px-4 py-1 text-right font-normal">รายจ่าย</th>
                 <th className="px-4 py-1 text-right font-normal">กำไรเงินสด</th>
               </tr>
             </thead>
@@ -226,6 +469,9 @@ export default async function OverviewPage({
                 >
                   <td className="px-4 py-1.5">{monthShortLabel(r.month)}</td>
                   <td className="px-4 py-1.5 text-right">{formatBaht(n(r.net_revenue))}</td>
+                  <td className="px-4 py-1.5 text-right text-orange-700">
+                    {formatBaht(n(r.expense_total))}
+                  </td>
                   <td
                     className={`px-4 py-1.5 text-right ${
                       n(r.profit_cash) < 0 ? "text-red-700" : ""
