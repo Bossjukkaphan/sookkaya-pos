@@ -130,7 +130,7 @@ export default async function OverviewPage({
             </div>
             <p className="mt-1 text-[11px] text-emerald-100">
               เป้า {formatBaht(target)} ฿ · ทำได้ {targetPct.toFixed(1)}%
-              {targetRemaining > 0
+              {targetRemaining >= 0
                 ? ` · เหลืออีก ${formatBaht(targetRemaining)} ฿`
                 : ` · เกินเป้า ${formatBaht(-targetRemaining)} ฿`}
             </p>
