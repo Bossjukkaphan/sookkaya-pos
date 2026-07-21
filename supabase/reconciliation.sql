@@ -58,7 +58,11 @@ actual(check_name, actual_value) as (
   where sale_date between '2026-07-01' and '2026-07-19'
 
   union all
+  -- ผูกขอบเขตวันเหมือนข้ออื่น: ตัวเลขนี้ตรวจว่า "ข้อมูลที่ import มาถูกต้อง"
+  -- ไม่ได้ตรวจยอดเครดิตคงเหลือปัจจุบัน ถ้าไม่ผูกวัน ทุกครั้งที่มีสมาชิกจ่ายด้วยเครดิต
+  -- ชุดตรวจจะ FAIL ทั้งที่ไม่มีอะไรผิด แล้วคนจะเลิกเชื่อชุดตรวจ
   select 'member_credit_used', round(sum(credit_used)) from public.sales
+  where sale_date <= '2026-07-19'
 
   union all
   select 'commission_2026_06', round(sum(total_income))
