@@ -1,7 +1,14 @@
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
-import { DeleteSaleButton } from "./sale-row-actions"
+import { SaleRowActions } from "./sale-row-actions"
+import type {
+  EditableSale,
+  MemberBalance,
+  Promotion,
+  Service,
+  Therapist,
+} from "./edit-sale-dialog"
 import { DateFilter } from "./date-filter"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +34,11 @@ export default async function TodayPage({
   const to = rawFrom <= rawTo ? rawTo : rawFrom
   const isSingleDay = from === to
 
+  // ทั้งสองปลายต้องอยู่ในเดือนปัจจุบัน เพราะ action ปฏิเสธรายการของเดือนก่อน
+  // คำนวณก่อนดึงข้อมูล เพราะยอดเครดิตสมาชิกใช้เฉพาะในกล่องแก้ไข ถ้าแก้ไม่ได้ก็ไม่ต้องดึง
+  const editable =
+    from.slice(0, 7) === today.slice(0, 7) && to.slice(0, 7) === today.slice(0, 7)
+
   // ยอดสรุปดึงจาก view รายวัน ไม่ได้บวกจากรายการที่แสดง
   // เพราะรายการถูกตัดที่ ROW_CAP แถว ถ้าบวกจากตรงนั้นตัวเลขจะต่ำกว่าจริงโดยไม่มีใครรู้
   // view คืนวันละแถว ช่วงเดือนหนึ่งจึงไม่เกิน ~31 แถว เพดานไม่มีผล
@@ -35,6 +47,9 @@ export default async function TodayPage({
     { data: therapists },
     { data: dailySummary },
     { data: therapistDaily },
+    { data: services },
+    { data: promotions },
+    { data: memberBalances },
   ] = await Promise.all([
     supabase
       .from("sales")
@@ -44,7 +59,8 @@ export default async function TodayPage({
       .order("sale_date", { ascending: false })
       .order("sale_time", { ascending: false })
       .limit(ROW_CAP),
-    supabase.from("therapists").select("id, name"),
+    // ไม่กรอง status — หมอที่ลาออกแล้วยังต้องมีชื่อบนรายการเก่า
+    supabase.from("therapists").select("id, name, status").order("name"),
     supabase
       .from("v_daily_summary")
       .select("sale_date, sessions, gross_sales")
@@ -55,15 +71,51 @@ export default async function TodayPage({
       .select("work_date, therapist_id, sessions, request_fee, total_income")
       .gte("work_date", from)
       .lte("work_date", to),
+    supabase
+      .from("services")
+      .select("id, name, price, commission")
+      .eq("is_active", true)
+      .order("name"),
+    // ใช้ภายใน (Member / ถ่ายคอนเทนต์) ไม่ต้องขึ้นเป็นตัวเลือกให้พนักงานเลือกผิด
+    supabase
+      .from("promotions")
+      .select("id, name")
+      .eq("is_active", true)
+      .neq("kind", "internal")
+      .order("name"),
+    editable
+      ? supabase
+          .from("member_balances")
+          .select("customer_id, credit_balance, credit_granted, cash_paid")
+      : Promise.resolve({ data: null }),
   ])
 
   const rows = sales ?? []
   const truncated = rows.length === ROW_CAP
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
 
-  // ทั้งสองปลายต้องอยู่ในเดือนปัจจุบัน เพราะ action ปฏิเสธรายการของเดือนก่อน
-  const editable =
-    from.slice(0, 7) === today.slice(0, 7) && to.slice(0, 7) === today.slice(0, 7)
+  // ตัวเลือกในฟอร์มแก้ไขใช้เฉพาะหมอที่ยังทำงานอยู่ ส่วนการแสดงผลใช้ map ด้านบนที่ครบทุกคน
+  const activeTherapists: Therapist[] = (therapists ?? [])
+    .filter((t) => t.status === "active")
+    .map((t) => ({ id: t.id, name: t.name }))
+
+  const balanceByCustomer = new Map<string, MemberBalance>(
+    (memberBalances ?? []).map((b) => [
+      String(b.customer_id),
+      {
+        credit_balance: Number(b.credit_balance ?? 0),
+        credit_granted: Number(b.credit_granted ?? 0),
+        cash_paid: Number(b.cash_paid ?? 0),
+      },
+    ])
+  )
+
+  const editOptions = {
+    therapists: activeTherapists,
+    services: (services ?? []) as Service[],
+    promotions: (promotions ?? []) as Promotion[],
+    balanceByCustomer,
+  }
 
   const summaryRows = dailySummary ?? []
   const totalRevenue = summaryRows.reduce((sum, d) => sum + Number(d.gross_sales ?? 0), 0)
@@ -232,6 +284,7 @@ export default async function TodayPage({
                   sale={s}
                   therapistName={therapistName}
                   editable={editable}
+                  editOptions={editOptions}
                 />
               ))}
             </ul>
@@ -249,6 +302,7 @@ export default async function TodayPage({
                       sale={s}
                       therapistName={therapistName}
                       editable={editable}
+                      editOptions={editOptions}
                     />
                   ))}
                 </ul>
@@ -265,9 +319,12 @@ type SaleRecord = {
   id: string
   sale_time: string | null
   receipt_no: string | null
+  service_id: string | null
   service_name: string | null
   therapist_id: string | null
+  customer_id: string | null
   customer_name: string | null
+  customer_phone: string | null
   price_normal: number | string | null
   discount: number | string | null
   coupon_promo: string | null
@@ -277,21 +334,54 @@ type SaleRecord = {
   payment_method: string
   is_request: boolean | null
   member_status: string | null
+  credit_used: number | string | null
+  revenue_recognize: number | string | null
+}
+
+type EditOptions = {
+  therapists: Therapist[]
+  services: Service[]
+  promotions: Promotion[]
+  balanceByCustomer: Map<string, MemberBalance>
 }
 
 function SaleRow({
   sale: s,
   therapistName,
   editable,
+  editOptions,
 }: {
   sale: SaleRecord
   therapistName: Map<string, string>
   editable: boolean
+  editOptions: EditOptions
 }) {
   const discount = Number(s.discount ?? 0)
   const netAmount = Number(s.net_amount ?? 0)
   const commission = Number(s.commission ?? 0)
   const requestFee = Number(s.request_fee ?? 0)
+
+  // numeric ของ postgres มาเป็น string — แปลงให้ครบก่อนส่งเข้าฟอร์ม
+  // ไม่งั้นการบวกในกล่องแก้ไขจะกลายเป็นการต่อสตริง
+  const editableSale: EditableSale = {
+    id: s.id,
+    receipt_no: s.receipt_no,
+    sale_time: s.sale_time,
+    service_id: s.service_id,
+    service_name: s.service_name,
+    therapist_id: s.therapist_id,
+    customer_id: s.customer_id,
+    customer_name: s.customer_name,
+    customer_phone: s.customer_phone,
+    coupon_promo: s.coupon_promo,
+    discount,
+    net_amount: netAmount,
+    payment_method: s.payment_method,
+    is_request: s.is_request ?? false,
+    request_fee: requestFee,
+    credit_used: Number(s.credit_used ?? 0),
+    revenue_recognize: Number(s.revenue_recognize ?? 0),
+  }
 
   return (
     <li className="flex items-start gap-3 px-4 py-3 sm:px-6">
@@ -331,8 +421,19 @@ function SaleRow({
           {formatBaht(netAmount)} ฿
         </span>
         {editable && (
-          <DeleteSaleButton
-            id={s.id}
+          <SaleRowActions
+            sale={editableSale}
+            therapists={editOptions.therapists}
+            services={editOptions.services}
+            promotions={editOptions.promotions}
+            balance={
+              s.customer_id
+                ? editOptions.balanceByCustomer.get(s.customer_id) ?? null
+                : null
+            }
+            currentTherapistName={
+              therapistName.get(s.therapist_id ?? "") ?? null
+            }
             label={`${s.service_name} ${formatBaht(netAmount)} บาท`}
           />
         )}
