@@ -14,10 +14,15 @@ export default async function MembersPage() {
   const supabase = await createClient()
   const today = todayInShopTz()
 
-  const [{ data: members }, { data: topups }] = await Promise.all([
+  // member_balances มีแถวละ "ลูกค้า" ไม่ใช่แถวละสมาชิก — ตอนนี้ 1,005 แถว เกินเพดาน
+  // 1,000 แถวของ supabase-js ไปแล้ว ถ้าดึงทั้งหมดมากรองในหน้าเว็บ สมาชิกที่ชื่อเรียงท้ายสุด
+  // จะถูกตัดทิ้งเงียบๆ แล้วยอดเครดิตคงค้างจะต่ำกว่าความจริงโดยไม่มีอะไรเตือน
+  // จึงต้องกรองใน SQL ให้เหลือเฉพาะคนที่มีเครดิตจริง (42 แถว)
+  const [{ data: active }, { data: topups }] = await Promise.all([
     supabase
       .from("member_balances")
       .select("customer_id, name, nickname, phone, credit_balance, next_expiry")
+      .gt("credit_balance", 0)
       .order("name"),
     supabase
       .from("member_topups")
@@ -26,18 +31,22 @@ export default async function MembersPage() {
       .limit(30),
   ])
 
-  // แสดงเฉพาะคนที่เคยเติมเงิน (มียอดหรือเคยมี)
-  const active = (members ?? []).filter(
-    (m) => (m.credit_balance ?? 0) > 0
-  )
+  const members = active ?? []
 
-  const totalOutstanding = active.reduce(
+  const totalOutstanding = members.reduce(
     (sum, m) => sum + (m.credit_balance ?? 0),
     0
   )
 
+  // ประวัติการเติมเงินอาจมีคนที่ใช้เครดิตหมดแล้ว ซึ่งไม่อยู่ในรายการข้างบน
+  // จึงดึงชื่อจากตาราง customers เฉพาะ id ที่ปรากฏในประวัติ 30 รายการล่าสุด
+  const topupCustomerIds = [...new Set((topups ?? []).map((t) => t.customer_id))]
+  const { data: topupCustomers } = topupCustomerIds.length
+    ? await supabase.from("customers").select("id, name").in("id", topupCustomerIds)
+    : { data: [] }
+
   const customerName = new Map(
-    (members ?? []).map((m) => [m.customer_id, m.name])
+    (topupCustomers ?? []).map((c) => [c.id, c.name])
   )
 
   return (
@@ -50,7 +59,7 @@ export default async function MembersPage() {
             เติมเงิน
           </TabsTrigger>
           <TabsTrigger value="members" className="flex-1">
-            สมาชิก ({active.length})
+            สมาชิก ({members.length})
           </TabsTrigger>
           <TabsTrigger value="history" className="flex-1">
             ประวัติ
@@ -74,13 +83,13 @@ export default async function MembersPage() {
             คือภาระที่ร้านต้องให้บริการในอนาคต ไม่ใช่รายได้
           </p>
 
-          {active.length === 0 ? (
+          {members.length === 0 ? (
             <p className="py-8 text-center text-sm text-slate-500">
               ยังไม่มีสมาชิกที่มีเครดิตคงเหลือ
             </p>
           ) : (
             <ul className="space-y-2">
-              {active.map((m) => {
+              {members.map((m) => {
                 const balance =
                   m.credit_balance ?? 0
                 const expiringSoon =
