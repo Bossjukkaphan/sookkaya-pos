@@ -30,9 +30,12 @@ export function BarChart({
         role="img"
         aria-label="กราฟแท่ง"
       >
-        {bars.map((b) => (
+        {/* key เป็น index ได้เพราะลำดับแท่งไม่เคยสลับหรือถูกกรอง
+            ถ้าใช้ label เป็น key แล้ววันหน้าเอากราฟไปใส่ชื่อหมอหรือชื่อเมนูที่ซ้ำกันได้
+            React จะ reconcile ผิดจนแท่งหายหรือสูงผิด แต่ tooltip ยังบอกค่าเดิม */}
+        {bars.map((b, i) => (
           <rect
-            key={b.label}
+            key={i}
             x={b.x}
             y={b.y}
             width={b.w}
@@ -45,8 +48,8 @@ export function BarChart({
         ))}
       </svg>
       <div className="flex text-[10px] text-slate-500">
-        {bars.map((b) => (
-          <span key={b.label} className="flex-1 text-center">
+        {bars.map((b, i) => (
+          <span key={i} className="flex-1 text-center">
             {b.label}
           </span>
         ))}

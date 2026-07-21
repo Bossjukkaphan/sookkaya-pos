@@ -41,14 +41,14 @@ export function LineChart({
         )}
         <path d={d} fill="none" stroke={color} strokeWidth={2} />
         {points.map((p, i) => (
-          <circle key={p.label} cx={i * step} cy={scale.y(p.value)} r={3} fill={color}>
+          <circle key={i} cx={i * step} cy={scale.y(p.value)} r={3} fill={color}>
             <title>{`${p.label} — ${format(p.value)}`}</title>
           </circle>
         ))}
       </svg>
       <div className="flex text-[10px] text-slate-500">
-        {points.map((p) => (
-          <span key={p.label} className="flex-1 text-center">
+        {points.map((p, i) => (
+          <span key={i} className="flex-1 text-center">
             {p.label}
           </span>
         ))}
