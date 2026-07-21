@@ -27,7 +27,15 @@ export default async function TodayPage({
   const to = rawFrom <= rawTo ? rawTo : rawFrom
   const isSingleDay = from === to
 
-  const [{ data: sales }, { data: therapists }] = await Promise.all([
+  // ยอดสรุปดึงจาก view รายวัน ไม่ได้บวกจากรายการที่แสดง
+  // เพราะรายการถูกตัดที่ ROW_CAP แถว ถ้าบวกจากตรงนั้นตัวเลขจะต่ำกว่าจริงโดยไม่มีใครรู้
+  // view คืนวันละแถว ช่วงเดือนหนึ่งจึงไม่เกิน ~31 แถว เพดานไม่มีผล
+  const [
+    { data: sales },
+    { data: therapists },
+    { data: dailySummary },
+    { data: therapistDaily },
+  ] = await Promise.all([
     supabase
       .from("sales")
       .select("*")
@@ -37,6 +45,16 @@ export default async function TodayPage({
       .order("sale_time", { ascending: false })
       .limit(ROW_CAP),
     supabase.from("therapists").select("id, name"),
+    supabase
+      .from("v_daily_summary")
+      .select("sale_date, sessions, gross_sales")
+      .gte("sale_date", from)
+      .lte("sale_date", to),
+    supabase
+      .from("v_therapist_daily")
+      .select("work_date, therapist_id, sessions, request_fee, total_income")
+      .gte("work_date", from)
+      .lte("work_date", to),
   ])
 
   const rows = sales ?? []
@@ -47,36 +65,49 @@ export default async function TodayPage({
   const editable =
     from.slice(0, 7) === today.slice(0, 7) && to.slice(0, 7) === today.slice(0, 7)
 
-  const totalRevenue = rows.reduce((sum, s) => sum + Number(s.net_amount), 0)
-  const totalRequestFee = rows.reduce((sum, s) => sum + Number(s.request_fee), 0)
+  const summaryRows = dailySummary ?? []
+  const totalRevenue = summaryRows.reduce((sum, d) => sum + Number(d.gross_sales ?? 0), 0)
+  const totalSessions = summaryRows.reduce((sum, d) => sum + Number(d.sessions ?? 0), 0)
+  const dayTotal = new Map(
+    summaryRows.map((d) => [String(d.sale_date), Number(d.gross_sales ?? 0)])
+  )
 
+  // ค่ามือมาจาก v_therapist_daily เพราะประกันมือขั้นต่ำต่อวันคิดอยู่ในนั้น
+  // บวก commission จากรายการขายเองจะได้ตัวเลขที่ทั้งต่ำกว่าจริงและไม่รวมประกัน
+  const byTherapist = new Map<
+    string,
+    { income: number; requestFee: number; count: number }
+  >()
+  for (const d of therapistDaily ?? []) {
+    const key = d.therapist_id ?? "unknown"
+    const agg = byTherapist.get(key) ?? { income: 0, requestFee: 0, count: 0 }
+    agg.income += Number(d.total_income ?? 0)
+    agg.requestFee += Number(d.request_fee ?? 0)
+    agg.count += Number(d.sessions ?? 0)
+    byTherapist.set(key, agg)
+  }
+  const totalRequestFee = [...byTherapist.values()].reduce(
+    (sum, v) => sum + v.requestFee,
+    0
+  )
+
+  // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
+  // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
   const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
     acc[s.payment_method] = (acc[s.payment_method] ?? 0) + Number(s.net_amount)
     return acc
   }, {})
 
-  const byTherapist = rows.reduce<
-    Record<string, { commission: number; requestFee: number; count: number }>
-  >((acc, s) => {
-    const key = s.therapist_id ?? "unknown"
-    acc[key] ??= { commission: 0, requestFee: 0, count: 0 }
-    acc[key].commission += Number(s.commission ?? 0)
-    acc[key].requestFee += Number(s.request_fee)
-    acc[key].count += 1
-    return acc
-  }, {})
-
   // โหมดช่วงวัน: จัดกลุ่มตามวัน เพื่อไม่ให้เผลอแก้รายการผิดวัน
-  const byDate: { date: string; rows: typeof rows; total: number }[] = []
+  const byDate: { date: string; rows: typeof rows }[] = []
   for (const s of rows) {
     const date = String(s.sale_date)
     let group = byDate.at(-1)
     if (!group || group.date !== date) {
-      group = { date, rows: [], total: 0 }
+      group = { date, rows: [] }
       byDate.push(group)
     }
     group.rows.push(s)
-    group.total += Number(s.net_amount)
   }
 
   return (
@@ -122,28 +153,39 @@ export default async function TodayPage({
         <Card>
           <CardContent className="py-4">
             <p className="text-sm text-slate-600">จำนวนเซสชัน</p>
-            <p className="text-3xl font-bold">{rows.length}</p>
+            <p className="text-3xl font-bold">{totalSessions}</p>
           </CardContent>
         </Card>
       </div>
 
-      {Object.keys(byPayment).length > 0 && (
+      {truncated ? (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">แยกตามช่องทางชำระเงิน</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1.5">
-            {Object.entries(byPayment).map(([method, amount]) => (
-              <div key={method} className="flex justify-between text-sm">
-                <span className="text-slate-600">{method}</span>
-                <span className="font-medium">{formatBaht(amount)} ฿</span>
-              </div>
-            ))}
+          <CardContent className="text-sm text-slate-500">
+            ช่วงกว้างเกินไป — ดูช่องทางชำระเงินได้เมื่อเลือกช่วงแคบลง
           </CardContent>
         </Card>
+      ) : (
+        Object.keys(byPayment).length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">แยกตามช่องทางชำระเงิน</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {Object.entries(byPayment).map(([method, amount]) => (
+                <div key={method} className="flex justify-between text-sm">
+                  <span className="text-slate-600">{method}</span>
+                  <span className="font-medium">{formatBaht(amount)} ฿</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )
       )}
 
-      {Object.keys(byTherapist).length > 0 && (
+      {byTherapist.size > 0 && (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
@@ -151,17 +193,17 @@ export default async function TodayPage({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1.5">
-            {Object.entries(byTherapist).map(([id, v]) => (
-              <div key={id} className="flex justify-between text-sm">
-                <span className="text-slate-600">
-                  {therapistName.get(id) ?? "ไม่ระบุ"}{" "}
-                  <span className="text-slate-400">({v.count} เซสชัน)</span>
-                </span>
-                <span className="font-medium">
-                  {formatBaht(v.commission + v.requestFee)} ฿
-                </span>
-              </div>
-            ))}
+            {[...byTherapist.entries()]
+              .sort((a, b) => b[1].income - a[1].income)
+              .map(([id, v]) => (
+                <div key={id} className="flex justify-between text-sm">
+                  <span className="text-slate-600">
+                    {therapistName.get(id) ?? "ไม่ระบุ"}{" "}
+                    <span className="text-slate-400">({v.count} เซสชัน)</span>
+                  </span>
+                  <span className="font-medium">{formatBaht(v.income)} ฿</span>
+                </div>
+              ))}
             {totalRequestFee > 0 && (
               <p className="pt-1 text-xs text-slate-500">
                 รวมค่ารีเควส {formatBaht(totalRequestFee)} บาท
@@ -198,7 +240,7 @@ export default async function TodayPage({
               <div key={group.date}>
                 <div className="sticky top-0 z-10 flex justify-between border-y bg-slate-100 px-4 py-2 text-sm font-semibold sm:px-6">
                   <span>{formatThaiDate(group.date)}</span>
-                  <span>{formatBaht(group.total)} ฿</span>
+                  <span>{formatBaht(dayTotal.get(group.date) ?? 0)} ฿</span>
                 </div>
                 <ul className="divide-y">
                   {group.rows.map((s) => (

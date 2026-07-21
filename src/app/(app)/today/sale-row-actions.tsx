@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -24,6 +25,7 @@ export function DeleteSaleButton({
 }) {
   const [open, setOpen] = useState(false)
   const [pending, startTransition] = useTransition()
+  const router = useRouter()
 
   function handleDelete() {
     startTransition(async () => {
@@ -33,6 +35,9 @@ export function DeleteSaleButton({
         setOpen(false)
       } else {
         toast.error(result.error ?? "ลบไม่สำเร็จ")
+        // หน้าอาจถูก render ไว้ตั้งแต่เดือนก่อน (แท็บเล็ตเปิดค้างข้ามเดือน)
+        // ปุ่มลบที่เห็นจึงอาจเก่า — refresh ให้ server คิดวันที่ใหม่แล้วปุ่มจะหายเอง
+        router.refresh()
       }
     })
   }
