@@ -61,11 +61,13 @@ export default async function OverviewPage({
   const fixedCost = n(selected?.fixed_cost)
 
   // margin เป็นการหารเลขสองตัวที่ view ให้มาแล้ว ไม่ใช่การนิยามสูตรเงินใหม่
-  const margin = netRevenue > 0 ? (profitCash / netRevenue) * 100 : 0
+  // เดือนที่มีแต่รายจ่ายไม่มียอดขาย หาร margin ไม่ได้ — 0.0% จะอ่านเป็น "เท่าทุน" ซึ่งตรงข้ามกับความจริง
+  const margin = netRevenue > 0 ? (profitCash / netRevenue) * 100 : null
   const deltaPct = prevRevenue > 0 ? ((netRevenue - prevRevenue) / prevRevenue) * 100 : 0
 
   const target = Number(targetSetting?.value ?? 0)
-  const targetPct = target > 0 ? Math.min((netRevenue / target) * 100, 100) : 0
+  // เปอร์เซ็นต์จริงไว้แสดงเป็นข้อความ · หนีบเฉพาะความกว้างแถบ ไม่งั้นแถบล้นกล่อง
+  const targetPct = target > 0 ? (netRevenue / target) * 100 : 0
   const targetRemaining = target - netRevenue
 
   const precedingFixed = rows
@@ -123,12 +125,14 @@ export default async function OverviewPage({
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/20">
               <div
                 className="h-full rounded-full bg-emerald-300"
-                style={{ width: `${targetPct}%` }}
+                style={{ width: `${Math.min(targetPct, 100)}%` }}
               />
             </div>
             <p className="mt-1 text-[11px] text-emerald-100">
-              เป้า {formatBaht(target)} ฿ · ทำได้ {Math.round(targetPct)}%
-              {targetRemaining > 0 && ` · เหลืออีก ${formatBaht(targetRemaining)} ฿`}
+              เป้า {formatBaht(target)} ฿ · ทำได้ {targetPct.toFixed(1)}%
+              {targetRemaining > 0
+                ? ` · เหลืออีก ${formatBaht(targetRemaining)} ฿`
+                : ` · เกินเป้า ${formatBaht(-targetRemaining)} ฿`}
             </p>
           </>
         )}
@@ -140,7 +144,9 @@ export default async function OverviewPage({
           </div>
           <div>
             <p className="text-[10px] text-emerald-300">Margin</p>
-            <p className="text-base font-bold">{margin.toFixed(1)}%</p>
+            <p className="text-base font-bold">
+              {margin === null ? "—" : `${margin.toFixed(1)}%`}
+            </p>
           </div>
           <div>
             <p className="text-[10px] text-emerald-300">เงินเข้าจริง</p>
@@ -154,8 +160,8 @@ export default async function OverviewPage({
           <CardContent className="py-3 text-sm text-amber-900">
             <p className="font-semibold">เดือนนี้ยังบันทึกรายจ่ายไม่ครบ</p>
             <p className="text-amber-800">
-              ค่าเช่าและเงินเดือนมักบันทึกตอนสิ้นเดือน กำไรและ margin ที่เห็นข้างบน
-              จึงสูงกว่าความจริง — อย่าเพิ่งใช้ตัวเลขนี้ตัดสินใจ
+              ค่าเช่าและเงินเดือนมักบันทึกตอนสิ้นเดือน กำไรและ margin ข้างบน
+              รวมถึงยอดสะสมข้างล่าง จึงสูงกว่าความจริงทั้งหมด — อย่าเพิ่งใช้ตัวเลขนี้ตัดสินใจ
             </p>
           </CardContent>
         </Card>
