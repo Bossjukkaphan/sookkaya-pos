@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { barGeometry, linePath, linearScale } from "./chart"
+import {
+  barGeometry,
+  groupedBarGeometry,
+  groupedBarsWithLine,
+  linePath,
+  linearScale,
+} from "./chart"
 
 describe("linearScale", () => {
   it("รวมศูนย์ไว้ในช่วงเสมอ เพื่อให้แท่งกราฟตั้งบนเส้นฐานจริง", () => {
@@ -58,6 +64,130 @@ describe("barGeometry", () => {
 
   it("คืนอาเรย์ว่างเมื่อไม่มีข้อมูล ไม่ throw", () => {
     expect(barGeometry([], 100, 50)).toEqual([])
+  })
+})
+
+describe("groupedBarGeometry", () => {
+  const revenue = [
+    { label: "มี.ค.", value: 174842 },
+    { label: "เม.ย.", value: 316123 },
+  ]
+  const expense = [
+    { label: "มี.ค.", value: 282537 },
+    { label: "เม.ย.", value: 386552 },
+  ]
+
+  it("ใช้สเกลเดียวกันทุกชุด — ค่าเท่ากันต้องสูงเท่ากันแม้อยู่คนละชุด", () => {
+    const [a, b] = groupedBarGeometry(
+      [
+        [{ label: "มี.ค.", value: 100 }, { label: "เม.ย.", value: 50 }],
+        [{ label: "มี.ค.", value: 50 }, { label: "เม.ย.", value: 100 }],
+      ],
+      120,
+      100
+    )
+
+    expect(a[0].h).toBeCloseTo(b[1].h)
+    expect(a[1].h).toBeCloseTo(b[0].h)
+    // สเกลรวมสูงสุดคือ 100 → แท่ง 100 ต้องเต็มความสูง
+    expect(a[0].h).toBeCloseTo(100)
+  })
+
+  it("รายจ่ายสูงกว่ารายได้ต้องได้แท่งที่สูงกว่า ไม่ใช่เท่ากันเพราะต่างคนต่างสเกล", () => {
+    const [rev, exp] = groupedBarGeometry([revenue, expense], 200, 100)
+    expect(exp[0].h).toBeGreaterThan(rev[0].h)
+    // แท่งที่สูงที่สุดในภาพคือรายจ่าย เม.ย. = ค่าสูงสุดรวม
+    expect(exp[1].h).toBeCloseTo(100)
+  })
+
+  it("วางแท่งเรียงข้างกันในช่องเดียวกัน ไม่ทับกันและไม่ล้นช่อง", () => {
+    const [rev, exp] = groupedBarGeometry([revenue, expense], 200, 100)
+    const slot = 200 / 2
+
+    expect(rev[0].x + rev[0].w).toBeLessThanOrEqual(exp[0].x + 1e-9)
+    expect(exp[0].x + exp[0].w).toBeLessThanOrEqual(slot)
+    expect(rev[1].x).toBeGreaterThanOrEqual(slot)
+    expect(rev[0].w).toBeCloseTo(exp[0].w)
+  })
+
+  it("คืนอาเรย์ว่างเมื่อไม่มีชุดข้อมูลเลย", () => {
+    expect(groupedBarGeometry([], 100, 50)).toEqual([])
+  })
+
+  it("ชุดข้อมูลว่างทุกชุดก็ยังคืนโครงเดิม ไม่ throw", () => {
+    expect(groupedBarGeometry([[], []], 100, 50)).toEqual([[], []])
+  })
+
+  it("ชุดข้อมูลยาวไม่เท่ากัน — ช่องนับตามชุดที่ยาวที่สุด และไม่เติมแท่งปลอม", () => {
+    const [a, b] = groupedBarGeometry(
+      [
+        [
+          { label: "มี.ค.", value: 100 },
+          { label: "เม.ย.", value: 200 },
+          { label: "พ.ค.", value: 300 },
+        ],
+        [{ label: "มี.ค.", value: 150 }],
+      ],
+      300,
+      100
+    )
+
+    expect(a).toHaveLength(3)
+    expect(b).toHaveLength(1)
+    // 3 ช่องบนความกว้าง 300 → ช่องละ 100 · แท่งของ พ.ค. ต้องอยู่ในช่องที่สาม
+    expect(a[2].x).toBeGreaterThanOrEqual(200)
+    // สเกลรวมยังคิดจากทุกชุด — 300 คือค่าสูงสุด
+    expect(a[2].h).toBeCloseTo(100)
+  })
+
+  it("ค่าติดลบห้อยใต้เส้นศูนย์ ไม่ใช่ตั้งขึ้นจากขอบล่าง", () => {
+    const [a, b] = groupedBarGeometry(
+      [
+        [{ label: "มี.ค.", value: -100 }],
+        [{ label: "มี.ค.", value: 100 }],
+      ],
+      100,
+      100
+    )
+
+    expect(a[0].y).toBeCloseTo(50)
+    expect(a[0].h).toBeCloseTo(50)
+    expect(b[0].y).toBeCloseTo(0)
+    expect(b[0].h).toBeCloseTo(50)
+  })
+})
+
+describe("groupedBarsWithLine", () => {
+  it("เส้นใช้สเกลเดียวกับแท่ง — จุดที่ค่าเท่าแท่งต้องอยู่ที่ยอดแท่งพอดี", () => {
+    const { bars, path } = groupedBarsWithLine(
+      [[{ label: "มี.ค.", value: 100 }]],
+      [{ label: "มี.ค.", value: 100 }],
+      100,
+      100
+    )
+
+    expect(bars[0][0].y).toBeCloseTo(0)
+    // จุดเดียว → กลางช่องที่กว้างเท่าภาพ
+    expect(path).toBe("M 50 0")
+  })
+
+  it("ค่าของเส้นถูกนับเข้าสเกลด้วย ไม่งั้นเส้นจะทะลุกรอบ", () => {
+    const { bars, path } = groupedBarsWithLine(
+      [[{ label: "มี.ค.", value: 100 }]],
+      [{ label: "มี.ค.", value: 200 }],
+      100,
+      100
+    )
+
+    // ค่าสูงสุดรวมคือ 200 → แท่ง 100 สูงครึ่งเดียว และเส้นอยู่ขอบบน
+    expect(bars[0][0].h).toBeCloseTo(50)
+    expect(path).toBe("M 50 0")
+  })
+
+  it("ไม่มีข้อมูลก็ไม่ throw และ path ว่าง", () => {
+    const { bars, path } = groupedBarsWithLine([], [], 100, 100)
+    expect(bars).toEqual([])
+    expect(path).toBe("")
   })
 })
 
