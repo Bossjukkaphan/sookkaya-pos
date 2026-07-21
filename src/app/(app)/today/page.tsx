@@ -1,53 +1,197 @@
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
-import { DeleteSaleButton } from "./sale-row-actions"
+import { SaleRowActions } from "./sale-row-actions"
+import type {
+  EditableSale,
+  MemberBalance,
+  Promotion,
+  Service,
+  Therapist,
+} from "./edit-sale-dialog"
+import { DateFilter } from "./date-filter"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-export const metadata = { title: "ยอดวันนี้ · สุขกายา POS" }
+export const metadata = { title: "ยอดขาย · สุขกายา POS" }
 
-export default async function TodayPage() {
+/** ดึงได้มากสุดเท่านี้ต่อหนึ่งช่วงวัน — supabase-js ตัดที่ 1,000 แถวเงียบๆ อยู่แล้ว */
+const ROW_CAP = 500
+
+export default async function TodayPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string; to?: string }>
+}) {
   const supabase = await createClient()
   const today = todayInShopTz()
+  const params = await searchParams
 
-  const [{ data: sales }, { data: therapists }] = await Promise.all([
+  // ค่าเริ่มต้นคือวันนี้ทั้งคู่ · ถ้าใส่กลับด้าน ให้สลับให้ถูก แทนที่จะคืนรายการว่าง
+  const rawFrom = params.from ?? today
+  const rawTo = params.to ?? rawFrom
+  const from = rawFrom <= rawTo ? rawFrom : rawTo
+  const to = rawFrom <= rawTo ? rawTo : rawFrom
+  const isSingleDay = from === to
+
+  // ทั้งสองปลายต้องอยู่ในเดือนปัจจุบัน เพราะ action ปฏิเสธรายการของเดือนก่อน
+  // คำนวณก่อนดึงข้อมูล เพราะยอดเครดิตสมาชิกใช้เฉพาะในกล่องแก้ไข ถ้าแก้ไม่ได้ก็ไม่ต้องดึง
+  const editable =
+    from.slice(0, 7) === today.slice(0, 7) && to.slice(0, 7) === today.slice(0, 7)
+
+  // ยอดสรุปดึงจาก view รายวัน ไม่ได้บวกจากรายการที่แสดง
+  // เพราะรายการถูกตัดที่ ROW_CAP แถว ถ้าบวกจากตรงนั้นตัวเลขจะต่ำกว่าจริงโดยไม่มีใครรู้
+  // view คืนวันละแถว ช่วงเดือนหนึ่งจึงไม่เกิน ~31 แถว เพดานไม่มีผล
+  const [
+    { data: sales },
+    { data: therapists },
+    { data: dailySummary },
+    { data: therapistDaily },
+    { data: services },
+    { data: promotions },
+    { data: memberBalances },
+  ] = await Promise.all([
     supabase
       .from("sales")
       .select("*")
-      .eq("sale_date", today)
-      .order("sale_time", { ascending: false }),
-    supabase.from("therapists").select("id, name"),
+      .gte("sale_date", from)
+      .lte("sale_date", to)
+      .order("sale_date", { ascending: false })
+      .order("sale_time", { ascending: false })
+      .limit(ROW_CAP),
+    // ไม่กรอง status — หมอที่ลาออกแล้วยังต้องมีชื่อบนรายการเก่า
+    supabase.from("therapists").select("id, name, status").order("name"),
+    supabase
+      .from("v_daily_summary")
+      .select("sale_date, sessions, gross_sales")
+      .gte("sale_date", from)
+      .lte("sale_date", to),
+    supabase
+      .from("v_therapist_daily")
+      .select("work_date, therapist_id, sessions, request_fee, total_income")
+      .gte("work_date", from)
+      .lte("work_date", to),
+    supabase
+      .from("services")
+      .select("id, name, price, commission")
+      .eq("is_active", true)
+      .order("name"),
+    // ใช้ภายใน (Member / ถ่ายคอนเทนต์) ไม่ต้องขึ้นเป็นตัวเลือกให้พนักงานเลือกผิด
+    supabase
+      .from("promotions")
+      .select("id, name")
+      .eq("is_active", true)
+      .neq("kind", "internal")
+      .order("name"),
+    editable
+      ? supabase
+          .from("member_balances")
+          .select("customer_id, credit_balance, credit_granted, cash_paid")
+      : Promise.resolve({ data: null }),
   ])
 
   const rows = sales ?? []
+  const truncated = rows.length === ROW_CAP
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
 
-  const totalRevenue = rows.reduce((sum, s) => sum + Number(s.net_amount), 0)
-  const totalRequestFee = rows.reduce((sum, s) => sum + Number(s.request_fee), 0)
+  // ตัวเลือกในฟอร์มแก้ไขใช้เฉพาะหมอที่ยังทำงานอยู่ ส่วนการแสดงผลใช้ map ด้านบนที่ครบทุกคน
+  const activeTherapists: Therapist[] = (therapists ?? [])
+    .filter((t) => t.status === "active")
+    .map((t) => ({ id: t.id, name: t.name }))
 
+  const balanceByCustomer = new Map<string, MemberBalance>(
+    (memberBalances ?? []).map((b) => [
+      String(b.customer_id),
+      {
+        credit_balance: Number(b.credit_balance ?? 0),
+        credit_granted: Number(b.credit_granted ?? 0),
+        cash_paid: Number(b.cash_paid ?? 0),
+      },
+    ])
+  )
+
+  const editOptions = {
+    therapists: activeTherapists,
+    services: (services ?? []) as Service[],
+    promotions: (promotions ?? []) as Promotion[],
+    balanceByCustomer,
+  }
+
+  const summaryRows = dailySummary ?? []
+  const totalRevenue = summaryRows.reduce((sum, d) => sum + Number(d.gross_sales ?? 0), 0)
+  const totalSessions = summaryRows.reduce((sum, d) => sum + Number(d.sessions ?? 0), 0)
+  const dayTotal = new Map(
+    summaryRows.map((d) => [String(d.sale_date), Number(d.gross_sales ?? 0)])
+  )
+
+  // ค่ามือมาจาก v_therapist_daily เพราะประกันมือขั้นต่ำต่อวันคิดอยู่ในนั้น
+  // บวก commission จากรายการขายเองจะได้ตัวเลขที่ทั้งต่ำกว่าจริงและไม่รวมประกัน
+  const byTherapist = new Map<
+    string,
+    { income: number; requestFee: number; count: number }
+  >()
+  for (const d of therapistDaily ?? []) {
+    const key = d.therapist_id ?? "unknown"
+    const agg = byTherapist.get(key) ?? { income: 0, requestFee: 0, count: 0 }
+    agg.income += Number(d.total_income ?? 0)
+    agg.requestFee += Number(d.request_fee ?? 0)
+    agg.count += Number(d.sessions ?? 0)
+    byTherapist.set(key, agg)
+  }
+  const totalRequestFee = [...byTherapist.values()].reduce(
+    (sum, v) => sum + v.requestFee,
+    0
+  )
+
+  // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
+  // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
   const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
     acc[s.payment_method] = (acc[s.payment_method] ?? 0) + Number(s.net_amount)
     return acc
   }, {})
 
-  const byTherapist = rows.reduce<
-    Record<string, { commission: number; requestFee: number; count: number }>
-  >((acc, s) => {
-    const key = s.therapist_id ?? "unknown"
-    acc[key] ??= { commission: 0, requestFee: 0, count: 0 }
-    acc[key].commission += Number(s.commission ?? 0)
-    acc[key].requestFee += Number(s.request_fee)
-    acc[key].count += 1
-    return acc
-  }, {})
+  // โหมดช่วงวัน: จัดกลุ่มตามวัน เพื่อไม่ให้เผลอแก้รายการผิดวัน
+  const byDate: { date: string; rows: typeof rows }[] = []
+  for (const s of rows) {
+    const date = String(s.sale_date)
+    let group = byDate.at(-1)
+    if (!group || group.date !== date) {
+      group = { date, rows: [] }
+      byDate.push(group)
+    }
+    group.rows.push(s)
+  }
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-bold">ยอดวันนี้</h1>
-        <p className="text-sm text-slate-600">{formatThaiDate(today)}</p>
+      <div className="space-y-3">
+        <div>
+          <h1 className="text-xl font-bold">ยอดขาย</h1>
+          <p className="text-sm text-slate-600">
+            {isSingleDay
+              ? formatThaiDate(from)
+              : `${formatThaiDate(from)} – ${formatThaiDate(to)}`}
+          </p>
+        </div>
+        <DateFilter from={from} to={to} today={today} />
       </div>
+
+      {truncated && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="py-3 text-sm text-amber-900">
+            ช่วงวันที่เลือกมีรายการเกิน {ROW_CAP} รายการ แสดงเฉพาะ {ROW_CAP} รายการล่าสุด
+            — เลือกช่วงให้แคบลงเพื่อดูให้ครบ
+          </CardContent>
+        </Card>
+      )}
+
+      {!editable && (
+        <Card className="border-slate-300 bg-slate-50">
+          <CardContent className="py-3 text-sm text-slate-700">
+            ข้อมูลเดือนก่อน ดูได้อย่างเดียว แก้หรือลบไม่ได้
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Card>
@@ -61,44 +205,57 @@ export default async function TodayPage() {
         <Card>
           <CardContent className="py-4">
             <p className="text-sm text-slate-600">จำนวนเซสชัน</p>
-            <p className="text-3xl font-bold">{rows.length}</p>
+            <p className="text-3xl font-bold">{totalSessions}</p>
           </CardContent>
         </Card>
       </div>
 
-      {Object.keys(byPayment).length > 0 && (
+      {truncated ? (
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">แยกตามช่องทางชำระเงิน</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1.5">
-            {Object.entries(byPayment).map(([method, amount]) => (
-              <div key={method} className="flex justify-between text-sm">
-                <span className="text-slate-600">{method}</span>
-                <span className="font-medium">{formatBaht(amount)} ฿</span>
-              </div>
-            ))}
+          <CardContent className="text-sm text-slate-500">
+            ช่วงกว้างเกินไป — ดูช่องทางชำระเงินได้เมื่อเลือกช่วงแคบลง
           </CardContent>
         </Card>
+      ) : (
+        Object.keys(byPayment).length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">แยกตามช่องทางชำระเงิน</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {Object.entries(byPayment).map(([method, amount]) => (
+                <div key={method} className="flex justify-between text-sm">
+                  <span className="text-slate-600">{method}</span>
+                  <span className="font-medium">{formatBaht(amount)} ฿</span>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )
       )}
 
-      {Object.keys(byTherapist).length > 0 && (
+      {byTherapist.size > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base">ค่ามือหมอวันนี้</CardTitle>
+            <CardTitle className="text-base">
+              {isSingleDay ? "ค่ามือหมอวันนี้" : "ค่ามือหมอในช่วงที่เลือก"}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1.5">
-            {Object.entries(byTherapist).map(([id, v]) => (
-              <div key={id} className="flex justify-between text-sm">
-                <span className="text-slate-600">
-                  {therapistName.get(id) ?? "ไม่ระบุ"}{" "}
-                  <span className="text-slate-400">({v.count} เซสชัน)</span>
-                </span>
-                <span className="font-medium">
-                  {formatBaht(v.commission + v.requestFee)} ฿
-                </span>
-              </div>
-            ))}
+            {[...byTherapist.entries()]
+              .sort((a, b) => b[1].income - a[1].income)
+              .map(([id, v]) => (
+                <div key={id} className="flex justify-between text-sm">
+                  <span className="text-slate-600">
+                    {therapistName.get(id) ?? "ไม่ระบุ"}{" "}
+                    <span className="text-slate-400">({v.count} เซสชัน)</span>
+                  </span>
+                  <span className="font-medium">{formatBaht(v.income)} ฿</span>
+                </div>
+              ))}
             {totalRequestFee > 0 && (
               <p className="pt-1 text-xs text-slate-500">
                 รวมค่ารีเควส {formatBaht(totalRequestFee)} บาท
@@ -110,58 +267,177 @@ export default async function TodayPage() {
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">รายการขายวันนี้</CardTitle>
+          <CardTitle className="text-base">
+            {isSingleDay ? "รายการขายวันนี้" : "รายการขายในช่วงที่เลือก"}
+          </CardTitle>
         </CardHeader>
         <CardContent className="px-0">
           {rows.length === 0 ? (
             <p className="px-6 py-6 text-center text-sm text-slate-500">
-              ยังไม่มีรายการขายวันนี้
+              ไม่มีรายการขายในช่วงที่เลือก
             </p>
-          ) : (
+          ) : isSingleDay ? (
             <ul className="divide-y">
               {rows.map((s) => (
-                <li
+                <SaleRow
                   key={s.id}
-                  className="flex items-start gap-3 px-4 py-3 sm:px-6"
-                >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span className="font-medium">{s.service_name}</span>
-                      {s.is_request && (
-                        <Badge variant="outline" className="text-xs">
-                          รีเควส
-                        </Badge>
-                      )}
-                      {s.member_status && (
-                        <Badge className="text-xs">{s.member_status}</Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-slate-600">
-                      {s.sale_time?.slice(0, 5)} ·{" "}
-                      {therapistName.get(s.therapist_id ?? "") ?? "ไม่ระบุ"}
-                      {s.customer_name && ` · ${s.customer_name}`}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {s.receipt_no} · {s.payment_method}
-                      {Number(s.discount) > 0 &&
-                        ` · ลด ${formatBaht(Number(s.discount))}฿`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <span className="font-semibold whitespace-nowrap">
-                      {formatBaht(Number(s.net_amount))} ฿
-                    </span>
-                    <DeleteSaleButton
-                      id={s.id}
-                      label={`${s.service_name} ${formatBaht(Number(s.net_amount))} บาท`}
-                    />
-                  </div>
-                </li>
+                  sale={s}
+                  therapistName={therapistName}
+                  editable={editable}
+                  editOptions={editOptions}
+                />
               ))}
             </ul>
+          ) : (
+            byDate.map((group) => (
+              <div key={group.date}>
+                <div className="sticky top-0 z-10 flex justify-between border-y bg-slate-100 px-4 py-2 text-sm font-semibold sm:px-6">
+                  <span>{formatThaiDate(group.date)}</span>
+                  <span>{formatBaht(dayTotal.get(group.date) ?? 0)} ฿</span>
+                </div>
+                <ul className="divide-y">
+                  {group.rows.map((s) => (
+                    <SaleRow
+                      key={s.id}
+                      sale={s}
+                      therapistName={therapistName}
+                      editable={editable}
+                      editOptions={editOptions}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))
           )}
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+type SaleRecord = {
+  id: string
+  sale_time: string | null
+  receipt_no: string | null
+  service_id: string | null
+  service_name: string | null
+  therapist_id: string | null
+  customer_id: string | null
+  customer_name: string | null
+  customer_phone: string | null
+  price_normal: number | string | null
+  discount: number | string | null
+  coupon_promo: string | null
+  net_amount: number | string | null
+  commission: number | string | null
+  request_fee: number | string | null
+  payment_method: string
+  is_request: boolean | null
+  member_status: string | null
+  credit_used: number | string | null
+  revenue_recognize: number | string | null
+}
+
+type EditOptions = {
+  therapists: Therapist[]
+  services: Service[]
+  promotions: Promotion[]
+  balanceByCustomer: Map<string, MemberBalance>
+}
+
+function SaleRow({
+  sale: s,
+  therapistName,
+  editable,
+  editOptions,
+}: {
+  sale: SaleRecord
+  therapistName: Map<string, string>
+  editable: boolean
+  editOptions: EditOptions
+}) {
+  const discount = Number(s.discount ?? 0)
+  const netAmount = Number(s.net_amount ?? 0)
+  const commission = Number(s.commission ?? 0)
+  const requestFee = Number(s.request_fee ?? 0)
+
+  // numeric ของ postgres มาเป็น string — แปลงให้ครบก่อนส่งเข้าฟอร์ม
+  // ไม่งั้นการบวกในกล่องแก้ไขจะกลายเป็นการต่อสตริง
+  const editableSale: EditableSale = {
+    id: s.id,
+    receipt_no: s.receipt_no,
+    sale_time: s.sale_time,
+    service_id: s.service_id,
+    service_name: s.service_name,
+    therapist_id: s.therapist_id,
+    customer_id: s.customer_id,
+    customer_name: s.customer_name,
+    customer_phone: s.customer_phone,
+    coupon_promo: s.coupon_promo,
+    discount,
+    net_amount: netAmount,
+    payment_method: s.payment_method,
+    is_request: s.is_request ?? false,
+    request_fee: requestFee,
+    credit_used: Number(s.credit_used ?? 0),
+    revenue_recognize: Number(s.revenue_recognize ?? 0),
+  }
+
+  return (
+    <li className="flex items-start gap-3 px-4 py-3 sm:px-6">
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-medium">{s.service_name}</span>
+          {s.is_request && (
+            <Badge variant="outline" className="text-xs">
+              รีเควส
+            </Badge>
+          )}
+          {s.member_status && <Badge className="text-xs">{s.member_status}</Badge>}
+        </div>
+        <p className="text-sm text-slate-600">
+          {s.sale_time?.slice(0, 5)} ·{" "}
+          {therapistName.get(s.therapist_id ?? "") ?? "ไม่ระบุ"}
+          {s.customer_name && ` · ${s.customer_name}`}
+        </p>
+        <p className="text-xs text-slate-400">
+          {s.receipt_no} · {s.payment_method}
+        </p>
+        {/* ราคาปกติกับส่วนลดโชว์เฉพาะเมื่อมีส่วนลด ไม่งั้นมันซ้ำกับยอดสุทธิ */}
+        {discount > 0 && (
+          <p className="text-xs text-slate-500">
+            ราคาปกติ {formatBaht(Number(s.price_normal ?? 0))} ฿ · ลด{" "}
+            {formatBaht(discount)} ฿
+            {s.coupon_promo && ` (${s.coupon_promo})`}
+          </p>
+        )}
+        <p className="text-xs text-slate-500">
+          ค่ามือ {formatBaht(commission)} ฿
+          {requestFee > 0 && ` · ค่ารีเควส ${formatBaht(requestFee)} ฿`}
+        </p>
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="font-semibold whitespace-nowrap">
+          {formatBaht(netAmount)} ฿
+        </span>
+        {editable && (
+          <SaleRowActions
+            sale={editableSale}
+            therapists={editOptions.therapists}
+            services={editOptions.services}
+            promotions={editOptions.promotions}
+            balance={
+              s.customer_id
+                ? editOptions.balanceByCustomer.get(s.customer_id) ?? null
+                : null
+            }
+            currentTherapistName={
+              therapistName.get(s.therapist_id ?? "") ?? null
+            }
+            label={`${s.service_name} ${formatBaht(netAmount)} บาท`}
+          />
+        )}
+      </div>
+    </li>
   )
 }
