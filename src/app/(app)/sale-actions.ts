@@ -135,11 +135,154 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
 export async function deleteSale(id: string): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient()
+
+  const { data: existing } = await supabase
+    .from("sales")
+    .select("sale_date")
+    .eq("id", id)
+    .single()
+
+  if (!existing) return { ok: false, error: "ไม่พบรายการขายนี้" }
+  if (!isCurrentMonth(existing.sale_date)) {
+    return { ok: false, error: "ลบได้เฉพาะรายการของเดือนปัจจุบัน" }
+  }
+
   const { error } = await supabase.from("sales").delete().eq("id", id)
 
   if (error) return { ok: false, error: error.message }
 
+  revalidatePath("/today")
   revalidatePath("/")
   revalidatePath("/commission")
+  revalidatePath("/overview")
+  return { ok: true }
+}
+
+export type UpdateResult = { ok: true } | { ok: false; error: string }
+
+/** แก้ได้เฉพาะเดือนปัจจุบัน — เดือนที่ปิดงบไปแล้วห้ามขยับ ไม่งั้นรายงานที่ส่งไปแล้วจะไม่ตรง */
+function isCurrentMonth(saleDate: string): boolean {
+  return saleDate.slice(0, 7) === todayInShopTz().slice(0, 7)
+}
+
+export async function updateSale(
+  id: string,
+  formData: FormData
+): Promise<UpdateResult> {
+  const supabase = await createClient()
+
+  const { data: existing } = await supabase
+    .from("sales")
+    .select("sale_date, credit_used, customer_id")
+    .eq("id", id)
+    .single()
+
+  if (!existing) return { ok: false, error: "ไม่พบรายการขายนี้" }
+  if (!isCurrentMonth(existing.sale_date)) {
+    return { ok: false, error: "แก้ได้เฉพาะรายการของเดือนปัจจุบัน" }
+  }
+
+  const therapistId = String(formData.get("therapist_id") ?? "")
+  const serviceId = String(formData.get("service_id") ?? "")
+  const paymentMethod = String(formData.get("payment_method") ?? "")
+
+  if (!therapistId) return { ok: false, error: "กรุณาเลือกหมอนวด" }
+  if (!serviceId) return { ok: false, error: "กรุณาเลือกเมนูบริการ" }
+  if (!PAYMENT_METHODS.includes(paymentMethod as never)) {
+    return { ok: false, error: "กรุณาเลือกช่องทางชำระเงิน" }
+  }
+
+  // อ่านราคา/ค่ามือจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาจากฟอร์ม
+  const { data: service } = await supabase
+    .from("services")
+    .select("name, price, commission")
+    .eq("id", serviceId)
+    .single()
+
+  if (!service) return { ok: false, error: "ไม่พบเมนูบริการที่เลือก" }
+
+  const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
+  const customerId = rawCustomerId === "" ? null : rawCustomerId
+  const discountInput = Math.max(0, toNumber(formData.get("discount")))
+
+  let memberRatio: number | null = null
+  if (paymentMethod === MEMBER_CREDIT_METHOD) {
+    if (!customerId) {
+      return { ok: false, error: "ชำระด้วย Member Credit ต้องเลือกลูกค้าที่เป็นสมาชิก" }
+    }
+
+    const { data: balance } = await supabase
+      .from("member_balances")
+      .select("credit_balance, credit_granted, cash_paid")
+      .eq("customer_id", customerId)
+      .single()
+
+    const granted = balance?.credit_granted ?? 0
+    memberRatio = granted > 0 ? (balance?.cash_paid ?? 0) / granted : 1
+
+    // ยอดคงเหลือปัจจุบันหักรายการนี้ไปแล้ว การแก้จะคืนของเดิมก่อนตัดใหม่
+    // เพดานจึงเป็นคงเหลือ + ที่รายการนี้เคยตัด — แต่คืนได้เฉพาะเมื่อยังเป็นลูกค้าคนเดิม
+    const sameCustomer = existing.customer_id === customerId
+    const headroom =
+      Number(balance?.credit_balance ?? 0) +
+      (sameCustomer ? Number(existing.credit_used ?? 0) : 0)
+
+    const wanted = service.price - discountInput
+    if (headroom < wanted) {
+      return {
+        ok: false,
+        error: `เครดิตคงเหลือไม่พอ (แก้เป็นได้สูงสุด ${headroom} บาท ต้องใช้ ${wanted} บาท)`,
+      }
+    }
+  }
+
+  const amounts = computeSaleAmounts({
+    priceNormal: service.price,
+    discount: discountInput,
+    paymentMethod,
+    gowabiNet:
+      paymentMethod === GOWABI_METHOD
+        ? toNumber(formData.get("net_amount"), service.price)
+        : null,
+    isRequest: formData.get("is_request") === "on",
+    requestFee: toNumber(formData.get("request_fee")),
+    serviceCommission: service.commission,
+    memberRatio,
+  })
+
+  if (amounts.netAmount < 0) {
+    return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
+  }
+
+  const { error } = await supabase
+    .from("sales")
+    .update({
+      customer_id: customerId,
+      customer_name: String(formData.get("customer_name") ?? "").trim() || null,
+      customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
+      therapist_id: therapistId,
+      service_id: serviceId,
+      service_name: service.name,
+      price_normal: service.price,
+      coupon_promo: String(formData.get("coupon_promo") ?? "").trim() || null,
+      discount: amounts.discount,
+      net_amount: amounts.netAmount,
+      commission: amounts.commission,
+      payment_method: paymentMethod,
+      is_request: formData.get("is_request") === "on",
+      request_fee: amounts.requestFee,
+      member_status: paymentMethod === MEMBER_CREDIT_METHOD ? "💳 Member" : null,
+      credit_used: amounts.creditUsed,
+      bonus_used: amounts.bonusUsed,
+      revenue_recognize: amounts.revenueRecognize,
+    })
+    .eq("id", id)
+
+  if (error) return { ok: false, error: `แก้ไขไม่สำเร็จ: ${error.message}` }
+
+  revalidatePath("/today")
+  revalidatePath("/")
+  revalidatePath("/commission")
+  revalidatePath("/overview")
   return { ok: true }
 }
