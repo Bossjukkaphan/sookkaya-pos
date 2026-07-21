@@ -38,7 +38,12 @@ with expected(check_name, expected_value) as (values
   ('promo_unmatched_rows',       20),
   -- รอบ 1 หน้าภาพรวม: ยอดสะสมต้นปีถึง มิ.ย. (ก.ค. ยังขยับทุกวัน จึงไม่เอามาตรวจ)
   ('ytd_net_revenue_2026_06',  1124141),
-  ('ytd_profit_cash_2026_06',  -116739)
+  ('ytd_profit_cash_2026_06',  -116739),
+  -- ข้อนี้ไม่ใช่ตัวเลขเงิน แต่เป็นกับดักที่เคยติดมาแล้ว:
+  -- `create or replace view` ล้าง reloptions ทิ้ง ทำให้ security_invoker หลุด
+  -- view กลับเป็น SECURITY DEFINER แล้วพนักงาน staff ยิง REST API อ่านกำไรทั้งร้านได้
+  -- ต้องเป็น 0 เสมอ = ทุก view ใน public บังคับ RLS ตามสิทธิ์ผู้เรียก
+  ('views_without_security_invoker', 0)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -108,6 +113,14 @@ actual(check_name, actual_value) as (
   union all
   select 'ytd_profit_cash_2026_06', round(ytd_profit_cash)
   from public.v_monthly_pl where month = '2026-06'
+
+  union all
+  select 'views_without_security_invoker', count(*)
+  from pg_class c
+  join pg_namespace nsp on nsp.oid = c.relnamespace
+  where nsp.nspname = 'public'
+    and c.relkind = 'v'
+    and c.reloptions is distinct from array['security_invoker=true']::text[]
 )
 select
   e.check_name,
