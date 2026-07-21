@@ -186,8 +186,14 @@ export async function updateSale(
   // แปลว่ามีคนอื่นแก้รายการนี้ไปแล้วหลังจากหน้านี้ถูก render — ต้องหยุดก่อนเขียนทับ
   // เพราะฟอร์มส่งกลับมาทุกช่อง การบันทึกทับจะลบงานของคนแรกทิ้งทั้งแถว
   // ตรวจตรงนี้ก่อนการเขียนทุกอย่าง (แต่หลังเช็คว่ามีแถวจริงและอยู่ในเดือนปัจจุบัน)
+  //
+  // ไม่ส่งมา = บั๊กของฟอร์ม ไม่ใช่ของเก่าที่ยังไม่อัปเดต — ต้องไม่ปล่อยผ่าน
+  // เพราะการปล่อยผ่านคือการกลับไปเป็นบั๊กเงียบๆ ตัวเดิมที่กำลังแก้อยู่นี่แหละ
   const seenUpdatedAt = String(formData.get("updated_at") ?? "")
-  if (seenUpdatedAt && seenUpdatedAt !== existing.updated_at) {
+  if (!seenUpdatedAt) {
+    return { ok: false, error: "ฟอร์มไม่ได้ส่งเวอร์ชันของรายการมาด้วย กรุณาปิดแล้วเปิดใหม่" }
+  }
+  if (seenUpdatedAt !== existing.updated_at) {
     return {
       ok: false,
       error: "มีคนแก้รายการนี้ไปแล้วระหว่างที่คุณเปิดฟอร์มอยู่ กรุณาปิดแล้วเปิดใหม่เพื่อดูข้อมูลล่าสุด",
@@ -266,7 +272,7 @@ export async function updateSale(
     return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("sales")
     .update({
       customer_id: customerId,
@@ -289,8 +295,19 @@ export async function updateSale(
       revenue_recognize: amounts.revenueRecognize,
     })
     .eq("id", id)
+    // กันการแก้ชนกันจริงๆ อยู่ตรงนี้ — ถ้ามีคนบันทึกแทรกระหว่างที่เราอ่านกับเขียน
+    // เงื่อนไขนี้จะไม่ match แล้วไม่มีแถวไหนถูกเขียน แทนที่จะทับของเขาเงียบๆ
+    // ใช้ค่าที่ผู้ใช้เห็นจริงในฟอร์ม เพราะนั่นคือเวอร์ชันที่เรากำลังยืนยันว่ายังไม่เก่า
+    .eq("updated_at", seenUpdatedAt)
+    .select("id")
 
   if (error) return { ok: false, error: `แก้ไขไม่สำเร็จ: ${error.message}` }
+  if (!updated || updated.length === 0) {
+    return {
+      ok: false,
+      error: "มีคนแก้รายการนี้ไปแล้วระหว่างที่คุณกดบันทึก กรุณาปิดแล้วเปิดใหม่",
+    }
+  }
 
   revalidatePath("/today")
   revalidatePath("/")
