@@ -290,6 +290,7 @@ export type Database = {
           service_id: string | null
           service_name: string | null
           therapist_id: string | null
+          updated_at: string
         }
         Insert: {
           bonus_used?: number
@@ -316,6 +317,7 @@ export type Database = {
           service_id?: string | null
           service_name?: string | null
           therapist_id?: string | null
+          updated_at?: string
         }
         Update: {
           bonus_used?: number
@@ -342,6 +344,7 @@ export type Database = {
           service_id?: string | null
           service_name?: string | null
           therapist_id?: string | null
+          updated_at?: string
         }
         Relationships: [
           {

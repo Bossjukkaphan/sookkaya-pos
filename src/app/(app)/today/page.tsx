@@ -336,6 +336,7 @@ type SaleRecord = {
   member_status: string | null
   credit_used: number | string | null
   revenue_recognize: number | string | null
+  updated_at: string
 }
 
 type EditOptions = {
@@ -381,6 +382,8 @@ function SaleRow({
     request_fee: requestFee,
     credit_used: Number(s.credit_used ?? 0),
     revenue_recognize: Number(s.revenue_recognize ?? 0),
+    // ส่งดิบๆ ตามที่ PostgREST คืนมา ห้ามแปลงรูปแบบ ไม่งั้นจะเทียบกับฝั่ง server ไม่ตรง
+    updated_at: s.updated_at,
   }
 
   return (

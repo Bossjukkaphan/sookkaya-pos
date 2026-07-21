@@ -56,6 +56,8 @@ export type EditableSale = {
   request_fee: number
   credit_used: number
   revenue_recognize: number
+  /** เวอร์ชันของแถวตอนที่หน้านี้ถูก render — ส่งกลับไปให้ updateSale เทียบกันแก้ทับ */
+  updated_at: string
 }
 
 const SELECT_CLASS =
@@ -228,6 +230,9 @@ function EditSaleForm({
         router.refresh()
       } else {
         toast.error(result.error)
+        // บันทึกไม่ผ่าน — ดึงข้อมูลใหม่ให้หน้าข้างหลัง เผื่อสาเหตุคือมีคนแก้ไปก่อน
+        // ปิดแล้วเปิดกล่องใหม่จะได้ค่าล่าสุดพร้อม updated_at ตัวใหม่ กดบันทึกซ้ำจึงผ่านได้
+        router.refresh()
       }
     })
   }
@@ -236,6 +241,9 @@ function EditSaleForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* เวอร์ชันของแถวตอนเปิดฟอร์ม — updateSale เอาไปเทียบว่ามีคนแก้แซงไปหรือยัง */}
+      <input type="hidden" name="updated_at" value={sale.updated_at} />
+
       {/* หมอนวด */}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">หมอนวด</legend>

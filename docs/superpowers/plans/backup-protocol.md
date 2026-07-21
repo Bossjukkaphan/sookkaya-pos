@@ -3,6 +3,22 @@
 ฐานข้อมูลนี้เป็นตัวจริงที่ร้านใช้บันทึกขายอยู่ ไม่มี staging แยก
 (Supabase database branch ต้องใช้ Pro plan — org นี้อยู่ Free)
 
+## ก่อนอื่น: migration ที่นี่ทำผ่าน MCP
+
+ทุก migration ยิงผ่าน **Supabase MCP** เข้าโปรเจกต์จริงโดยตรง ไม่ได้ใช้ Supabase CLI
+ประวัติตัวจริงอยู่ที่ `supabase_migrations.schema_migrations` ในฐานข้อมูล
+ส่วน `supabase/migrations/` เก็บสำเนาไว้ให้อ่านและ diff — เขียน migration เสร็จแล้ว
+**ต้องเก็บไฟล์สำเนาลงโฟลเดอร์นั้นด้วย** ไม่งั้นคนที่มาทีหลังจะไม่รู้ว่าเกิดอะไรขึ้น
+
+**ห้ามรัน `supabase db push` / `supabase db reset` ใส่ environment จริงก่อนถามเจ้าของร้าน**
+โปรเจกต์ไม่เคยเดินสาย CLI สถานะฝั่ง CLI จึงไม่ตรงกับของจริง
+
+> **ระวัง trigger บน `sales`** — ตอนนี้ `sales` มี trigger `BEFORE UPDATE` ที่ขยับ `updated_at`
+> ทุกครั้งที่มีการแก้แถว การ backfill ยกชุดที่แตะ `sales` จึงไปขยับ `updated_at` ของทุกแถวที่โดน
+> ใครที่เปิดกล่องแก้ไขค้างไว้ตอนนั้น พอกดบันทึกจะโดนระบบบอกว่า "ข้อมูลเก่าแล้ว" ทั้งที่ไม่มีใครแก้จริง
+> ให้รัน backfill ยกชุดนอกเวลาร้านเปิด หรือครอบด้วย
+> `alter table public.sales disable trigger sales_set_updated_at_trg; … enable …`
+
 ## หลักการ
 
 สำรองเป็น **ตารางสำเนาในฐานข้อมูลเดียวกัน** ก่อนทุก migration ที่เขียนทับข้อมูลเดิม
