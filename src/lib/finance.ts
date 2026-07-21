@@ -38,6 +38,34 @@ export function breakEvenSessions(
   return Math.ceil(fixedCost / contributionMargin)
 }
 
+export type RunRate = { daysLeft: number; perDay: number }
+
+/**
+ * ต้องทำวันละเท่าไหร่ถึงจะถึงเป้าสิ้นเดือน
+ *
+ * วันต้องคิดจาก today ที่เรียกจาก todayInShopTz() เท่านั้น ห้ามใช้ current_date
+ * ของฐานข้อมูล เพราะ server รัน UTC แต่ร้านอยู่ Asia/Bangkok
+ *
+ * คืน null เมื่อไม่มีความหมาย: เดือนที่เลือกไม่ใช่เดือนปัจจุบัน (อดีตแก้อะไรไม่ได้แล้ว
+ * อนาคตยังไม่เริ่ม) หรือถึงเป้าแล้ว วันนี้นับเป็นวันที่ยังขายได้ จึงรวมอยู่ใน daysLeft
+ */
+export function targetRunRate(
+  today: string,
+  month: string,
+  remaining: number
+): RunRate | null {
+  if (today.slice(0, 7) !== month) return null
+  if (remaining <= 0) return null
+
+  const [year, m] = month.split("-").map(Number)
+  const daysInMonth = new Date(Date.UTC(year, m, 0)).getUTCDate()
+  const dayOfMonth = Number(today.slice(8, 10))
+  const daysLeft = daysInMonth - dayOfMonth + 1
+
+  if (daysLeft <= 0) return null
+  return { daysLeft, perDay: Math.ceil(remaining / daysLeft) }
+}
+
 /**
  * รายจ่ายก้อนใหญ่ (ค่าเช่า เงินเดือน) บันทึกตอนสิ้นเดือน
  * ต้นเดือนกำไรจึงดูสูงเกินจริง — ตรวจจับเพื่อเตือนก่อนเจ้าของร้านตัดสินใจผิด
