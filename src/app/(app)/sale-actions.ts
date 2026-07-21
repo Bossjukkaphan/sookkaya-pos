@@ -173,13 +173,25 @@ export async function updateSale(
 
   const { data: existing } = await supabase
     .from("sales")
-    .select("sale_date, credit_used, customer_id")
+    .select("sale_date, credit_used, customer_id, updated_at")
     .eq("id", id)
     .single()
 
   if (!existing) return { ok: false, error: "ไม่พบรายการขายนี้" }
   if (!isCurrentMonth(existing.sale_date)) {
     return { ok: false, error: "แก้ได้เฉพาะรายการของเดือนปัจจุบัน" }
+  }
+
+  // ฟอร์มส่งค่า updated_at ที่มันเห็นตอนเปิดกลับมาด้วย ถ้าไม่ตรงกับของจริงในฐานข้อมูล
+  // แปลว่ามีคนอื่นแก้รายการนี้ไปแล้วหลังจากหน้านี้ถูก render — ต้องหยุดก่อนเขียนทับ
+  // เพราะฟอร์มส่งกลับมาทุกช่อง การบันทึกทับจะลบงานของคนแรกทิ้งทั้งแถว
+  // ตรวจตรงนี้ก่อนการเขียนทุกอย่าง (แต่หลังเช็คว่ามีแถวจริงและอยู่ในเดือนปัจจุบัน)
+  const seenUpdatedAt = String(formData.get("updated_at") ?? "")
+  if (seenUpdatedAt && seenUpdatedAt !== existing.updated_at) {
+    return {
+      ok: false,
+      error: "มีคนแก้รายการนี้ไปแล้วระหว่างที่คุณเปิดฟอร์มอยู่ กรุณาปิดแล้วเปิดใหม่เพื่อดูข้อมูลล่าสุด",
+    }
   }
 
   const therapistId = String(formData.get("therapist_id") ?? "")
