@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import { GOWABI_METHOD, MEMBER_CREDIT_METHOD, PAYMENT_METHODS } from "@/lib/constants"
+import { computeSaleAmounts } from "@/lib/sale-math"
 
 export type SaleResult = { ok: true; receiptNo: string } | { ok: false; error: string }
 
@@ -41,27 +42,14 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   if (!service) return { ok: false, error: "ไม่พบเมนูบริการที่เลือก" }
 
   const priceNormal = service.price
-  const discount = Math.max(0, toNumber(formData.get("discount")))
   const isRequest = formData.get("is_request") === "on"
-  const requestFee = isRequest ? Math.max(0, toNumber(formData.get("request_fee"))) : 0
-
-  // Gowabi จ่ายตามดีลของเขา ยอดรับจริงอาจไม่เท่าราคาปกติ จึงกรอกยอดเองได้
-  let netAmount: number
-  if (paymentMethod === GOWABI_METHOD) {
-    netAmount = Math.max(0, toNumber(formData.get("net_amount"), priceNormal))
-  } else {
-    netAmount = priceNormal - discount
-  }
-
-  if (netAmount < 0) return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
+  const discountInput = Math.max(0, toNumber(formData.get("discount")))
 
   const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
   const customerId = rawCustomerId === "" ? null : rawCustomerId
 
-  let creditUsed = 0
-  let bonusUsed = 0
-  let revenueRecognize = netAmount
-
+  // สัดส่วนรับรู้รายได้ของสมาชิก — อ่านก่อนคำนวณ เพราะสูตรต้องใช้
+  let memberRatio: number | null = null
   if (paymentMethod === MEMBER_CREDIT_METHOD) {
     if (!customerId) {
       return { ok: false, error: "ชำระด้วย Member Credit ต้องเลือกลูกค้าที่เป็นสมาชิก" }
@@ -73,25 +61,35 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       .eq("customer_id", customerId)
       .single()
 
-    const credit = balance?.credit_balance ?? 0
+    const granted = balance?.credit_granted ?? 0
+    memberRatio = granted > 0 ? (balance?.cash_paid ?? 0) / granted : 1
 
-    if (credit < netAmount) {
+    const credit = balance?.credit_balance ?? 0
+    const wanted = priceNormal - discountInput
+    if (credit < wanted) {
       return {
         ok: false,
-        error: `เครดิตคงเหลือไม่พอ (มี ${credit} บาท ต้องใช้ ${netAmount} บาท)`,
+        error: `เครดิตคงเหลือไม่พอ (มี ${credit} บาท ต้องใช้ ${wanted} บาท)`,
       }
     }
+  }
 
-    // ตัดเครดิตเต็มจำนวน — bonus รวมอยู่ในเครดิตแล้ว ไม่ใช่กระเป๋าแยก
-    creditUsed = netAmount
+  const amounts = computeSaleAmounts({
+    priceNormal,
+    discount: discountInput,
+    paymentMethod,
+    gowabiNet:
+      paymentMethod === GOWABI_METHOD
+        ? toNumber(formData.get("net_amount"), priceNormal)
+        : null,
+    isRequest,
+    requestFee: toNumber(formData.get("request_fee")),
+    serviceCommission: service.commission,
+    memberRatio,
+  })
 
-    // รับรู้รายได้เฉพาะส่วนที่มีเงินสดหนุนหลัง ส่วนที่แถมไม่ใช่รายได้
-    // เช่น Silver จ่าย 5,000 ได้เครดิต 6,000 -> ใช้ 690 รับรู้รายได้ 575 ที่เหลือ 115 คือของแถม
-    const granted = balance?.credit_granted ?? 0
-    const cashPaid = balance?.cash_paid ?? 0
-    const ratio = granted > 0 ? cashPaid / granted : 1
-    revenueRecognize = Math.round(netAmount * ratio * 100) / 100
-    bonusUsed = Math.round((netAmount - revenueRecognize) * 100) / 100
+  if (amounts.netAmount < 0) {
+    return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
   }
 
   const { data: profile } = await supabase
@@ -112,16 +110,16 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       service_name: service.name,
       price_normal: priceNormal,
       coupon_promo: String(formData.get("coupon_promo") ?? "").trim() || null,
-      discount: paymentMethod === GOWABI_METHOD ? priceNormal - netAmount : discount,
-      net_amount: netAmount,
-      commission: service.commission,
+      discount: amounts.discount,
+      net_amount: amounts.netAmount,
+      commission: amounts.commission,
       payment_method: paymentMethod,
       is_request: isRequest,
-      request_fee: requestFee,
+      request_fee: amounts.requestFee,
       member_status: paymentMethod === MEMBER_CREDIT_METHOD ? "💳 Member" : null,
-      credit_used: creditUsed,
-      bonus_used: bonusUsed,
-      revenue_recognize: revenueRecognize,
+      credit_used: amounts.creditUsed,
+      bonus_used: amounts.bonusUsed,
+      revenue_recognize: amounts.revenueRecognize,
       created_by: profile?.full_name ?? user.email ?? null,
     })
     .select("receipt_no")
