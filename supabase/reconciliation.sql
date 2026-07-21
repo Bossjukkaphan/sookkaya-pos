@@ -35,7 +35,10 @@ with expected(check_name, expected_value) as (values
   ('promo_happy_hours_uses',     89),
   ('promo_happy_hours_discount', 17960),
   ('promo_1get1_uses',           253),
-  ('promo_unmatched_rows',       20)
+  ('promo_unmatched_rows',       20),
+  -- รอบ 1 หน้าภาพรวม: ยอดสะสมต้นปีถึง มิ.ย. (ก.ค. ยังขยับทุกวัน จึงไม่เอามาตรวจ)
+  ('ytd_net_revenue_2026_06',  1124141),
+  ('ytd_profit_cash_2026_06',  -116739)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -97,6 +100,14 @@ actual(check_name, actual_value) as (
       select 1 from public.promotion_aliases a
       where a.raw_key = public.promo_key(s.coupon_promo)
     )
+
+  union all
+  select 'ytd_net_revenue_2026_06', round(ytd_net_revenue)
+  from public.v_monthly_pl where month = '2026-06'
+
+  union all
+  select 'ytd_profit_cash_2026_06', round(ytd_profit_cash)
+  from public.v_monthly_pl where month = '2026-06'
 )
 select
   e.check_name,
