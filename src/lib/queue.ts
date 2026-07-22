@@ -46,6 +46,31 @@ type QueueLike = {
   status: string
 }
 
+type BedLike = {
+  bed_id: string | null
+  start_time: string
+  duration_min: number
+  status: string
+}
+
+/** เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้นจาง "ไม่ว่าง" */
+export function busyBedIds(
+  entries: BedLike[],
+  startMin: number,
+  durationMin: number
+): Set<string> {
+  return new Set(
+    entries
+      .filter(
+        (e) =>
+          e.bed_id !== null &&
+          e.status !== "cancelled" &&
+          overlaps(timeToMin(e.start_time), e.duration_min, startMin, durationMin)
+      )
+      .map((e) => e.bed_id as string)
+  )
+}
+
 /** หมอว่าง = ไม่มีคิว (รอ/กำลังนวด) คร่อมเวลานี้ · คิวไม่ระบุหมอไม่ทำให้ใครติด */
 export function countFreeTherapists(
   therapistIds: string[],

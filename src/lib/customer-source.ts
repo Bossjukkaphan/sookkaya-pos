@@ -20,3 +20,17 @@ export const SOURCE_BADGE: Partial<Record<CustomerSource, string>> = {
 export function isCustomerSource(v: string): v is CustomerSource {
   return (CUSTOMER_SOURCES as readonly string[]).includes(v)
 }
+
+/** ช่องทางย่อยของประเภท "จองล่วงหน้า" — ไว้แยกยอดต่อช่องทางในรายงาน */
+export const BOOKING_CHANNELS = ["line", "phone", "facebook"] as const
+export type BookingChannel = (typeof BOOKING_CHANNELS)[number]
+
+export const CHANNEL_LABEL: Record<BookingChannel, string> = {
+  line: "ไลน์",
+  phone: "โทรศัพท์",
+  facebook: "Facebook",
+}
+
+export function isBookingChannel(v: string): v is BookingChannel {
+  return (BOOKING_CHANNELS as readonly string[]).includes(v)
+}
