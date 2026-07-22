@@ -170,12 +170,12 @@ export default async function FinancePage({
                       <td className="px-3 py-2 text-right whitespace-nowrap">
                         {formatBaht(rowRevenue)} ฿
                       </td>
-                      <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <td className="px-3 py-2 text-right whitespace-nowrap text-orange-700">
                         {formatBaht(rowExpense)} ฿
                       </td>
                       <td
-                        className={`px-3 py-2 text-right whitespace-nowrap ${
-                          rowProfit < 0 ? "text-red-700" : ""
+                        className={`px-3 py-2 text-right font-medium whitespace-nowrap ${
+                          rowProfit < 0 ? "text-red-700" : "text-emerald-700"
                         }`}
                       >
                         {formatBaht(rowProfit)} ฿
@@ -254,11 +254,20 @@ function ExpenseBreakdownRow({
 }) {
   const pct = total > 0 ? (amount / total) * 100 : 0
   return (
-    <div className="flex justify-between gap-2 text-sm">
-      <span className="text-slate-600">{label}</span>
-      <span className="font-medium">
-        {formatBaht(amount)} ฿ <span className="text-slate-400">({pct.toFixed(0)}%)</span>
-      </span>
+    <div>
+      <div className="flex justify-between gap-2 text-sm">
+        <span className="text-slate-600">{label}</span>
+        <span className="font-medium">
+          {formatBaht(amount)} ฿ <span className="text-slate-400">({pct.toFixed(0)}%)</span>
+        </span>
+      </div>
+      {/* แถบสัดส่วนให้เห็นน้ำหนักของก้อนรายจ่ายโดยไม่ต้องเทียบตัวเลขเอง */}
+      <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full rounded-full bg-orange-400"
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
+      </div>
     </div>
   )
 }

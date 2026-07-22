@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { creditBucket } from "@/lib/member-credit"
 import { TopupForm } from "./topup-form"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -114,7 +115,14 @@ export default async function MembersPage() {
                               </p>
                             )}
                           </div>
-                          <Badge className="whitespace-nowrap">
+                          {/* สีตามระดับเครดิต bucket เดียวกับหน้าภาพรวม — ใกล้หมดเป็นสีเตือน */}
+                          <Badge
+                            className={`whitespace-nowrap ${
+                              creditBucket(balance) === "low"
+                                ? "border-amber-300 bg-amber-100 text-amber-800"
+                                : "bg-violet-600"
+                            }`}
+                          >
                             {formatBaht(balance)} ฿
                           </Badge>
                         </CardContent>

@@ -83,17 +83,32 @@ export default async function ExpensesPage() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">แยกตามหมวดหมู่</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-1.5">
+              <CardContent className="space-y-2">
                 {Object.entries(byCategory)
                   .sort((a, b) => b[1] - a[1])
-                  .map(([cat, amount]) => (
-                    <div key={cat} className="flex justify-between gap-2 text-sm">
-                      <span className="text-slate-600">{cat}</span>
-                      <span className="font-medium whitespace-nowrap">
-                        {formatBaht(amount)} ฿
-                      </span>
-                    </div>
-                  ))}
+                  .map(([cat, amount]) => {
+                    const pct = monthTotal > 0 ? (amount / monthTotal) * 100 : 0
+                    return (
+                      <div key={cat}>
+                        <div className="flex justify-between gap-2 text-sm">
+                          <span className="text-slate-600">{cat}</span>
+                          <span className="font-medium whitespace-nowrap">
+                            {formatBaht(amount)} ฿{" "}
+                            <span className="text-xs text-slate-400">
+                              ({pct.toFixed(0)}%)
+                            </span>
+                          </span>
+                        </div>
+                        {/* แถบสัดส่วนให้เห็นหมวดที่กินเงินเยอะสุดทันที */}
+                        <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div
+                            className="h-full rounded-full bg-orange-400"
+                            style={{ width: `${Math.min(pct, 100)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
               </CardContent>
             </Card>
           )}

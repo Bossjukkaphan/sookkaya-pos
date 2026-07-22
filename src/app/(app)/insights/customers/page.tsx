@@ -94,33 +94,50 @@ export default async function CustomerInsightPage({
       )}
 
       <ul className="space-y-2">
-        {shown.map((r) => (
+        {shown.map((r, i) => (
           <li key={r.customer_id}>
             <Link href={`/customers/${r.customer_id}`}>
               <Card className="transition-colors hover:bg-slate-50">
                 <CardContent className="space-y-1 py-3">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <p className="truncate font-medium">
-                        {r.name}
-                        {r.nickname && (
-                          <span className="text-slate-500"> ({r.nickname})</span>
-                        )}
-                        {r.customer_type === "สมาชิก" && (
-                          <span className="ml-1 text-xs text-emerald-700">💳</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {r.visits} ครั้ง · เฉลี่ย {formatBaht(Number(r.avg_ticket ?? 0))} ฿
-                        {r.phone && ` · ${r.phone}`}
-                      </p>
+                    <div className="flex min-w-0 items-start gap-2">
+                      {/* อันดับช่วยให้กวาดตาแล้วรู้ตำแหน่ง — เด่นพิเศษ 3 อันดับแรก */}
+                      {tab === "ltv" && (
+                        <span
+                          className={`mt-0.5 w-6 shrink-0 text-center text-xs font-semibold ${
+                            i < 3 ? "text-emerald-700" : "text-slate-400"
+                          }`}
+                        >
+                          {i + 1}
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="truncate font-medium">
+                          {r.name}
+                          {r.nickname && (
+                            <span className="text-slate-500"> ({r.nickname})</span>
+                          )}
+                          {r.customer_type === "สมาชิก" && (
+                            <span className="ml-1 text-xs text-emerald-700">💳</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {r.visits} ครั้ง · เฉลี่ย {formatBaht(Number(r.avg_ticket ?? 0))} ฿
+                          {r.phone && ` · ${r.phone}`}
+                        </p>
+                      </div>
                     </div>
-                    <span className="shrink-0 font-semibold">
+                    <span className="shrink-0 font-semibold text-emerald-800">
                       {formatBaht(Number(r.lifetime_value ?? 0))} ฿
                     </span>
                   </div>
                   {r.last_visit && (
-                    <p className="text-xs text-slate-500">
+                    <p
+                      className={`text-xs ${
+                        // แท็บหายไปนาน: จำนวนวันคือประเด็นหลัก ให้เป็นสีเตือน
+                        tab === "dormant" ? "font-medium text-amber-700" : "text-slate-500"
+                      }`}
+                    >
                       มาล่าสุด {formatThaiDate(r.last_visit)} (
                       {daysSince(r.last_visit, today)} วันก่อน)
                     </p>

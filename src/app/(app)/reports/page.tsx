@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
+import { PAY_DOT, PAY_DOT_DEFAULT } from "@/lib/payment-colors"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
@@ -205,20 +206,33 @@ export default async function ReportsPage({
           <CardHeader className="pb-2">
             <CardTitle className="text-base">ค่ามือรายหมอ</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1.5">
-            {[...byTherapist.entries()]
-              .sort((a, b) => b[1].income - a[1].income)
-              .map(([id, v]) => (
-                <div key={id} className="flex justify-between text-sm">
-                  <span className="text-slate-600">
-                    {therapistName.get(id) ?? "ไม่ระบุ"}{" "}
-                    <span className="text-slate-400">
-                      ({v.days} วัน · {v.sessions} เซสชัน)
+          <CardContent className="space-y-2">
+            {(() => {
+              const list = [...byTherapist.entries()].sort(
+                (a, b) => b[1].income - a[1].income
+              )
+              const maxIncome = Math.max(...list.map(([, v]) => v.income), 1)
+              return list.map(([id, v]) => (
+                <div key={id}>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-slate-600">
+                      {therapistName.get(id) ?? "ไม่ระบุ"}{" "}
+                      <span className="text-slate-400">
+                        ({v.days} วัน · {v.sessions} เซสชัน)
+                      </span>
                     </span>
-                  </span>
-                  <span className="font-medium">{formatBaht(v.income)} ฿</span>
+                    <span className="font-medium">{formatBaht(v.income)} ฿</span>
+                  </div>
+                  {/* แถบเทียบกันในทีม เห็นเลยใครทำรายได้นำ */}
+                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-emerald-500"
+                      style={{ width: `${(v.income / maxIncome) * 100}%` }}
+                    />
+                  </div>
                 </div>
-              ))}
+              ))
+            })()}
           </CardContent>
         </Card>
       )}
@@ -228,15 +242,39 @@ export default async function ReportsPage({
           <CardHeader className="pb-2">
             <CardTitle className="text-base">ช่องทางชำระเงิน</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1.5">
-            {Object.entries(byPayment)
-              .sort((a, b) => b[1] - a[1])
-              .map(([method, amount]) => (
-                <div key={method} className="flex justify-between text-sm">
-                  <span className="text-slate-600">{method}</span>
-                  <span className="font-medium">{formatBaht(amount)} ฿</span>
-                </div>
-              ))}
+          <CardContent className="space-y-2">
+            {(() => {
+              const entries = Object.entries(byPayment).sort((a, b) => b[1] - a[1])
+              const totalPay = entries.reduce((s, [, v]) => s + v, 0)
+              return entries.map(([method, amount]) => {
+                const pct = totalPay > 0 ? (amount / totalPay) * 100 : 0
+                return (
+                  <div key={method}>
+                    <div className="flex justify-between text-sm">
+                      <span className="flex items-center gap-1.5 text-slate-600">
+                        {/* จุดสีเดียวกับ badge ในหน้ายอดวันนี้ */}
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
+                        />
+                        {method}
+                      </span>
+                      <span className="font-medium">
+                        {formatBaht(amount)} ฿{" "}
+                        <span className="text-xs text-slate-400">
+                          ({pct.toFixed(0)}%)
+                        </span>
+                      </span>
+                    </div>
+                    <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                )
+              })
+            })()}
           </CardContent>
         </Card>
       )}
@@ -246,17 +284,28 @@ export default async function ReportsPage({
           <CardHeader className="pb-2">
             <CardTitle className="text-base">เมนูขายดี</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-1.5">
-            {topServices.map(([name, v]) => (
-              <div key={name} className="flex justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate text-slate-600">
-                  {name} <span className="text-slate-400">×{v.count}</span>
-                </span>
-                <span className="font-medium whitespace-nowrap">
-                  {formatBaht(v.revenue)} ฿
-                </span>
-              </div>
-            ))}
+          <CardContent className="space-y-2">
+            {(() => {
+              const maxRevenue = Math.max(...topServices.map(([, v]) => v.revenue), 1)
+              return topServices.map(([name, v]) => (
+                <div key={name}>
+                  <div className="flex justify-between gap-2 text-sm">
+                    <span className="min-w-0 truncate text-slate-600">
+                      {name} <span className="text-slate-400">×{v.count}</span>
+                    </span>
+                    <span className="font-medium whitespace-nowrap">
+                      {formatBaht(v.revenue)} ฿
+                    </span>
+                  </div>
+                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-sky-500"
+                      style={{ width: `${(v.revenue / maxRevenue) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              ))
+            })()}
           </CardContent>
         </Card>
       )}
