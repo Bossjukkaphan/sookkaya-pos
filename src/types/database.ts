@@ -615,6 +615,15 @@ export type Database = {
     }
     Functions: {
       app_role: { Args: never; Returns: string }
+      hourly_density: {
+        Args: { from_date?: string }
+        Returns: {
+          hour: number
+          revenue: number
+          sessions: number
+          weekday: number
+        }[]
+      }
       next_receipt_no: { Args: { p_date?: string }; Returns: string }
       promo_key: { Args: { txt: string }; Returns: string }
     }
