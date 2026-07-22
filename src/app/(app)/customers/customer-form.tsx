@@ -17,12 +17,17 @@ type Customer = {
   line_id: string | null
   birthday: string | null
   notes: string | null
+  gender: string | null
+  nationality: string | null
 }
+
+const GENDERS = ["ชาย", "หญิง", "อื่นๆ"] as const
 
 export function CustomerForm({ customer }: { customer?: Customer }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   const [open, setOpen] = useState(!customer)
+  const [gender, setGender] = useState(customer?.gender ?? "")
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -108,6 +113,36 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
             type="date"
             className="h-12"
             defaultValue={customer?.birthday ?? ""}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>เพศ</Label>
+          <input type="hidden" name="gender" value={gender} />
+          <div className="flex gap-1">
+            {GENDERS.map((g) => (
+              <Button
+                key={g}
+                type="button"
+                size="sm"
+                variant={gender === g ? "default" : "outline"}
+                onClick={() => setGender(gender === g ? "" : g)}
+              >
+                {g}
+              </Button>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="nationality">สัญชาติ</Label>
+          <Input
+            id="nationality"
+            name="nationality"
+            className="h-12"
+            defaultValue={customer?.nationality ?? ""}
+            placeholder="เช่น ไทย"
           />
         </div>
       </div>

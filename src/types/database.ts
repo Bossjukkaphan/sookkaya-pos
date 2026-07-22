@@ -66,9 +66,11 @@ export type Database = {
           birthday: string | null
           created_at: string
           customer_type: string
+          gender: string | null
           id: string
           line_id: string | null
           name: string
+          nationality: string | null
           nickname: string | null
           notes: string | null
           phone: string | null
@@ -79,9 +81,11 @@ export type Database = {
           birthday?: string | null
           created_at?: string
           customer_type?: string
+          gender?: string | null
           id?: string
           line_id?: string | null
           name: string
+          nationality?: string | null
           nickname?: string | null
           notes?: string | null
           phone?: string | null
@@ -92,9 +96,11 @@ export type Database = {
           birthday?: string | null
           created_at?: string
           customer_type?: string
+          gender?: string | null
           id?: string
           line_id?: string | null
           name?: string
+          nationality?: string | null
           nickname?: string | null
           notes?: string | null
           phone?: string | null
@@ -523,6 +529,30 @@ export type Database = {
         Update: {
           key?: string
           value?: string | null
+        }
+        Relationships: []
+      }
+      turn_aways: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          queue_date: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          queue_date: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          queue_date?: string
         }
         Relationships: []
       }

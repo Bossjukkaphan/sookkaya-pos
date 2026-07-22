@@ -19,6 +19,7 @@ import type { Tables } from "@/types/database"
 import { moveQueueEntry } from "./queue-actions"
 import { QueueFormDialog } from "./queue-form-dialog"
 import { QueueCard } from "./queue-card"
+import { TurnAwayButton } from "./turn-away-button"
 import { Button } from "@/components/ui/button"
 
 export type QueueEntry = Tables<"queue_entries">
@@ -63,6 +64,7 @@ export function QueueBoard({
   initialEntries,
   boardDate,
   isToday,
+  turnAwayCount,
 }: {
   therapists: Therapist[]
   services: ServiceOption[]
@@ -70,6 +72,7 @@ export function QueueBoard({
   initialEntries: QueueEntry[]
   boardDate: string
   isToday: boolean
+  turnAwayCount: number
 }) {
   const [entries, setEntries] = useState(initialEntries)
   const [nowMin, setNowMin] = useState(nowMinInShopTz)
@@ -266,9 +269,12 @@ export function QueueBoard({
           คิวรอ <span className="font-semibold">{waitingCount}</span>
           {" · "}ทั้งหมด <span className="font-semibold">{entries.length}</span>
         </p>
-        <Button className="h-11" onClick={() => setForm({})}>
-          + เพิ่มคิว
-        </Button>
+        <div className="flex gap-2">
+          <TurnAwayButton boardDate={boardDate} initialCount={turnAwayCount} />
+          <Button className="h-11" onClick={() => setForm({})}>
+            + เพิ่มคิว
+          </Button>
+        </div>
       </div>
 
       {form && (

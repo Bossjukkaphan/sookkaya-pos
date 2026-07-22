@@ -19,6 +19,8 @@ export async function saveCustomer(formData: FormData): Promise<CustomerResult> 
   const name = String(formData.get("name") ?? "").trim()
   if (!name) return { ok: false, error: "กรุณากรอกชื่อลูกค้า" }
 
+  // เพศรับเฉพาะค่าในชุดที่กำหนด — ค่าเพี้ยนเก็บเป็น null (ไม่ทราบ) ไม่เดา
+  const genderInput = String(formData.get("gender") ?? "")
   const payload = {
     name,
     nickname: clean(formData.get("nickname")),
@@ -26,6 +28,8 @@ export async function saveCustomer(formData: FormData): Promise<CustomerResult> 
     line_id: clean(formData.get("line_id")),
     birthday: clean(formData.get("birthday")),
     notes: clean(formData.get("notes")),
+    gender: ["ชาย", "หญิง", "อื่นๆ"].includes(genderInput) ? genderInput : null,
+    nationality: clean(formData.get("nationality")),
     updated_at: new Date().toISOString(),
   }
 

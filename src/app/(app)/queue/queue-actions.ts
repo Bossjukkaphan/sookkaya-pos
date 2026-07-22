@@ -66,6 +66,27 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   return { ok: true }
 }
 
+/** บันทึกปฏิเสธลูกค้า (คิวเต็ม/หมอไม่ว่าง) — ข้อมูลตัดสินใจจ้างหมอเพิ่ม */
+export async function recordTurnAway(
+  queueDate: string,
+  note: string
+): Promise<Result> {
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(queueDate) ? queueDate : todayInShopTz()
+  const supabase = await createClient()
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .single()
+  const { error } = await supabase.from("turn_aways").insert({
+    queue_date: date,
+    note: note.trim() || null,
+    created_by: profile?.full_name ?? null,
+  })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/queue")
+  return { ok: true }
+}
+
 /** แก้ไขคิวจากฟอร์ม (ทุก field ยกเว้นวัน/สถานะ) · คิวที่จ่ายแล้วแก้ไม่ได้ */
 export async function updateQueueEntry(id: string, form: FormData): Promise<Result> {
   const supabase = await createClient()

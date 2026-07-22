@@ -56,7 +56,7 @@ export default async function ReportsPage({
     supabase
       .from("sales")
       .select(
-        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel"
+        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel, customer_id"
       )
       .gte("sale_date", from)
       .lte("sale_date", to),
@@ -191,6 +191,66 @@ export default async function ReportsPage({
     k === "unknown" ? "ไม่ทราบ (บิลเก่า)" : SOURCE_LABEL[k as keyof typeof SOURCE_LABEL]
   const channelLabel = (k: string) =>
     k === "unknown" ? "ไม่ระบุช่องทาง" : CHANNEL_LABEL[k as keyof typeof CHANNEL_LABEL]
+
+  // ลูกค้าในช่วง: ยูนีค · ใหม่ (มาครั้งแรกในช่วงนี้) · บิลไม่ระบุชื่อ · ปฏิเสธ
+  const customerIds = [
+    ...new Set(
+      rows.map((s) => s.customer_id).filter((id): id is string => id !== null)
+    ),
+  ]
+  const unnamedBills = rows.filter((s) => s.customer_id === null).length
+
+  const [{ data: rangeCustomers }, { data: firstVisits }, { count: turnAways }] =
+    await Promise.all([
+      customerIds.length
+        ? supabase
+            .from("customers")
+            .select("id, gender, nationality, birthday")
+            .in("id", customerIds)
+        : Promise.resolve({ data: [] as { id: string; gender: string | null; nationality: string | null; birthday: string | null }[] }),
+      customerIds.length
+        ? supabase
+            .from("v_customer_ltv")
+            .select("customer_id, first_visit")
+            .in("customer_id", customerIds)
+        : Promise.resolve({ data: [] as { customer_id: string | null; first_visit: string | null }[] }),
+      supabase
+        .from("turn_aways")
+        .select("id", { count: "exact", head: true })
+        .gte("queue_date", from)
+        .lte("queue_date", to),
+    ])
+
+  const newCustomers = (firstVisits ?? []).filter(
+    (v) => v.first_visit && v.first_visit >= from && v.first_visit <= to
+  ).length
+
+  // แจกแจงเพศ/สัญชาติ/ช่วงอายุของลูกค้ายูนีคในช่วง — ไม่ทราบ = ไม่เดา
+  const tally = (vals: (string | null)[]) => {
+    const m = new Map<string, number>()
+    for (const v of vals) {
+      const k = v ?? "ไม่ระบุ"
+      m.set(k, (m.get(k) ?? 0) + 1)
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }
+  const genderTally = tally((rangeCustomers ?? []).map((c) => c.gender))
+  const nationalityTally = tally(
+    (rangeCustomers ?? []).map((c) => c.nationality?.trim() || null)
+  ).slice(0, 5)
+  const ageOf = (birthday: string | null): string | null => {
+    if (!birthday) return null
+    const age = Math.floor(
+      (Date.parse(today) - Date.parse(birthday)) / (365.25 * 86_400_000)
+    )
+    if (!Number.isFinite(age) || age < 0 || age > 120) return null
+    if (age < 20) return "ต่ำกว่า 20"
+    if (age < 30) return "20-29"
+    if (age < 40) return "30-39"
+    if (age < 50) return "40-49"
+    return "50 ขึ้นไป"
+  }
+  const ageTally = tally((rangeCustomers ?? []).map((c) => ageOf(c.birthday)))
 
   const rangeLabel = isSingleDay
     ? formatThaiDate(from)
@@ -367,6 +427,49 @@ export default async function ReportsPage({
         </CardContent>
       </Card>
 
+      {/* ลูกค้าในช่วง — เพศ/อายุ/สัญชาติมาจากโปรไฟล์ที่กรอกไว้ ไม่ทราบ = ไม่เดา */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">ลูกค้า</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <div className="rounded-lg bg-slate-50 px-3 py-2">
+              <p className="text-xs text-slate-500">ลูกค้ายูนีค</p>
+              <p className="text-lg font-bold">{customerIds.length} คน</p>
+            </div>
+            <div className="rounded-lg bg-emerald-50 px-3 py-2">
+              <p className="text-xs text-slate-500">ลูกค้าใหม่</p>
+              <p className="text-lg font-bold text-emerald-700">{newCustomers} คน</p>
+            </div>
+            <div className="rounded-lg bg-slate-50 px-3 py-2">
+              <p className="text-xs text-slate-500">บิลไม่ระบุชื่อ</p>
+              <p className="text-lg font-bold">{unnamedBills}</p>
+            </div>
+            <div className="rounded-lg bg-red-50 px-3 py-2">
+              <p className="text-xs text-slate-500">ปฏิเสธลูกค้า</p>
+              <p
+                className={`text-lg font-bold ${(turnAways ?? 0) > 0 ? "text-red-700" : ""}`}
+              >
+                {turnAways ?? 0} ครั้ง
+              </p>
+            </div>
+          </div>
+
+          {customerIds.length > 0 && (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <TallyBlock title="เพศ" data={genderTally} total={customerIds.length} />
+              <TallyBlock title="ช่วงอายุ" data={ageTally} total={customerIds.length} />
+              <TallyBlock
+                title="สัญชาติ"
+                data={nationalityTally}
+                total={customerIds.length}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {byTherapist.size > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -496,6 +599,50 @@ function Line({ label, value }: { label: string; value: number }) {
       <span className={value < 0 ? "text-red-700" : "font-medium"}>
         {formatBaht(value)} ฿
       </span>
+    </div>
+  )
+}
+
+/** แจกแจงสัดส่วนแบบแถบ — ภาษาภาพเดียวกับการ์ดอื่นทั้งระบบ (ไม่ใช้ pie) */
+function TallyBlock({
+  title,
+  data,
+  total,
+}: {
+  title: string
+  data: [string, number][]
+  total: number
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-xs font-semibold text-slate-600">{title}</p>
+      <div className="space-y-1">
+        {data.map(([label, count]) => {
+          const pct = total > 0 ? (count / total) * 100 : 0
+          return (
+            <div key={label}>
+              <div className="flex justify-between text-xs">
+                <span
+                  className={label === "ไม่ระบุ" ? "text-slate-400" : "text-slate-600"}
+                >
+                  {label}
+                </span>
+                <span className="font-medium">
+                  {count} <span className="text-slate-400">({pct.toFixed(0)}%)</span>
+                </span>
+              </div>
+              <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className={`h-full rounded-full ${
+                    label === "ไม่ระบุ" ? "bg-slate-300" : "bg-violet-500"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
