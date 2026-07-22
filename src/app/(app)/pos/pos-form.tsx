@@ -28,25 +28,37 @@ type Therapist = { id: string; name: string }
 type Service = { id: string; name: string; price: number; commission: number }
 type Promotion = { id: string; name: string }
 
+/** ค่ากรอกล่วงหน้าจากการ์ดคิว — เก็บเงินจากบอร์ดคิวไม่ต้องกรอกซ้ำ */
+export type PosInitial = {
+  queueEntryId: string
+  therapistId: string
+  serviceId: string
+  customerId: string
+  customerName: string
+  customerPhone: string
+}
+
 export function PosForm({
   therapists,
   services,
   promotions,
+  initial,
 }: {
   therapists: Therapist[]
   services: Service[]
   promotions: Promotion[]
+  initial?: PosInitial
 }) {
-  const [therapistId, setTherapistId] = useState("")
-  const [serviceId, setServiceId] = useState("")
+  const [therapistId, setTherapistId] = useState(initial?.therapistId ?? "")
+  const [serviceId, setServiceId] = useState(initial?.serviceId ?? "")
   const [paymentMethod, setPaymentMethod] = useState("")
   const [discount, setDiscount] = useState("")
   const [gowabiNet, setGowabiNet] = useState("")
   const [isRequest, setIsRequest] = useState(false)
   const [requestFee, setRequestFee] = useState("")
-  const [customerId, setCustomerId] = useState("")
-  const [customerName, setCustomerName] = useState("")
-  const [customerPhone, setCustomerPhone] = useState("")
+  const [customerId, setCustomerId] = useState(initial?.customerId ?? "")
+  const [customerName, setCustomerName] = useState(initial?.customerName ?? "")
+  const [customerPhone, setCustomerPhone] = useState(initial?.customerPhone ?? "")
   const [couponPromo, setCouponPromo] = useState("")
   // Gowabi ต้องพิมพ์รหัสจองเป็นเลขเสมอ จึงบังคับเป็นช่องพิมพ์
   // กรณีอื่นเริ่มจาก dropdown แล้วเปิดช่องพิมพ์เฉพาะเมื่อเลือก "อื่นๆ"
@@ -99,6 +111,10 @@ export function PosForm({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5 pb-4">
+      {/* มาจากการ์ดคิว — บันทึกเสร็จ createSale จะปิดคิวเป็นชำระแล้ว */}
+      {initial && (
+        <input type="hidden" name="queue_entry_id" value={initial.queueEntryId} />
+      )}
       {/* หมอนวด — ปุ่มกดเร็วกว่า dropdown */}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">หมอนวด</legend>

@@ -122,10 +122,27 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       revenue_recognize: amounts.revenueRecognize,
       created_by: profile?.full_name ?? user.email ?? null,
     })
-    .select("receipt_no")
+    .select("id, receipt_no")
     .single()
 
   if (error) return { ok: false, error: `บันทึกไม่สำเร็จ: ${error.message}` }
+
+  // มาจากบอร์ดคิว → ปิดคิวเป็นชำระแล้ว + ผูกใบขาย
+  // (สองคำสั่งแยกกัน ถ้าอัปเดตคิวพลาด ใบขายยังถูกต้อง การ์ดค้างสถานะเดิม
+  //  พนักงานกดเก็บเงินซ้ำไม่เกิดใบขายซ้ำ เพราะหน้า POS กรอง status=paid ออกแล้ว)
+  const queueEntryId = String(formData.get("queue_entry_id") ?? "")
+  if (queueEntryId) {
+    await supabase
+      .from("queue_entries")
+      .update({
+        status: "paid",
+        sale_id: inserted.id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", queueEntryId)
+      .neq("status", "paid")
+    revalidatePath("/queue")
+  }
 
   revalidatePath("/")
   revalidatePath("/commission")

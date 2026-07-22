@@ -6,6 +6,7 @@ import {
   BadgePercent,
   BarChart3,
   CalendarClock,
+  Clock4,
   CreditCard,
   FileBarChart,
   HandCoins,
@@ -44,6 +45,8 @@ const PRIMARY: NavLink[] = [
  * บนมือถือยังซ่อนไว้หลังปุ่มเพิ่มเติม เพราะแถบล่างใส่ได้แค่ 5 ปุ่ม
  */
 const SECONDARY: NavLink[] = [
+  // คิวใช้ทุกวันก็จริง แต่แถบล่างมือถือเต็ม 5 ปุ่มแล้ว — ขึ้นบนสุดของกลุ่มนี้แทน
+  { href: "/queue", label: "คิววันนี้", icon: Clock4 },
   { href: "/sales", label: "ยอดขายย้อนหลัง", icon: TrendingUp },
   { href: "/finance", label: "การเงิน", icon: PiggyBank, minRole: "admin" },
   { href: "/insights/heatmap", label: "ชั่วโมงคนแน่น", icon: CalendarClock, minRole: "manager" },
