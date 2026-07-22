@@ -125,12 +125,20 @@ export default async function UnitEconomicsPage({
                     <td className="px-2 py-2 text-right whitespace-nowrap">
                       {formatBaht(m.materialCost)} ฿
                     </td>
-                    <td className="px-2 py-2 text-right whitespace-nowrap font-medium">
+                    <td
+                      className={`px-2 py-2 text-right font-medium whitespace-nowrap ${
+                        m.profit < 0 ? "text-red-700" : "text-emerald-700"
+                      }`}
+                    >
                       {formatBaht(m.profit)} ฿
                     </td>
                     <td
                       className={`px-2 py-2 text-right whitespace-nowrap ${
-                        m.margin < 0.3 ? "text-amber-700" : ""
+                        m.margin < 0
+                          ? "font-medium text-red-700"
+                          : m.margin < 0.3
+                            ? "text-amber-700"
+                            : ""
                       }`}
                     >
                       {(m.margin * 100).toFixed(0)}%
@@ -183,6 +191,13 @@ function BreakEvenRow({
   breakEven: number | null
   actual: number
 }) {
+  const reached = breakEven !== null && actual >= breakEven
+  // ความกว้างแถบ = สัดส่วนเซสชันจริงต่อจุดคุ้มทุน (เต็มหลอดเมื่อถึงแล้ว)
+  const pct =
+    breakEven === null || breakEven === 0
+      ? 100
+      : Math.min((actual / breakEven) * 100, 100)
+
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between">
@@ -191,9 +206,17 @@ function BreakEvenRow({
           {breakEven === null ? "—" : `${breakEven} เซสชัน`}
         </span>
       </div>
+      {breakEven !== null && (
+        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+          <div
+            className={`h-full rounded-full ${reached ? "bg-emerald-500" : "bg-amber-400"}`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      )}
       {breakEven === null ? (
         <p className="text-xs text-red-700">กำไรต่อเซสชันไม่เป็นบวก — ยังไม่มีจุดคุ้มทุน</p>
-      ) : actual >= breakEven ? (
+      ) : reached ? (
         <p className="text-xs text-emerald-700">
           {breakEven > 0
             ? `เกินจุดคุ้มทุน ${(actual / breakEven).toFixed(1)} เท่า`
