@@ -19,7 +19,7 @@ type Totals = { sessions: number; gross: number; net: number; cash: number }
 function sum(
   rows: {
     sessions: number | null
-    gross_sales: number | null
+    volume: number | null
     net_revenue: number | null
     cash_in: number | null
   }[]
@@ -27,7 +27,7 @@ function sum(
   return rows.reduce<Totals>(
     (acc, r) => ({
       sessions: acc.sessions + Number(r.sessions),
-      gross: acc.gross + Number(r.gross_sales),
+      gross: acc.gross + Number(r.volume),
       net: acc.net + Number(r.net_revenue),
       cash: acc.cash + Number(r.cash_in),
     }),
@@ -64,13 +64,13 @@ export default async function SalesPage({
   const [{ data: current }, { data: previous }] = await Promise.all([
     supabase
       .from("v_daily_summary")
-      .select("sale_date, sessions, gross_sales, net_revenue, cash_in")
+      .select("sale_date, sessions, volume, net_revenue, cash_in")
       .gte("sale_date", range.from)
       .lte("sale_date", range.to)
       .order("sale_date", { ascending: false }),
     supabase
       .from("v_daily_summary")
-      .select("sale_date, sessions, gross_sales, net_revenue, cash_in")
+      .select("sale_date, sessions, volume, net_revenue, cash_in")
       .gte("sale_date", prev.from)
       .lte("sale_date", prev.to),
   ])
