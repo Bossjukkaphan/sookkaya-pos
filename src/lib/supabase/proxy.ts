@@ -3,7 +3,7 @@ import { createServerClient } from "@supabase/ssr"
 
 import type { Database } from "@/types/database"
 
-const PUBLIC_ROUTES = ["/login", "/auth", "/preview"]
+const PUBLIC_ROUTES = ["/login", "/auth"]
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
