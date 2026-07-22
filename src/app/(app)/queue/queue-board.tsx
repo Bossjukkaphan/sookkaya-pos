@@ -17,8 +17,9 @@ import {
 } from "@/lib/queue"
 import type { Tables } from "@/types/database"
 import { moveQueueEntry } from "./queue-actions"
-import { AddQueueDialog } from "./add-queue-dialog"
+import { QueueFormDialog } from "./queue-form-dialog"
 import { QueueCard } from "./queue-card"
+import { Button } from "@/components/ui/button"
 
 export type QueueEntry = Tables<"queue_entries">
 export type Therapist = { id: string; name: string }
@@ -73,6 +74,12 @@ export function QueueBoard({
   const [entries, setEntries] = useState(initialEntries)
   const [nowMin, setNowMin] = useState(nowMinInShopTz)
   const [drag, setDrag] = useState<DragState | null>(null)
+  // ฟอร์มเพิ่ม/แก้คิว — mount เมื่อเปิดเท่านั้น state ในฟอร์มจะสดเสมอ
+  const [form, setForm] = useState<null | {
+    entry?: QueueEntry
+    therapistId?: string | null
+    startTime?: string
+  }>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   // ref คือแหล่งความจริงของการลาก อัปเดตทันทีใน handler — ถ้า sync ผ่าน effect
   // จะช้ากว่า event ถัดไปหนึ่งจังหวะ แล้วการขยับหลังครบ 300ms พอดีจะโดนตัดทิ้ง
@@ -259,16 +266,26 @@ export function QueueBoard({
           คิวรอ <span className="font-semibold">{waitingCount}</span>
           {" · "}ทั้งหมด <span className="font-semibold">{entries.length}</span>
         </p>
-        <AddQueueDialog
+        <Button className="h-11" onClick={() => setForm({})}>
+          + เพิ่มคิว
+        </Button>
+      </div>
+
+      {form && (
+        <QueueFormDialog
           therapists={therapists}
           services={services}
           beds={beds}
           entries={entries}
           boardDate={boardDate}
           isToday={isToday}
+          entry={form.entry}
+          defaultTherapistId={form.therapistId}
+          defaultStartTime={form.startTime}
+          onClose={() => setForm(null)}
           onDone={refetch}
         />
-      </div>
+      )}
 
       <div ref={scrollRef} className="overflow-x-auto rounded-lg border bg-white">
         <div
@@ -298,7 +315,21 @@ export function QueueBoard({
               <div className="sticky left-0 z-20 flex w-24 shrink-0 items-center border-r bg-white px-2 text-sm font-medium">
                 <span className="truncate">{row.name}</span>
               </div>
-              <div className="relative" style={{ width: BOARD_W, height: ROW_H }}>
+              <div
+                className="relative"
+                style={{ width: BOARD_W, height: ROW_H }}
+                onClick={(e) => {
+                  // แตะช่องว่าง = เพิ่มคิวให้หมอแถวนี้ที่เวลานั้น (การ์ดเป็น button — ไม่เข้าเงื่อนไขนี้)
+                  if ((e.target as HTMLElement).closest("button")) return
+                  if (movedRef.current) return // เพิ่งลากเสร็จ ไม่ใช่ตั้งใจแตะ
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  const min = clampStart(
+                    snapMin(BOARD_START_MIN + (e.clientX - rect.left) / PX_PER_MIN),
+                    60
+                  )
+                  setForm({ therapistId: row.id, startTime: minToTime(min) })
+                }}
+              >
                 {hours.map((h) => (
                   <div
                     key={h}
@@ -330,6 +361,7 @@ export function QueueBoard({
                       }
                       movedRef={movedRef}
                       onPointerDown={(ev) => onCardPointerDown(ev, e, rowIndex)}
+                      onEdit={() => setForm({ entry: e })}
                       onChanged={refetch}
                     />
                   ))}

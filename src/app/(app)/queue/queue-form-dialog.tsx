@@ -13,14 +13,13 @@ import {
   type CustomerSource,
 } from "@/lib/customer-source"
 import { busyBedIds, minToTime, snapMin, timeToMin } from "@/lib/queue"
-import { createQueueEntry } from "./queue-actions"
+import { createQueueEntry, updateQueueEntry } from "./queue-actions"
 import type { Bed, QueueEntry, ServiceOption, Therapist } from "./queue-board"
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,13 +38,21 @@ function nowRounded(): string {
   return minToTime(snapMin(h * 60 + m))
 }
 
-export function AddQueueDialog({
+/**
+ * ฟอร์มคิวใช้ร่วมทั้ง "เพิ่ม" และ "แก้ไข" — parent เป็นคน mount เมื่อจะเปิด
+ * (unmount ตอนปิด → state เริ่มใหม่จาก initializer เสมอ ไม่ต้อง sync เอง)
+ */
+export function QueueFormDialog({
   therapists,
   services,
   beds,
   entries,
   boardDate,
   isToday,
+  entry,
+  defaultTherapistId,
+  defaultStartTime,
+  onClose,
   onDone,
 }: {
   therapists: Therapist[]
@@ -56,46 +63,51 @@ export function AddQueueDialog({
   /** คิวถูกสร้างลงวันที่บอร์ดกำลังแสดง — เลื่อนไปวันหน้าก็รับจองล่วงหน้าได้ */
   boardDate: string
   isToday: boolean
+  /** มีค่า = โหมดแก้ไขคิวใบนี้ */
+  entry?: QueueEntry
+  /** เพิ่มจากการแตะช่องว่างบนบอร์ด — หมอของแถวนั้น (null = ยังไม่ระบุ) */
+  defaultTherapistId?: string | null
+  defaultStartTime?: string
+  onClose: () => void
   onDone: () => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [therapistId, setTherapistId] = useState("")
-  const [serviceId, setServiceId] = useState("")
-  const [duration, setDuration] = useState(60)
+  const isEdit = !!entry
+  const [therapistId, setTherapistId] = useState(
+    entry ? (entry.therapist_id ?? "") : (defaultTherapistId ?? "")
+  )
+  const [serviceId, setServiceId] = useState(entry?.service_id ?? "")
+  const [duration, setDuration] = useState(entry?.duration_min ?? 60)
   // วันนี้เริ่มที่เวลาปัจจุบัน · วันอื่นเริ่มที่เปิดร้าน (เวลาปัจจุบันไม่เกี่ยวกับวันนั้น)
-  const [startTime, setStartTime] = useState(isToday ? nowRounded() : "10:00")
-  const [source, setSource] = useState<CustomerSource>("walk_in")
-  const [bookingChannel, setBookingChannel] = useState<BookingChannel | "">("")
-  const [bedId, setBedId] = useState("")
-  const [notes, setNotes] = useState("")
-  const [customerId, setCustomerId] = useState("")
-  const [customerName, setCustomerName] = useState("")
+  const [startTime, setStartTime] = useState(
+    entry?.start_time.slice(0, 5) ??
+      defaultStartTime ??
+      (isToday ? nowRounded() : "10:00")
+  )
+  const [source, setSource] = useState<CustomerSource>(
+    entry && ["walk_in", "booking", "agency"].includes(entry.source)
+      ? (entry.source as CustomerSource)
+      : "walk_in"
+  )
+  const [bookingChannel, setBookingChannel] = useState<BookingChannel | "">(
+    entry && ["line", "phone", "facebook"].includes(entry.booking_channel ?? "")
+      ? (entry.booking_channel as BookingChannel)
+      : ""
+  )
+  const [bedId, setBedId] = useState(entry?.bed_id ?? "")
+  const [notes, setNotes] = useState(entry?.notes ?? "")
+  const [customerId, setCustomerId] = useState(entry?.customer_id ?? "")
+  const [customerName, setCustomerName] = useState(entry?.customer_name ?? "")
   const [customerPhone, setCustomerPhone] = useState("")
   const [pending, startTransition] = useTransition()
-
-  function reset() {
-    setTherapistId("")
-    setServiceId("")
-    setDuration(60)
-    setStartTime(isToday ? nowRounded() : "10:00")
-    setSource("walk_in")
-    setBookingChannel("")
-    setBedId("")
-    setNotes("")
-    setCustomerId("")
-    setCustomerName("")
-    setCustomerPhone("")
-  }
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const r = await createQueueEntry(fd)
+      const r = entry ? await updateQueueEntry(entry.id, fd) : await createQueueEntry(fd)
       if (r.ok) {
-        toast.success("เพิ่มคิวแล้ว")
-        reset()
-        setOpen(false)
+        toast.success(entry ? "แก้ไขคิวแล้ว" : "เพิ่มคิวแล้ว")
+        onClose()
         onDone()
       } else {
         toast.error(r.error)
@@ -104,13 +116,10 @@ export function AddQueueDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button className="h-11">+ เพิ่มคิว</Button>
-      </DialogTrigger>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>เพิ่มคิว</DialogTitle>
+          <DialogTitle>{isEdit ? "แก้ไขคิว" : "เพิ่มคิว"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
           <input type="hidden" name="therapist_id" value={therapistId} />
@@ -239,8 +248,9 @@ export function AddQueueDialog({
               เตียง <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
             </legend>
             {(() => {
+              // โหมดแก้ไข: ไม่นับคิวใบที่กำลังแก้ ไม่งั้นเตียงตัวเองขึ้น "ไม่ว่าง"
               const busy = busyBedIds(
-                entries,
+                entries.filter((en) => en.id !== entry?.id),
                 timeToMin(/^\d{2}:\d{2}$/.test(startTime) ? startTime : "10:00"),
                 duration
               )
@@ -304,7 +314,7 @@ export function AddQueueDialog({
           </div>
 
           <Button type="submit" disabled={pending || !serviceId} className="h-12 w-full">
-            {pending ? "กำลังบันทึก..." : "เพิ่มคิว"}
+            {pending ? "กำลังบันทึก..." : isEdit ? "บันทึกการแก้ไข" : "เพิ่มคิว"}
           </Button>
         </form>
       </DialogContent>

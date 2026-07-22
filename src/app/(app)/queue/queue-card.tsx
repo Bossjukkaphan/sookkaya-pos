@@ -49,6 +49,7 @@ export function QueueCard({
   dragOffset,
   movedRef,
   onPointerDown,
+  onEdit,
   onChanged,
 }: {
   entry: QueueEntry
@@ -58,6 +59,7 @@ export function QueueCard({
   dragOffset: { dx: number; dy: number } | null
   movedRef: React.RefObject<boolean>
   onPointerDown: (e: React.PointerEvent) => void
+  onEdit: () => void
   onChanged: () => void
 }) {
   const [open, setOpen] = useState(false)
@@ -179,14 +181,27 @@ export function QueueCard({
               </>
             )}
             {entry.status !== "paid" && (
-              <Button
-                variant="outline"
-                disabled={pending}
-                className="text-red-600"
-                onClick={() => changeStatus("cancelled")}
-              >
-                ยกเลิกคิว
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    // ปิดกล่องนี้ก่อน แล้วให้บอร์ดเปิดฟอร์มแก้ไข (แก้เวลาแล้วการ์ดเลื่อนตามเอง)
+                    setOpen(false)
+                    onEdit()
+                  }}
+                >
+                  ✏️ แก้ไข
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  className="text-red-600"
+                  onClick={() => changeStatus("cancelled")}
+                >
+                  ยกเลิกคิว
+                </Button>
+              </>
             )}
           </div>
         </DialogContent>
