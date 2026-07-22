@@ -689,6 +689,9 @@ export default async function ReportsPage({
           <Button asChild variant="outline">
             <a href={`/api/export?${exportExpQs.toString()}`}>รายจ่าย (CSV)</a>
           </Button>
+          <Button asChild variant="outline">
+            <Link href={`/history?from=${from}&to=${to}`}>🧾 ดูรายบิล (ประวัติบิล)</Link>
+          </Button>
         </CardContent>
       </Card>
     </div>

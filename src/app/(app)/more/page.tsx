@@ -17,9 +17,15 @@ export const metadata = { title: "เพิ่มเติม · สุขกา
 
 const ITEMS = [
   {
-    href: "/sales",
-    label: "ยอดขายย้อนหลัง",
-    description: "เลือกช่วงเวลาเอง เทียบกับช่วงก่อนหน้า",
+    href: "/queue",
+    label: "คิววันนี้",
+    description: "บอร์ดจัดคิวหมอนวด ลากย้ายได้ รับจองล่วงหน้า",
+    icon: CalendarClock,
+  },
+  {
+    href: "/history",
+    label: "ประวัติบิล",
+    description: "ค้นหาบิลด้วยชื่อ เบอร์ เลขบิล และ export",
     icon: TrendingUp,
   },
   {
@@ -60,8 +66,8 @@ const ITEMS = [
   },
   {
     href: "/reports",
-    label: "รายงานรายเดือน",
-    description: "ยอดขาย ค่ามือ กำไรหยาบ และ export CSV",
+    label: "รายงาน",
+    description: "เลือกช่วงได้ ยอดขาย ค่ามือ กราฟ และ export CSV",
     icon: FileBarChart,
   },
   {

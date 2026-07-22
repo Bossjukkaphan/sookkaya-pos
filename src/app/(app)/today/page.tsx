@@ -1,6 +1,9 @@
+import Link from "next/link"
+
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
+import { Button } from "@/components/ui/button"
 import { SaleRowActions } from "./sale-row-actions"
 import type {
   EditableSale,
@@ -166,11 +169,6 @@ export default async function TodayPage({
     agg.count += Number(d.sessions ?? 0)
     byTherapist.set(key, agg)
   }
-  const totalRequestFee = [...byTherapist.values()].reduce(
-    (sum, v) => sum + v.requestFee,
-    0
-  )
-
   // ค่ามือรวมมาจาก total_income ซึ่งรวมประกันมือ 500/วันแล้ว — เป็นยอดรายวันจึงบวกข้ามวันได้
   // ห้ามบวก sales.commission แทน เพราะจะขาดประกันและได้ต่ำกว่าจริง
   const totalCommission = [...byTherapist.values()].reduce(
@@ -189,22 +187,6 @@ export default async function TodayPage({
     acc[s.payment_method] = (acc[s.payment_method] ?? 0) + Number(s.net_amount)
     return acc
   }, {})
-
-  // บริการยอดนิยม: จัดกลุ่มจากรายการที่โหลดมา — อยู่ใต้เพดาน ROW_CAP เดียวกับช่องทางชำระเงิน
-  // ช่วงกว้างที่โดนตัดจึงสะท้อนเฉพาะ ROW_CAP รายการล่าสุด (มี banner เตือนอยู่แล้ว)
-  // เรียงตามจำนวนครั้งเป็นหลัก (ยอดนิยม = ทำบ่อย) ใช้ยอดรวมเป็นตัวตัดสินเมื่อเท่ากัน
-  const serviceAgg = new Map<string, { count: number; revenue: number }>()
-  for (const s of rows) {
-    const name = s.service_name ?? "ไม่ระบุบริการ"
-    const agg = serviceAgg.get(name) ?? { count: 0, revenue: 0 }
-    agg.count += 1
-    agg.revenue += Number(s.net_amount ?? 0)
-    serviceAgg.set(name, agg)
-  }
-  const popularServices = [...serviceAgg.entries()]
-    .map(([name, v]) => ({ name, ...v }))
-    .sort((a, b) => b.count - a.count || b.revenue - a.revenue)
-    .slice(0, 10)
 
   // โหมดช่วงวัน: จัดกลุ่มตามวัน เพื่อไม่ให้เผลอแก้รายการผิดวัน
   const byDate: { date: string; rows: typeof rows }[] = []
@@ -391,59 +373,19 @@ export default async function TodayPage({
         )
       )}
 
-      {popularServices.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">บริการยอดนิยม</CardTitle>
-            {truncated && (
-              <p className="text-xs text-amber-700">
-                นับจาก {ROW_CAP} รายการล่าสุดเท่านั้น ช่วงกว้างจึงยังไม่ครบ
-              </p>
-            )}
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {popularServices.map((svc) => (
-              <div key={svc.name} className="flex justify-between gap-2 text-sm">
-                <span className="min-w-0 truncate text-slate-600">
-                  {svc.name}{" "}
-                  <span className="text-slate-400">({svc.count} ครั้ง)</span>
-                </span>
-                <span className="font-medium whitespace-nowrap">
-                  {formatBaht(svc.revenue)} ฿
-                </span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
-      {byTherapist.size > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">
-              {isSingleDay ? "ค่ามือหมอวันนี้" : "ค่ามือหมอในช่วงที่เลือก"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {[...byTherapist.entries()]
-              .sort((a, b) => b[1].income - a[1].income)
-              .map(([id, v]) => (
-                <div key={id} className="flex justify-between text-sm">
-                  <span className="text-slate-600">
-                    {therapistName.get(id) ?? "ไม่ระบุ"}{" "}
-                    <span className="text-slate-400">({v.count} เซสชัน)</span>
-                  </span>
-                  <span className="font-medium">{formatBaht(v.income)} ฿</span>
-                </div>
-              ))}
-            {totalRequestFee > 0 && (
-              <p className="pt-1 text-xs text-slate-500">
-                รวมค่ารีเควส {formatBaht(totalRequestFee)} บาท
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {/* บริการยอดนิยม/ค่ามือรายหมอ ย้ายไปหน้ารายงาน — หน้านี้เหลือเฉพาะงานประจำวัน */}
+      <div className="flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/reports?from=${from}&to=${to}`}>
+            📊 ดูรายงานช่วงนี้ (เมนูขายดี · ค่ามือรายหมอ · กราฟ)
+          </Link>
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/history?from=${from}&to=${to}`}>
+            🧾 ค้นหาบิล (ประวัติบิล)
+          </Link>
+        </Button>
+      </div>
     </div>
   )
 }
