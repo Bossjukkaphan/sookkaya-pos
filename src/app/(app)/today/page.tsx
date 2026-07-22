@@ -469,6 +469,7 @@ type SaleRecord = {
   member_status: string | null
   credit_used: number | string | null
   revenue_recognize: number | string | null
+  notes: string | null
   updated_at: string
 }
 
@@ -515,6 +516,7 @@ function SaleRow({
     request_fee: requestFee,
     credit_used: Number(s.credit_used ?? 0),
     revenue_recognize: Number(s.revenue_recognize ?? 0),
+    notes: s.notes,
     // ส่งดิบๆ ตามที่ PostgREST คืนมา ห้ามแปลงรูปแบบ ไม่งั้นจะเทียบกับฝั่ง server ไม่ตรง
     updated_at: s.updated_at,
   }
@@ -561,6 +563,8 @@ function SaleRow({
             </span>
           )}
         </div>
+
+        {s.notes && <p className="text-xs text-slate-400">📝 {s.notes}</p>}
       </div>
 
       <div className="flex items-start gap-1">

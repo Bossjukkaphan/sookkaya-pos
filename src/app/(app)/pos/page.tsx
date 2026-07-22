@@ -11,7 +11,7 @@ export default async function PosPage({
   const supabase = await createClient()
   const { queue } = await searchParams
 
-  const [{ data: therapists }, { data: services }, { data: promotions }] =
+  const [{ data: therapists }, { data: services }, { data: promotions }, { data: beds }] =
     await Promise.all([
       supabase
         .from("therapists")
@@ -30,6 +30,11 @@ export default async function PosPage({
         .eq("is_active", true)
         .neq("kind", "internal")
         .order("name"),
+      supabase
+        .from("beds")
+        .select("id, room, name")
+        .eq("is_active", true)
+        .order("sort"),
     ])
 
   // มาจากการ์ดคิว → กรอกหมอ/เมนู/ลูกค้าให้ล่วงหน้า (คิวที่จ่ายแล้วไม่รับซ้ำ)
@@ -63,6 +68,7 @@ export default async function PosPage({
         therapists={therapists ?? []}
         services={services ?? []}
         promotions={promotions ?? []}
+        beds={beds ?? []}
         initial={
           queueEntry
             ? {
@@ -73,6 +79,9 @@ export default async function PosPage({
                 customerName: queueCustomer?.name ?? queueEntry.customer_name ?? "",
                 customerPhone: queueCustomer?.phone ?? "",
                 source: queueEntry.source,
+                bedId: queueEntry.bed_id ?? "",
+                bookingChannel: queueEntry.booking_channel ?? "",
+                notes: queueEntry.notes ?? "",
               }
             : undefined
         }

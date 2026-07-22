@@ -121,12 +121,18 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       bonus_used: amounts.bonusUsed,
       revenue_recognize: amounts.revenueRecognize,
       created_by: profile?.full_name ?? user.email ?? null,
-      // ที่มาลูกค้า (walk_in/booking/agency) — metadata ไม่กระทบสูตรเงิน
+      // metadata ของบิล (ที่มา/ช่องทางย่อย/เตียง/หมายเหตุ) — ไม่กระทบสูตรเงิน
       // ค่าเพี้ยนจาก client เก่า → null (ไม่ทราบ) ดีกว่าเดาผิด
       source: (() => {
         const s = String(formData.get("source") ?? "")
         return ["walk_in", "booking", "agency"].includes(s) ? s : null
       })(),
+      booking_channel: (() => {
+        const c = String(formData.get("booking_channel") ?? "")
+        return ["line", "phone", "facebook"].includes(c) ? c : null
+      })(),
+      bed_id: String(formData.get("bed_id") ?? "") || null,
+      notes: String(formData.get("notes") ?? "").trim() || null,
     })
     .select("id, receipt_no")
     .single()
@@ -295,6 +301,12 @@ export async function updateSale(
     return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
   }
 
+  // audit: ใครเป็นคนแก้บิลครั้งล่าสุด (RLS จำกัด profiles ให้เห็นแค่ของตัวเอง)
+  const { data: editorProfile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .single()
+
   const { data: updated, error } = await supabase
     .from("sales")
     .update({
@@ -316,6 +328,8 @@ export async function updateSale(
       credit_used: amounts.creditUsed,
       bonus_used: amounts.bonusUsed,
       revenue_recognize: amounts.revenueRecognize,
+      notes: String(formData.get("notes") ?? "").trim() || null,
+      edited_by: editorProfile?.full_name ?? null,
     })
     .eq("id", id)
     // กันการแก้ชนกันจริงๆ อยู่ตรงนี้ — ถ้ามีคนบันทึกแทรกระหว่างที่เราอ่านกับเขียน

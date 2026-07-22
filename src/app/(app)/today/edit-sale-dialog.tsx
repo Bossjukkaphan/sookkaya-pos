@@ -56,6 +56,7 @@ export type EditableSale = {
   request_fee: number
   credit_used: number
   revenue_recognize: number
+  notes: string | null
   /** เวอร์ชันของแถวตอนที่หน้านี้ถูก render — ส่งกลับไปให้ updateSale เทียบกันแก้ทับ */
   updated_at: string
 }
@@ -411,6 +412,20 @@ function EditSaleForm({
             />
           </div>
         )}
+      </div>
+
+      {/* หมายเหตุ — ฟอร์มนี้ส่งทุกช่องตอนบันทึก ต้องมีช่องนี้ไม่งั้นการแก้จะลบหมายเหตุเดิมทิ้ง */}
+      <div className="space-y-2">
+        <Label htmlFor={uid("notes")}>
+          หมายเหตุ <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
+        </Label>
+        <Input
+          id={uid("notes")}
+          name="notes"
+          className="h-12"
+          defaultValue={sale.notes ?? ""}
+          placeholder="เช่น Happy Hour"
+        />
       </div>
 
       {/* รีเควส */}
