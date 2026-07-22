@@ -49,7 +49,8 @@ export function InfoDot({ text }: { text: string }) {
       {open && (
         <span
           role="tooltip"
-          className="absolute top-5 left-0 z-30 w-48 rounded-lg border bg-white p-2.5 text-[11px] leading-relaxed font-normal text-slate-600 shadow-lg"
+          // max-w กันไม่ให้กล่องล้นขอบจอบนมือถือแคบ ไม่ว่าการ์ดจะอยู่คอลัมน์ไหน
+          className="absolute top-5 left-0 z-30 w-48 max-w-[calc(100vw-2rem)] rounded-lg border bg-white p-2.5 text-[11px] leading-relaxed font-normal text-slate-600 shadow-lg"
         >
           {text}
         </span>
