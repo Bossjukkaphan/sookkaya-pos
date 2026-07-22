@@ -1,5 +1,6 @@
 "use client"
 
+import { Fragment } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -31,31 +32,57 @@ type NavLink = {
   minRole?: "manager" | "admin"
 }
 
-/** แถวที่พนักงานกดทุกวัน — อยู่ทั้งแถบล่างบนมือถือและแถบซ้ายบนจอกว้าง */
+/**
+ * แถบล่างมือถือ (สูงสุด 5 ปุ่ม + เพิ่มเติม) — เรียงตามงานที่พนักงานกดบ่อยสุด
+ * ภาพรวมโผล่เฉพาะผู้จัดการขึ้นไป พนักงานเห็น 4 ปุ่ม
+ */
 const PRIMARY: NavLink[] = [
   { href: "/overview", label: "ภาพรวม", icon: LayoutDashboard, minRole: "manager" },
   { href: "/pos", label: "บันทึกขาย", icon: Receipt },
+  { href: "/queue", label: "คิววันนี้", icon: Clock4 },
   { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
   { href: "/commission", label: "ค่ามือ", icon: HandCoins },
-  { href: "/customers", label: "ลูกค้า", icon: Users },
 ]
 
 /**
- * หน้าที่เปิดนานๆ ครั้ง — บนจอกว้างกางให้เห็นครบในแถบซ้าย ไม่ต้องกดผ่าน "เพิ่มเติม"
- * บนมือถือยังซ่อนไว้หลังปุ่มเพิ่มเติม เพราะแถบล่างใส่ได้แค่ 5 ปุ่ม
+ * แถบซ้ายจอกว้าง จัดเป็นหมวดตามการใช้งาน:
+ * หน้าร้าน (ทำทุกวัน) → ข้อมูล (ค้นหา) → ผู้บริหาร (วิเคราะห์) → ระบบ
+ * เรียงในหมวดตามความถี่การใช้ — งานที่ทำบ่อยสุดอยู่บนสุด
  */
-const SECONDARY: NavLink[] = [
-  // คิวใช้ทุกวันก็จริง แต่แถบล่างมือถือเต็ม 5 ปุ่มแล้ว — ขึ้นบนสุดของกลุ่มนี้แทน
-  { href: "/queue", label: "คิววันนี้", icon: Clock4 },
-  { href: "/history", label: "ประวัติบิล", icon: ScrollText },
-  { href: "/finance", label: "การเงิน", icon: PiggyBank, minRole: "admin" },
-  { href: "/insights/heatmap", label: "ชั่วโมงคนแน่น", icon: CalendarClock, minRole: "manager" },
-  { href: "/insights/promotions", label: "ROI ส่วนลด", icon: BadgePercent, minRole: "manager" },
-  { href: "/insights/customers", label: "ลูกค้าและคนที่หายไป", icon: Users, minRole: "manager" },
-  { href: "/members", label: "ระบบสมาชิก", icon: CreditCard },
-  { href: "/expenses", label: "รายจ่าย", icon: Wallet },
-  { href: "/reports", label: "รายงาน", icon: FileBarChart },
-  { href: "/settings", label: "ตั้งค่า", icon: Settings },
+const SECTIONS: { title: string; links: NavLink[] }[] = [
+  {
+    title: "หน้าร้าน",
+    links: [
+      { href: "/pos", label: "บันทึกขาย", icon: Receipt },
+      { href: "/queue", label: "คิววันนี้", icon: Clock4 },
+      { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
+      { href: "/commission", label: "ค่ามือ", icon: HandCoins },
+      { href: "/members", label: "ระบบสมาชิก", icon: CreditCard },
+    ],
+  },
+  {
+    title: "ข้อมูล",
+    links: [
+      { href: "/history", label: "ประวัติบิล", icon: ScrollText },
+      { href: "/customers", label: "ลูกค้า", icon: Users },
+      { href: "/expenses", label: "รายจ่าย", icon: Wallet },
+    ],
+  },
+  {
+    title: "ผู้บริหาร",
+    links: [
+      { href: "/overview", label: "ภาพรวม", icon: LayoutDashboard, minRole: "manager" },
+      { href: "/reports", label: "รายงาน", icon: FileBarChart, minRole: "manager" },
+      { href: "/finance", label: "การเงิน", icon: PiggyBank, minRole: "admin" },
+      { href: "/insights/heatmap", label: "ชั่วโมงคนแน่น", icon: CalendarClock, minRole: "manager" },
+      { href: "/insights/promotions", label: "ROI ส่วนลด", icon: BadgePercent, minRole: "manager" },
+      { href: "/insights/customers", label: "ลูกค้าและคนที่หายไป", icon: Users, minRole: "manager" },
+    ],
+  },
+  {
+    title: "ระบบ",
+    links: [{ href: "/settings", label: "ตั้งค่า", icon: Settings }],
+  },
 ]
 
 const MORE_LINK: NavLink = {
@@ -74,7 +101,10 @@ export function AppShell({ role }: { role: string }) {
   const pathname = usePathname()
 
   const primary = PRIMARY.filter((l) => allowed(l, role))
-  const secondary = SECONDARY.filter((l) => allowed(l, role))
+  const sections = SECTIONS.map((s) => ({
+    ...s,
+    links: s.links.filter((l) => allowed(l, role)),
+  })).filter((s) => s.links.length > 0)
 
   function isActive(href: string): boolean {
     return pathname === href || pathname.startsWith(`${href}/`)
@@ -91,20 +121,20 @@ export function AppShell({ role }: { role: string }) {
       aria-label="เมนูหลัก"
     >
       <ul className="flex sm:flex-col sm:gap-0.5 sm:p-3">
+        {/* มือถือ: แถบล่าง — จอกว้างซ่อน (ลิงก์ชุดเดียวกันไปอยู่ในหมวดข้างล่างแทน) */}
         {primary.map(({ href, label, icon: Icon }) => (
-          <li key={href} className="flex-1 sm:flex-none">
+          <li key={href} className="flex-1 sm:hidden">
             <Link
               href={href}
               aria-current={isActive(href) ? "page" : undefined}
               className={cn(
                 "flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors",
-                "sm:flex-row sm:justify-start sm:gap-3 sm:rounded-md sm:px-3 sm:py-2.5 sm:text-sm",
                 isActive(href)
-                  ? "font-semibold text-emerald-700 sm:bg-emerald-50"
-                  : "text-slate-500 hover:text-slate-900 sm:hover:bg-slate-50"
+                  ? "font-semibold text-emerald-700"
+                  : "text-slate-500 hover:text-slate-900"
               )}
             >
-              <Icon className="size-5 sm:size-4" aria-hidden />
+              <Icon className="size-5" aria-hidden />
               {label}
             </Link>
           </li>
@@ -127,28 +157,32 @@ export function AppShell({ role }: { role: string }) {
           </Link>
         </li>
 
-        <li className="hidden sm:mt-3 sm:block">
-          <p className="px-3 pb-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
-            เพิ่มเติม
-          </p>
-        </li>
-
-        {secondary.map(({ href, label, icon: Icon }) => (
-          <li key={href} className="hidden sm:block">
-            <Link
-              href={href}
-              aria-current={isActive(href) ? "page" : undefined}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                isActive(href)
-                  ? "font-semibold text-emerald-700 sm:bg-emerald-50"
-                  : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
-              )}
-            >
-              <Icon className="size-4" aria-hidden />
-              {label}
-            </Link>
-          </li>
+        {/* จอกว้าง: เมนูจัดหมวด หน้าร้าน → ข้อมูล → ผู้บริหาร → ระบบ */}
+        {sections.map((section, si) => (
+          <Fragment key={section.title}>
+            <li className={cn("hidden sm:block", si > 0 && "sm:mt-3")}>
+              <p className="px-3 pb-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+                {section.title}
+              </p>
+            </li>
+            {section.links.map(({ href, label, icon: Icon }) => (
+              <li key={href} className="hidden sm:block">
+                <Link
+                  href={href}
+                  aria-current={isActive(href) ? "page" : undefined}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                    isActive(href)
+                      ? "font-semibold text-emerald-700 sm:bg-emerald-50"
+                      : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                  )}
+                >
+                  <Icon className="size-4" aria-hidden />
+                  {label}
+                </Link>
+              </li>
+            ))}
+          </Fragment>
         ))}
       </ul>
     </nav>

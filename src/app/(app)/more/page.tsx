@@ -15,18 +15,37 @@ import { Card, CardContent } from "@/components/ui/card"
 
 export const metadata = { title: "เพิ่มเติม · สุขกายา POS" }
 
+// เรียงหมวดเดียวกับแถบซ้ายจอกว้าง: หน้าร้าน → ข้อมูล → ผู้บริหาร → ระบบ
 const ITEMS = [
   {
-    href: "/queue",
-    label: "คิววันนี้",
-    description: "บอร์ดจัดคิวหมอนวด ลากย้ายได้ รับจองล่วงหน้า",
-    icon: CalendarClock,
+    href: "/members",
+    label: "ระบบสมาชิก",
+    description: "เติมเงิน ดูเครดิตคงเหลือ และประวัติ",
+    icon: CreditCard,
   },
   {
     href: "/history",
     label: "ประวัติบิล",
     description: "ค้นหาบิลด้วยชื่อ เบอร์ เลขบิล และ export",
     icon: TrendingUp,
+  },
+  {
+    href: "/customers",
+    label: "ลูกค้า",
+    description: "รายชื่อ ค้นหา และโปรไฟล์ลูกค้า",
+    icon: Users,
+  },
+  {
+    href: "/expenses",
+    label: "รายจ่าย",
+    description: "บันทึกและดูรายจ่ายรายเดือน",
+    icon: Wallet,
+  },
+  {
+    href: "/reports",
+    label: "รายงาน",
+    description: "เลือกช่วงได้ ยอดขาย ค่ามือ กราฟ และ export CSV",
+    icon: FileBarChart,
   },
   {
     href: "/finance",
@@ -51,24 +70,6 @@ const ITEMS = [
     label: "ลูกค้าและคนที่หายไป",
     description: "ยอดสะสมรายคน และคนที่ควรตามกลับ",
     icon: Users,
-  },
-  {
-    href: "/members",
-    label: "ระบบสมาชิก",
-    description: "เติมเงิน ดูเครดิตคงเหลือ และประวัติ",
-    icon: CreditCard,
-  },
-  {
-    href: "/expenses",
-    label: "รายจ่าย",
-    description: "บันทึกและดูรายจ่ายรายเดือน",
-    icon: Wallet,
-  },
-  {
-    href: "/reports",
-    label: "รายงาน",
-    description: "เลือกช่วงได้ ยอดขาย ค่ามือ กราฟ และ export CSV",
-    icon: FileBarChart,
   },
   {
     href: "/settings",

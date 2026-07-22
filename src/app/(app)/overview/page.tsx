@@ -13,6 +13,8 @@ import {
 } from "@/lib/member-credit"
 import { GroupedBarChart } from "@/components/charts/grouped-bar-chart"
 import { LineChart } from "@/components/charts/line-chart"
+import { InfoDot } from "@/components/info-dot"
+import { MONEY_INFO } from "@/lib/money-info"
 import { StatCard } from "@/components/stat-card"
 import { InsightsAccessDenied, canSeeInsights } from "../insights/shared"
 import { monthLabel, monthShortLabel, shiftMonth } from "../finance/shared"
@@ -241,7 +243,9 @@ export default async function OverviewPage({
 
       {/* การ์ดใหญ่โทนเข้ม — ตัวเลขที่เจ้าของร้านต้องเห็นก่อนอย่างอื่น */}
       <div className="rounded-xl bg-gradient-to-br from-emerald-800 to-emerald-950 p-5 text-white">
-        <p className="text-xs text-emerald-300">รายได้เดือนนี้</p>
+        <p className="flex items-center gap-1 text-xs text-emerald-300">
+          รายได้เดือนนี้ <InfoDot text={MONEY_INFO.netRevenue} light />
+        </p>
         <p className="text-3xl font-extrabold">{formatBaht(netRevenue)} ฿</p>
         {prevRevenue > 0 && (
           <p className="text-xs text-emerald-200">
@@ -281,14 +285,18 @@ export default async function OverviewPage({
 
         <div className="mt-4 grid grid-cols-3 gap-3">
           <div>
-            <p className="text-[10px] text-emerald-300">กำไรเงินสด</p>
+            <p className="flex items-center gap-1 text-[10px] text-emerald-300">
+              กำไรเงินสด <InfoDot text={MONEY_INFO.profitCash} light />
+            </p>
             {/* ขาดทุนต้องสะดุดตาแม้อยู่บนการ์ดเขียวเข้ม */}
             <p className={`text-base font-bold ${profitCash < 0 ? "text-red-300" : ""}`}>
               {formatBaht(profitCash)} ฿
             </p>
           </div>
           <div>
-            <p className="text-[10px] text-emerald-300">Margin</p>
+            <p className="flex items-center gap-1 text-[10px] text-emerald-300">
+              Margin <InfoDot text={MONEY_INFO.margin} light />
+            </p>
             <p
               className={`text-base font-bold ${
                 margin !== null && margin < 0 ? "text-red-300" : ""
@@ -298,7 +306,9 @@ export default async function OverviewPage({
             </p>
           </div>
           <div>
-            <p className="text-[10px] text-emerald-300">เงินเข้าจริง</p>
+            <p className="flex items-center gap-1 text-[10px] text-emerald-300">
+              เงินเข้าจริง <InfoDot text={MONEY_INFO.cashIn} light />
+            </p>
             <p className="text-base font-bold">{formatBaht(cashIn)} ฿</p>
           </div>
         </div>
