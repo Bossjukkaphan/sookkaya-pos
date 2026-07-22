@@ -245,8 +245,11 @@ export default async function OverviewPage({
         <p className="text-3xl font-extrabold">{formatBaht(netRevenue)} ฿</p>
         {prevRevenue > 0 && (
           <p className="text-xs text-emerald-200">
-            {deltaPct >= 0 ? "▲" : "▼"} {Math.abs(Math.round(deltaPct))}% จากเดือนก่อน (
-            {formatBaht(prevRevenue)} ฿)
+            {/* ทิศทางต้องอ่านออกจากสีได้ทันที ไม่ต้องเพ่งลูกศร */}
+            <span className={deltaPct >= 0 ? "text-emerald-300" : "text-red-300"}>
+              {deltaPct >= 0 ? "▲" : "▼"} {Math.abs(Math.round(deltaPct))}%
+            </span>{" "}
+            จากเดือนก่อน ({formatBaht(prevRevenue)} ฿)
           </p>
         )}
 
@@ -279,11 +282,18 @@ export default async function OverviewPage({
         <div className="mt-4 grid grid-cols-3 gap-3">
           <div>
             <p className="text-[10px] text-emerald-300">กำไรเงินสด</p>
-            <p className="text-base font-bold">{formatBaht(profitCash)} ฿</p>
+            {/* ขาดทุนต้องสะดุดตาแม้อยู่บนการ์ดเขียวเข้ม */}
+            <p className={`text-base font-bold ${profitCash < 0 ? "text-red-300" : ""}`}>
+              {formatBaht(profitCash)} ฿
+            </p>
           </div>
           <div>
             <p className="text-[10px] text-emerald-300">Margin</p>
-            <p className="text-base font-bold">
+            <p
+              className={`text-base font-bold ${
+                margin !== null && margin < 0 ? "text-red-300" : ""
+              }`}
+            >
               {margin === null ? "—" : `${margin.toFixed(1)}%`}
             </p>
           </div>
@@ -319,7 +329,7 @@ export default async function OverviewPage({
         <StatCard
           label={`กำไรสะสมถึง ${monthShortLabel(month)}`}
           value={`${formatBaht(ytdProfit)} ฿`}
-          tone={ytdProfit < 0 ? "bad" : "normal"}
+          tone={ytdProfit < 0 ? "bad" : "good"}
         />
         <StatCard label="เซสชันเดือนนี้" value={String(sessions)} />
         <StatCard label="สมาชิก" value={`${memberCount ?? 0} คน`} />
@@ -364,7 +374,16 @@ export default async function OverviewPage({
               ? "ยังไม่มีรายได้ให้เทียบสัดส่วน"
               : `${expensePct.toFixed(1)}% ของรายได้`
           }
-          tone={expensePct !== null && expensePct > 100 ? "bad" : "normal"}
+          // เกิน 100% = กินทุนแล้ว (แดง) · 90-100% = จวนเจียน (ส้มเตือน)
+          tone={
+            expensePct === null
+              ? "normal"
+              : expensePct > 100
+                ? "bad"
+                : expensePct > 90
+                  ? "warn"
+                  : "normal"
+          }
         />
         <StatCard
           label={`ค่ามือหมอนวด ${monthShortLabel(month)}`}
@@ -516,8 +535,8 @@ export default async function OverviewPage({
                     {formatBaht(n(r.expense_total))}
                   </td>
                   <td
-                    className={`px-4 py-1.5 text-right ${
-                      n(r.profit_cash) < 0 ? "text-red-700" : ""
+                    className={`px-4 py-1.5 text-right font-medium ${
+                      n(r.profit_cash) < 0 ? "text-red-700" : "text-emerald-700"
                     }`}
                   >
                     {formatBaht(n(r.profit_cash))}
