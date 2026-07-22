@@ -129,11 +129,21 @@ export default async function CommissionPage({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="text-lg font-semibold">{s.name}</span>
-                    <Badge variant={s.worked && !s.usedGuarantee ? "secondary" : "outline"}>
+                    {/* วันที่ใช้ประกันคือวันที่ร้านจ่ายเกินค่ามือจริง — ให้เป็นสีเตือน */}
+                    <Badge
+                      variant={s.worked && !s.usedGuarantee ? "secondary" : "outline"}
+                      className={
+                        s.usedGuarantee
+                          ? "border-amber-300 bg-amber-100 text-amber-800"
+                          : undefined
+                      }
+                    >
                       {s.status}
                     </Badge>
                   </div>
-                  <span className="text-xl font-bold">
+                  <span
+                    className={`text-xl font-bold ${s.worked ? "text-emerald-800" : "text-slate-400"}`}
+                  >
                     {formatBaht(s.totalIncome)} ฿
                   </span>
                 </div>

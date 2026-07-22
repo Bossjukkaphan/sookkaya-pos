@@ -290,7 +290,7 @@ export default async function TodayPage({
           label="กำไรขั้นต้น"
           value={`${formatBaht(grossProfit)} ฿`}
           hint={marginPct === null ? "Margin —" : `Margin ${marginPct.toFixed(1)}%`}
-          tone={grossProfit < 0 ? "bad" : "normal"}
+          tone={grossProfit < 0 ? "bad" : "good"}
         />
       </div>
 

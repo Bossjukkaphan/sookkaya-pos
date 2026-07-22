@@ -136,20 +136,32 @@ export default async function SalesPage({
             </CardHeader>
             <CardContent className="px-0">
               <ul className="divide-y">
-                {rows.map((r) => (
-                  <li
-                    key={r.sale_date ?? ""}
-                    className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6"
-                  >
-                    <span className="text-sm">{formatThaiDate(r.sale_date ?? "")}</span>
-                    <span className="text-sm text-slate-500">
-                      {r.sessions} เซสชัน
-                    </span>
-                    <span className="text-sm font-semibold">
-                      {formatBaht(Number(r.net_revenue))} ฿
-                    </span>
-                  </li>
-                ))}
+                {(() => {
+                  // แถบพื้นหลังยาวตามสัดส่วนของวันที่ขายดีสุด — เห็นวันเด่นโดยไม่ต้องไล่ตัวเลข
+                  const maxNet = Math.max(...rows.map((r) => Number(r.net_revenue)), 1)
+                  return rows.map((r) => (
+                    <li
+                      key={r.sale_date ?? ""}
+                      className="relative flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6"
+                    >
+                      <div
+                        className="absolute inset-y-1 left-0 rounded-r bg-emerald-50"
+                        style={{
+                          width: `${(Number(r.net_revenue) / maxNet) * 100}%`,
+                        }}
+                      />
+                      <span className="relative text-sm">
+                        {formatThaiDate(r.sale_date ?? "")}
+                      </span>
+                      <span className="relative text-sm text-slate-500">
+                        {r.sessions} เซสชัน
+                      </span>
+                      <span className="relative text-sm font-semibold text-emerald-800">
+                        {formatBaht(Number(r.net_revenue))} ฿
+                      </span>
+                    </li>
+                  ))
+                })()}
               </ul>
             </CardContent>
           </Card>
