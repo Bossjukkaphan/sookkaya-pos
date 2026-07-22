@@ -37,6 +37,30 @@ export type Database = {
         }
         Relationships: []
       }
+      beds: {
+        Row: {
+          id: string
+          is_active: boolean
+          name: string
+          room: string
+          sort: number
+        }
+        Insert: {
+          id?: string
+          is_active?: boolean
+          name: string
+          room: string
+          sort: number
+        }
+        Update: {
+          id?: string
+          is_active?: boolean
+          name?: string
+          room?: string
+          sort?: number
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           birthday: string | null
@@ -251,49 +275,61 @@ export type Database = {
       }
       queue_entries: {
         Row: {
+          bed_id: string | null
+          booking_channel: string | null
           created_at: string
           customer_id: string | null
           customer_name: string | null
           duration_min: number
           id: string
+          notes: string | null
           queue_date: string
           sale_id: string | null
           service_id: string | null
           service_name: string
           source: string
           start_time: string
+          started_at: string | null
           status: string
           therapist_id: string | null
           updated_at: string
         }
         Insert: {
+          bed_id?: string | null
+          booking_channel?: string | null
           created_at?: string
           customer_id?: string | null
           customer_name?: string | null
           duration_min: number
           id?: string
+          notes?: string | null
           queue_date: string
           sale_id?: string | null
           service_id?: string | null
           service_name: string
           source?: string
           start_time: string
+          started_at?: string | null
           status?: string
           therapist_id?: string | null
           updated_at?: string
         }
         Update: {
+          bed_id?: string | null
+          booking_channel?: string | null
           created_at?: string
           customer_id?: string | null
           customer_name?: string | null
           duration_min?: number
           id?: string
+          notes?: string | null
           queue_date?: string
           sale_id?: string | null
           service_id?: string | null
           service_name?: string
           source?: string
           start_time?: string
+          started_at?: string | null
           status?: string
           therapist_id?: string | null
           updated_at?: string
@@ -317,12 +353,15 @@ export type Database = {
       }
       sales: {
         Row: {
+          bed_id: string | null
           bonus_used: number
+          booking_channel: string | null
           commission: number | null
           coupon_promo: string | null
           created_at: string
           created_by: string | null
           credit_used: number
+          edited_by: string | null
           customer_id: string | null
           customer_name: string | null
           customer_phone: string | null
@@ -331,6 +370,7 @@ export type Database = {
           is_request: boolean
           member_status: string | null
           net_amount: number
+          notes: string | null
           payment_method: string
           price_normal: number
           receipt_no: string | null
@@ -345,12 +385,15 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          bed_id?: string | null
           bonus_used?: number
+          booking_channel?: string | null
           commission?: number | null
           coupon_promo?: string | null
           created_at?: string
           created_by?: string | null
           credit_used?: number
+          edited_by?: string | null
           customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
@@ -359,6 +402,7 @@ export type Database = {
           is_request?: boolean
           member_status?: string | null
           net_amount: number
+          notes?: string | null
           payment_method: string
           price_normal: number
           receipt_no?: string | null
@@ -373,12 +417,15 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          bed_id?: string | null
           bonus_used?: number
+          booking_channel?: string | null
           commission?: number | null
           coupon_promo?: string | null
           created_at?: string
           created_by?: string | null
           credit_used?: number
+          edited_by?: string | null
           customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
@@ -387,6 +434,7 @@ export type Database = {
           is_request?: boolean
           member_status?: string | null
           net_amount?: number
+          notes?: string | null
           payment_method?: string
           price_normal?: number
           receipt_no?: string | null
