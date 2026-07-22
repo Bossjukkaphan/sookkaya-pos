@@ -57,11 +57,13 @@ export default async function OverviewPage({
 
   const [
     { data: plRows },
+    { data: memberActivityRows },
     { data: targetSetting },
     { data: memberRows, count: memberCount },
     { data: therapistDays },
   ] = await Promise.all([
     supabase.from("v_monthly_pl").select("*").order("month"),
+    supabase.from("v_monthly_member_activity").select("*").order("month"),
     supabase
       .from("settings")
       .select("value")
@@ -150,6 +152,17 @@ export default async function OverviewPage({
   )
   // ทุกตัวเลขบนหน้านี้ต้องมาจากแถวเดียวกันแถวนี้ ห้ามไปหยิบแถวอื่นมาผสม
   const selected = rows.find((r) => r.month === month) ?? null
+
+  // กิจกรรม Member ของเดือนที่เลือก — หยิบแถวเดียวจาก view แบบเดียวกับ v_monthly_pl
+  const activity =
+    (memberActivityRows ?? []).find((r) => r.month === month) ?? null
+  // creditPct หารเลขสองตัวที่ view ให้มาแล้ว (ตัวหารคือ "ยอดรับจริง" ไม่ใช่ net_revenue)
+  // ทั้งเศษและส่วนรวมเครดิตโบนัส จึงเป็นฐานเดียวกัน — ไม่ใช่การนิยามสูตรเงินใหม่
+  const activityVolume = Number(activity?.volume ?? 0)
+  const creditPct =
+    activityVolume > 0
+      ? Math.round((Number(activity?.credit_used ?? 0) / activityVolume) * 1000) / 10
+      : 0
 
   const netRevenue = n(selected?.net_revenue)
   const profitCash = n(selected?.profit_cash)
@@ -310,6 +323,36 @@ export default async function OverviewPage({
         />
         <StatCard label="เซสชันเดือนนี้" value={String(sessions)} />
         <StatCard label="สมาชิก" value={`${memberCount ?? 0} คน`} />
+      </div>
+
+      {/* กิจกรรม Member เดือนนี้ — คนละเรื่องกับเครดิตคงเหลือด้านล่าง (นั่นคือยอด ณ ปัจจุบัน)
+          ทุกตัวเลขมาจากแถวเดือนเดียวกันของ v_monthly_member_activity */}
+      <div>
+        <h2 className="mb-2 text-sm font-semibold text-slate-600">
+          กิจกรรมสมาชิก · {monthShortLabel(month)}
+        </h2>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard
+            label="TopUp รับเข้า"
+            value={`${formatBaht(n(activity?.topup_in))} ฿`}
+            hint="เงินเติมเข้าเดือนนี้"
+          />
+          <StatCard
+            label="Credit ใช้"
+            value={`${formatBaht(n(activity?.credit_used))} ฿`}
+            hint="เครดิตสมาชิกที่ใช้"
+          />
+          <StatCard
+            label="Bonus แถมไป"
+            value={`${formatBaht(n(activity?.bonus_used))} ฿`}
+            hint="ของแถมที่ใช้"
+          />
+          <StatCard
+            label="% ของยอดรับจริง"
+            value={`${creditPct}%`}
+            hint="สัดส่วนที่จ่ายด้วยเครดิต"
+          />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
