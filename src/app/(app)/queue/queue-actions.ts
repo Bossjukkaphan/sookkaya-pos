@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { createClient } from "@/lib/supabase/server"
-import { isCustomerSource } from "@/lib/customer-source"
+import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
 import { todayInShopTz } from "@/lib/datetime"
 
 type Result = { ok: true } | { ok: false; error: string }
@@ -25,6 +25,12 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     ? queueDateInput
     : todayInShopTz()
   const source = String(form.get("source") ?? "walk_in")
+  const bedId = String(form.get("bed_id") ?? "") || null
+  const notes = String(form.get("notes") ?? "").trim() || null
+  // ช่องทางย่อยมีความหมายเฉพาะประเภท "จองล่วงหน้า" — ค่าอื่น/เพี้ยนเก็บเป็น null
+  const channelInput = String(form.get("booking_channel") ?? "")
+  const bookingChannel =
+    source === "booking" && isBookingChannel(channelInput) ? channelInput : null
 
   if (!serviceId) return { ok: false, error: "เลือกเมนูก่อน" }
   if (!/^\d{2}:\d{2}$/.test(startTime))
@@ -51,6 +57,9 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     customer_name: customerName,
     start_time: startTime,
     source,
+    bed_id: bedId,
+    booking_channel: bookingChannel,
+    notes,
   })
   if (error) return { ok: false, error: error.message }
   revalidatePath("/queue")
@@ -91,6 +100,16 @@ export async function setQueueStatus(id: string, status: string): Promise<Result
     .eq("id", id)
     .neq("status", "paid")
   if (error) return { ok: false, error: error.message }
+
+  if (status === "in_service") {
+    // เวลาเริ่มนวดจริง — บันทึกครั้งแรกเท่านั้น กดย้อนไปมาไม่ทับค่าเดิม
+    await supabase
+      .from("queue_entries")
+      .update({ started_at: new Date().toISOString() })
+      .eq("id", id)
+      .is("started_at", null)
+  }
+
   revalidatePath("/queue")
   return { ok: true }
 }

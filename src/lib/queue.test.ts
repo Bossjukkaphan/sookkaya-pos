@@ -3,6 +3,7 @@ import {
   BOARD_END_MIN,
   BOARD_START_MIN,
   PX_PER_MIN,
+  busyBedIds,
   clampStart,
   countFreeTherapists,
   minToTime,
@@ -62,5 +63,19 @@ describe("countFreeTherapists", () => {
     expect(countFreeTherapists(["a", "b", "c"], entries, 750)).toBe(2)
     // 13:30 — a ว่าง (คิว 13:00 ถูกยกเลิก)
     expect(countFreeTherapists(["a", "b", "c"], entries, 810)).toBe(3)
+  })
+})
+
+describe("busyBedIds", () => {
+  const entries = [
+    { bed_id: "b1", start_time: "10:00", duration_min: 60, status: "waiting" },
+    { bed_id: "b2", start_time: "11:00", duration_min: 60, status: "cancelled" },
+    { bed_id: null, start_time: "10:00", duration_min: 60, status: "waiting" },
+    { bed_id: "b3", start_time: "12:00", duration_min: 60, status: "paid" },
+  ]
+  it("เตียงไม่ว่าง = มีคิว(ไม่นับยกเลิก)คร่อมช่วงเวลา", () => {
+    expect(busyBedIds(entries, 630, 60)).toEqual(new Set(["b1"]))
+    expect(busyBedIds(entries, 660, 30)).toEqual(new Set()) // b2 ยกเลิก
+    expect(busyBedIds(entries, 720, 60)).toEqual(new Set(["b3"])) // paid ยังครองเตียงตามเวลา
   })
 })

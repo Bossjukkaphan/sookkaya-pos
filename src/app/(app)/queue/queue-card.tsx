@@ -5,13 +5,15 @@ import Link from "next/link"
 import { toast } from "sonner"
 
 import {
+  CHANNEL_LABEL,
   SOURCE_BADGE,
   SOURCE_LABEL,
+  isBookingChannel,
   isCustomerSource,
 } from "@/lib/customer-source"
 import { PX_PER_MIN, minToX, overlaps, timeToMin } from "@/lib/queue"
 import { setQueueStatus } from "./queue-actions"
-import type { QueueEntry } from "./queue-board"
+import { shortBedName, type Bed, type QueueEntry } from "./queue-board"
 import {
   Dialog,
   DialogContent,
@@ -41,6 +43,7 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function QueueCard({
   entry,
+  bed,
   siblings,
   dragging,
   dragOffset,
@@ -49,6 +52,7 @@ export function QueueCard({
   onChanged,
 }: {
   entry: QueueEntry
+  bed: Bed | null
   siblings: QueueEntry[]
   dragging: boolean
   dragOffset: { dx: number; dy: number } | null
@@ -113,6 +117,7 @@ export function QueueCard({
         </p>
         <p className="truncate text-slate-500">
           {entry.customer_name || "ไม่ระบุลูกค้า"} · {STATUS_LABEL[entry.status]}
+          {bed && ` · ${shortBedName(bed)}`}
         </p>
       </button>
 
@@ -123,13 +128,29 @@ export function QueueCard({
           </DialogHeader>
           <div className="space-y-1 text-sm text-slate-600">
             <p>
-              เริ่ม {entry.start_time.slice(0, 5)} น. · {entry.duration_min} นาที
+              จอง {entry.start_time.slice(0, 5)} น. · {entry.duration_min} นาที
+              {entry.started_at &&
+                ` · เริ่มจริง ${new Intl.DateTimeFormat("en-GB", {
+                  timeZone: "Asia/Bangkok",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }).format(new Date(entry.started_at))} น.`}
             </p>
             <p>ลูกค้า: {entry.customer_name || "ไม่ระบุ"}</p>
             <p>
               มาจาก:{" "}
               {isCustomerSource(entry.source) ? SOURCE_LABEL[entry.source] : "ไม่ทราบ"}
+              {entry.booking_channel &&
+                isBookingChannel(entry.booking_channel) &&
+                ` (${CHANNEL_LABEL[entry.booking_channel]})`}
             </p>
+            {bed && (
+              <p>
+                เตียง: {bed.room} {bed.name}
+              </p>
+            )}
+            {entry.notes && <p>หมายเหตุ: {entry.notes}</p>}
             <p>สถานะ: {STATUS_LABEL[entry.status]}</p>
             {hasOverlap && (
               <p className="text-orange-600">

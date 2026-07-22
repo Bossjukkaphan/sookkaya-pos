@@ -5,13 +5,16 @@ import { toast } from "sonner"
 
 import { CustomerPicker } from "@/app/(app)/pos/customer-picker"
 import {
+  BOOKING_CHANNELS,
+  CHANNEL_LABEL,
   CUSTOMER_SOURCES,
   SOURCE_LABEL,
+  type BookingChannel,
   type CustomerSource,
 } from "@/lib/customer-source"
-import { minToTime, snapMin } from "@/lib/queue"
+import { busyBedIds, minToTime, snapMin, timeToMin } from "@/lib/queue"
 import { createQueueEntry } from "./queue-actions"
-import type { ServiceOption, Therapist } from "./queue-board"
+import type { Bed, QueueEntry, ServiceOption, Therapist } from "./queue-board"
 import {
   Dialog,
   DialogContent,
@@ -39,12 +42,17 @@ function nowRounded(): string {
 export function AddQueueDialog({
   therapists,
   services,
+  beds,
+  entries,
   boardDate,
   isToday,
   onDone,
 }: {
   therapists: Therapist[]
   services: ServiceOption[]
+  beds: Bed[]
+  /** คิวของวันบนบอร์ด — ใช้เช็คว่าเตียงไหนถูกจองคร่อมเวลาที่เลือก */
+  entries: QueueEntry[]
   /** คิวถูกสร้างลงวันที่บอร์ดกำลังแสดง — เลื่อนไปวันหน้าก็รับจองล่วงหน้าได้ */
   boardDate: string
   isToday: boolean
@@ -57,6 +65,9 @@ export function AddQueueDialog({
   // วันนี้เริ่มที่เวลาปัจจุบัน · วันอื่นเริ่มที่เปิดร้าน (เวลาปัจจุบันไม่เกี่ยวกับวันนั้น)
   const [startTime, setStartTime] = useState(isToday ? nowRounded() : "10:00")
   const [source, setSource] = useState<CustomerSource>("walk_in")
+  const [bookingChannel, setBookingChannel] = useState<BookingChannel | "">("")
+  const [bedId, setBedId] = useState("")
+  const [notes, setNotes] = useState("")
   const [customerId, setCustomerId] = useState("")
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
@@ -68,6 +79,9 @@ export function AddQueueDialog({
     setDuration(60)
     setStartTime(isToday ? nowRounded() : "10:00")
     setSource("walk_in")
+    setBookingChannel("")
+    setBedId("")
+    setNotes("")
     setCustomerId("")
     setCustomerName("")
     setCustomerPhone("")
@@ -103,6 +117,8 @@ export function AddQueueDialog({
           <input type="hidden" name="duration_min" value={duration} />
           <input type="hidden" name="queue_date" value={boardDate} />
           <input type="hidden" name="source" value={source} />
+          <input type="hidden" name="booking_channel" value={bookingChannel} />
+          <input type="hidden" name="bed_id" value={bedId} />
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">ลูกค้ามาจาก</legend>
@@ -112,12 +128,33 @@ export function AddQueueDialog({
                   key={s}
                   type="button"
                   variant={source === s ? "default" : "outline"}
-                  onClick={() => setSource(s)}
+                  onClick={() => {
+                    setSource(s)
+                    // ช่องทางย่อยมีความหมายเฉพาะจองล่วงหน้า
+                    if (s !== "booking") setBookingChannel("")
+                  }}
                 >
                   {SOURCE_LABEL[s]}
                 </Button>
               ))}
             </div>
+            {source === "booking" && (
+              <div className="flex flex-wrap gap-1 pt-1">
+                {BOOKING_CHANNELS.map((c) => (
+                  <Button
+                    key={c}
+                    type="button"
+                    size="sm"
+                    variant={bookingChannel === c ? "default" : "outline"}
+                    onClick={() =>
+                      setBookingChannel(bookingChannel === c ? "" : c)
+                    }
+                  >
+                    {CHANNEL_LABEL[c]}
+                  </Button>
+                ))}
+              </div>
+            )}
           </fieldset>
 
           <fieldset className="space-y-2">
@@ -196,6 +233,45 @@ export function AddQueueDialog({
             </div>
           </div>
 
+          {/* เตียง (ไม่บังคับ) — เตียงที่ถูกจองคร่อมเวลาที่เลือกขึ้นจาง แต่ยังกดได้ (นวดคู่/ตั้งใจ) */}
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">
+              เตียง <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
+            </legend>
+            {(() => {
+              const busy = busyBedIds(
+                entries,
+                timeToMin(/^\d{2}:\d{2}$/.test(startTime) ? startTime : "10:00"),
+                duration
+              )
+              const rooms = [...new Set(beds.map((b) => b.room))]
+              return rooms.map((room) => (
+                <div key={room}>
+                  <p className="text-xs text-slate-500">{room}</p>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {beds
+                      .filter((b) => b.room === room)
+                      .map((b) => (
+                        <Button
+                          key={b.id}
+                          type="button"
+                          size="sm"
+                          variant={bedId === b.id ? "default" : "outline"}
+                          className={
+                            busy.has(b.id) && bedId !== b.id ? "opacity-40" : ""
+                          }
+                          onClick={() => setBedId(bedId === b.id ? "" : b.id)}
+                        >
+                          {b.name}
+                          {busy.has(b.id) ? " · ไม่ว่าง" : ""}
+                        </Button>
+                      ))}
+                  </div>
+                </div>
+              ))
+            })()}
+          </fieldset>
+
           <CustomerPicker
             customerId={customerId}
             customerName={customerName}
@@ -212,6 +288,20 @@ export function AddQueueDialog({
             onPhoneChange={setCustomerPhone}
             requireMember={false}
           />
+
+          <div className="space-y-2">
+            <Label htmlFor="q_notes">
+              หมายเหตุ <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
+            </Label>
+            <Input
+              id="q_notes"
+              name="notes"
+              className="h-11"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="เช่น แพ้น้ำมัน · ขอผู้หญิงนวด"
+            />
+          </div>
 
           <Button type="submit" disabled={pending || !serviceId} className="h-12 w-full">
             {pending ? "กำลังบันทึก..." : "เพิ่มคิว"}

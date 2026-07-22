@@ -12,9 +12,13 @@ import {
   formatBaht,
 } from "@/lib/constants"
 import {
+  BOOKING_CHANNELS,
+  CHANNEL_LABEL,
   CUSTOMER_SOURCES,
   SOURCE_LABEL,
+  isBookingChannel,
   isCustomerSource,
+  type BookingChannel,
   type CustomerSource,
 } from "@/lib/customer-source"
 import {
@@ -33,6 +37,7 @@ import { Card, CardContent } from "@/components/ui/card"
 type Therapist = { id: string; name: string }
 type Service = { id: string; name: string; price: number; commission: number }
 type Promotion = { id: string; name: string }
+type Bed = { id: string; room: string; name: string }
 
 /** ค่ากรอกล่วงหน้าจากการ์ดคิว — เก็บเงินจากบอร์ดคิวไม่ต้องกรอกซ้ำ */
 export type PosInitial = {
@@ -43,17 +48,22 @@ export type PosInitial = {
   customerName: string
   customerPhone: string
   source: string
+  bedId: string
+  bookingChannel: string
+  notes: string
 }
 
 export function PosForm({
   therapists,
   services,
   promotions,
+  beds,
   initial,
 }: {
   therapists: Therapist[]
   services: Service[]
   promotions: Promotion[]
+  beds: Bed[]
   initial?: PosInitial
 }) {
   const [therapistId, setTherapistId] = useState(initial?.therapistId ?? "")
@@ -69,6 +79,11 @@ export function PosForm({
   const [source, setSource] = useState<CustomerSource>(
     initial && isCustomerSource(initial.source) ? initial.source : "walk_in"
   )
+  const [bookingChannel, setBookingChannel] = useState<BookingChannel | "">(
+    initial && isBookingChannel(initial.bookingChannel) ? initial.bookingChannel : ""
+  )
+  const [bedId, setBedId] = useState(initial?.bedId ?? "")
+  const [notes, setNotes] = useState(initial?.notes ?? "")
   const [couponPromo, setCouponPromo] = useState("")
   // Gowabi ต้องพิมพ์รหัสจองเป็นเลขเสมอ จึงบังคับเป็นช่องพิมพ์
   // กรณีอื่นเริ่มจาก dropdown แล้วเปิดช่องพิมพ์เฉพาะเมื่อเลือก "อื่นๆ"
@@ -101,6 +116,9 @@ export function PosForm({
     setCustomerName("")
     setCustomerPhone("")
     setSource("walk_in")
+    setBookingChannel("")
+    setBedId("")
+    setNotes("")
     setCouponPromo("")
     setCustomPromo(false)
   }
@@ -193,6 +211,7 @@ export function PosForm({
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">ลูกค้ามาจาก</legend>
         <input type="hidden" name="source" value={source} />
+        <input type="hidden" name="booking_channel" value={bookingChannel} />
         <div className="grid grid-cols-3 gap-2">
           {CUSTOMER_SOURCES.map((s) => (
             <Button
@@ -200,13 +219,59 @@ export function PosForm({
               type="button"
               variant={source === s ? "default" : "outline"}
               className="h-10"
-              onClick={() => setSource(s)}
+              onClick={() => {
+                setSource(s)
+                if (s !== "booking") setBookingChannel("")
+              }}
               aria-pressed={source === s}
             >
               {SOURCE_LABEL[s]}
             </Button>
           ))}
         </div>
+        {source === "booking" && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {BOOKING_CHANNELS.map((c) => (
+              <Button
+                key={c}
+                type="button"
+                size="sm"
+                variant={bookingChannel === c ? "default" : "outline"}
+                onClick={() => setBookingChannel(bookingChannel === c ? "" : c)}
+              >
+                {CHANNEL_LABEL[c]}
+              </Button>
+            ))}
+          </div>
+        )}
+      </fieldset>
+
+      {/* เตียง (ไม่บังคับ) */}
+      <fieldset className="space-y-2">
+        <legend className="mb-2 text-sm font-medium">
+          เตียง <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
+        </legend>
+        <input type="hidden" name="bed_id" value={bedId} />
+        {[...new Set(beds.map((b) => b.room))].map((room) => (
+          <div key={room}>
+            <p className="text-xs text-slate-500">{room}</p>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {beds
+                .filter((b) => b.room === room)
+                .map((b) => (
+                  <Button
+                    key={b.id}
+                    type="button"
+                    size="sm"
+                    variant={bedId === b.id ? "default" : "outline"}
+                    onClick={() => setBedId(bedId === b.id ? "" : b.id)}
+                  >
+                    {b.name}
+                  </Button>
+                ))}
+            </div>
+          </div>
+        ))}
       </fieldset>
 
       {/* ช่องทางชำระเงิน */}
@@ -346,6 +411,21 @@ export function PosForm({
             aria-label="ค่ารีเควส (บาท)"
           />
         )}
+      </div>
+
+      {/* หมายเหตุ (ไม่บังคับ) */}
+      <div className="space-y-2">
+        <Label htmlFor="pos_notes">
+          หมายเหตุ <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
+        </Label>
+        <Input
+          id="pos_notes"
+          name="notes"
+          className="h-11"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="เช่น Happy Hour · ลูกค้าประจำ"
+        />
       </div>
 
       {/* สรุปยอด — โชว์ที่มาของตัวเลขให้เห็นก่อนกดบันทึก */}
