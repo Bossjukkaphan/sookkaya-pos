@@ -10,6 +10,7 @@ import type {
   Therapist,
 } from "./edit-sale-dialog"
 import { DateFilter } from "./date-filter"
+import { StatCard } from "@/components/stat-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -63,7 +64,7 @@ export default async function TodayPage({
     supabase.from("therapists").select("id, name, status").order("name"),
     supabase
       .from("v_daily_summary")
-      .select("sale_date, sessions, gross_sales")
+      .select("sale_date, sessions, volume, net_revenue, cash_in")
       .gte("sale_date", from)
       .lte("sale_date", to),
     supabase
@@ -117,12 +118,25 @@ export default async function TodayPage({
     balanceByCustomer,
   }
 
+  // ยอดสรุปทุกตัวเป็นผลรวมของยอดรายวัน จึงบวกข้ามวันได้ตรงๆ ไม่ซ้ำซ้อน
+  // (volume, net_revenue, cash_in, sessions ต่างเป็นยอดต่อวันที่ไม่ทับกัน)
   const summaryRows = dailySummary ?? []
-  const totalRevenue = summaryRows.reduce((sum, d) => sum + Number(d.gross_sales ?? 0), 0)
+  const totalVolume = summaryRows.reduce((sum, d) => sum + Number(d.volume ?? 0), 0)
+  const totalNetRevenue = summaryRows.reduce((sum, d) => sum + Number(d.net_revenue ?? 0), 0)
+  const totalCashIn = summaryRows.reduce((sum, d) => sum + Number(d.cash_in ?? 0), 0)
   const totalSessions = summaryRows.reduce((sum, d) => sum + Number(d.sessions ?? 0), 0)
   const dayTotal = new Map(
-    summaryRows.map((d) => [String(d.sale_date), Number(d.gross_sales ?? 0)])
+    summaryRows.map((d) => [String(d.sale_date), Number(d.volume ?? 0)])
   )
+
+  // ลูกค้าไม่ซ้ำ: นับข้ามวันไม่ได้ (คนเดิมมาสองวันยังคือหนึ่งคน) และผลรวมรายวันก็บวกกันไม่ได้
+  // โหมดวันเดียวรายการไม่โดนตัด (วันหนึ่งแทบไม่ถึง ROW_CAP) จึงนับจากแถวที่โหลดมาได้ครบ
+  // โหมดช่วงวันเลยไม่โชว์ เพราะทั้งโดนเพดานตัดและ distinct บวกข้ามวันไม่ได้อยู่แล้ว
+  const distinctCustomers = isSingleDay
+    ? new Set(
+        rows.map((s) => s.customer_id).filter((id): id is string => Boolean(id))
+      ).size
+    : null
 
   // ค่ามือมาจาก v_therapist_daily เพราะประกันมือขั้นต่ำต่อวันคิดอยู่ในนั้น
   // บวก commission จากรายการขายเองจะได้ตัวเลขที่ทั้งต่ำกว่าจริงและไม่รวมประกัน
@@ -143,12 +157,40 @@ export default async function TodayPage({
     0
   )
 
+  // ค่ามือรวมมาจาก total_income ซึ่งรวมประกันมือ 500/วันแล้ว — เป็นยอดรายวันจึงบวกข้ามวันได้
+  // ห้ามบวก sales.commission แทน เพราะจะขาดประกันและได้ต่ำกว่าจริง
+  const totalCommission = [...byTherapist.values()].reduce(
+    (sum, v) => sum + v.income,
+    0
+  )
+  const grossProfit = totalNetRevenue - totalCommission
+  // หารด้วย net_revenue เสมอ — วันที่มีแต่เติมเงินไม่มีขาย net_revenue=0 ต้องกันหารศูนย์
+  // ไม่งั้น hint จะเป็น NaN%/Infinity% ให้โชว์ — แทน
+  const hrPct = totalNetRevenue > 0 ? (totalCommission / totalNetRevenue) * 100 : null
+  const marginPct = totalNetRevenue > 0 ? (grossProfit / totalNetRevenue) * 100 : null
+
   // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
   // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
   const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
     acc[s.payment_method] = (acc[s.payment_method] ?? 0) + Number(s.net_amount)
     return acc
   }, {})
+
+  // บริการยอดนิยม: จัดกลุ่มจากรายการที่โหลดมา — อยู่ใต้เพดาน ROW_CAP เดียวกับช่องทางชำระเงิน
+  // ช่วงกว้างที่โดนตัดจึงสะท้อนเฉพาะ ROW_CAP รายการล่าสุด (มี banner เตือนอยู่แล้ว)
+  // เรียงตามจำนวนครั้งเป็นหลัก (ยอดนิยม = ทำบ่อย) ใช้ยอดรวมเป็นตัวตัดสินเมื่อเท่ากัน
+  const serviceAgg = new Map<string, { count: number; revenue: number }>()
+  for (const s of rows) {
+    const name = s.service_name ?? "ไม่ระบุบริการ"
+    const agg = serviceAgg.get(name) ?? { count: 0, revenue: 0 }
+    agg.count += 1
+    agg.revenue += Number(s.net_amount ?? 0)
+    serviceAgg.set(name, agg)
+  }
+  const popularServices = [...serviceAgg.entries()]
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.count - a.count || b.revenue - a.revenue)
+    .slice(0, 10)
 
   // โหมดช่วงวัน: จัดกลุ่มตามวัน เพื่อไม่ให้เผลอแก้รายการผิดวัน
   const byDate: { date: string; rows: typeof rows }[] = []
@@ -193,21 +235,39 @@ export default async function TodayPage({
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-slate-600">ยอดขายรวม</p>
-            <p className="text-3xl font-bold text-emerald-800">
-              {formatBaht(totalRevenue)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-slate-600">จำนวนเซสชัน</p>
-            <p className="text-3xl font-bold">{totalSessions}</p>
-          </CardContent>
-        </Card>
+      {/* ทุกการ์ดผูกกับช่วงวันที่เลือก · ยอดสรุปมาจาก view รายวัน ไม่ใช่รายการที่ถูกตัด */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        <StatCard
+          label="เงินเข้าจริง"
+          value={`${formatBaht(totalCashIn)} ฿`}
+          hint="เงินสด+QR+บัตร+เติมเงิน"
+        />
+        <StatCard
+          label="รายได้ที่รับรู้"
+          value={`${formatBaht(totalNetRevenue)} ฿`}
+          hint="รับรู้รายได้ (P&L)"
+        />
+        <StatCard
+          label="ยอดรับจริง"
+          value={`${formatBaht(totalVolume)} ฿`}
+          hint="ลูกค้าจ่ายจริง รวมเครดิต"
+        />
+        <StatCard
+          label="เซสชัน"
+          value={String(totalSessions)}
+          hint={distinctCustomers !== null ? `${distinctCustomers} ลูกค้า` : undefined}
+        />
+        <StatCard
+          label="ค่ามือรวม"
+          value={`${formatBaht(totalCommission)} ฿`}
+          hint={hrPct === null ? "— ของ Net Rev" : `${hrPct.toFixed(1)}% ของ Net Rev`}
+        />
+        <StatCard
+          label="กำไรขั้นต้น"
+          value={`${formatBaht(grossProfit)} ฿`}
+          hint={marginPct === null ? "Margin —" : `Margin ${marginPct.toFixed(1)}%`}
+          tone={grossProfit < 0 ? "bad" : "normal"}
+        />
       </div>
 
       {truncated ? (
@@ -235,6 +295,32 @@ export default async function TodayPage({
             </CardContent>
           </Card>
         )
+      )}
+
+      {popularServices.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">บริการยอดนิยม</CardTitle>
+            {truncated && (
+              <p className="text-xs text-amber-700">
+                นับจาก {ROW_CAP} รายการล่าสุดเท่านั้น ช่วงกว้างจึงยังไม่ครบ
+              </p>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {popularServices.map((svc) => (
+              <div key={svc.name} className="flex justify-between gap-2 text-sm">
+                <span className="min-w-0 truncate text-slate-600">
+                  {svc.name}{" "}
+                  <span className="text-slate-400">({svc.count} ครั้ง)</span>
+                </span>
+                <span className="font-medium whitespace-nowrap">
+                  {formatBaht(svc.revenue)} ฿
+                </span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
       )}
 
       {byTherapist.size > 0 && (
