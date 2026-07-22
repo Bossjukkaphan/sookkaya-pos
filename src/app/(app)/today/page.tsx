@@ -11,6 +11,12 @@ import type {
 } from "./edit-sale-dialog"
 import { DateFilter } from "./date-filter"
 import { StatCard } from "@/components/stat-card"
+import {
+  PAY_COLOR,
+  PAY_COLOR_DEFAULT,
+  PAY_DOT,
+  PAY_DOT_DEFAULT,
+} from "@/lib/payment-colors"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -18,15 +24,6 @@ export const metadata = { title: "ยอดขาย · สุขกายา PO
 
 /** ดึงได้มากสุดเท่านี้ต่อหนึ่งช่วงวัน — supabase-js ตัดที่ 1,000 แถวเงียบๆ อยู่แล้ว */
 const ROW_CAP = 500
-
-/** สีของ badge ช่องทางชำระ · ช่องทางที่ไม่ได้กำหนด → เทา (default กันพัง) */
-const PAY_COLOR: Record<string, string> = {
-  "QR Code": "bg-sky-100 text-sky-700",
-  "Member Credit": "bg-violet-100 text-violet-700",
-  "บัตรเครดิต": "bg-amber-100 text-amber-700",
-  "เงินสด": "bg-emerald-100 text-emerald-700",
-}
-const PAY_COLOR_DEFAULT = "bg-slate-100 text-slate-600"
 
 export default async function TodayPage({
   searchParams,
@@ -356,13 +353,39 @@ export default async function TodayPage({
             <CardHeader className="pb-2">
               <CardTitle className="text-base">แยกตามช่องทางชำระเงิน</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-1.5">
-              {Object.entries(byPayment).map(([method, amount]) => (
-                <div key={method} className="flex justify-between text-sm">
-                  <span className="text-slate-600">{method}</span>
-                  <span className="font-medium">{formatBaht(amount)} ฿</span>
-                </div>
-              ))}
+            <CardContent className="space-y-2">
+              {(() => {
+                const entries = Object.entries(byPayment).sort((a, b) => b[1] - a[1])
+                const totalPay = entries.reduce((s, [, v]) => s + v, 0)
+                return entries.map(([method, amount]) => {
+                  const pct = totalPay > 0 ? (amount / totalPay) * 100 : 0
+                  return (
+                    <div key={method}>
+                      <div className="flex justify-between text-sm">
+                        <span className="flex items-center gap-1.5 text-slate-600">
+                          {/* จุดสีเดียวกับ badge ในรายการขายด้านบน */}
+                          <span
+                            className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
+                          />
+                          {method}
+                        </span>
+                        <span className="font-medium">
+                          {formatBaht(amount)} ฿{" "}
+                          <span className="text-xs text-slate-400">
+                            ({pct.toFixed(0)}%)
+                          </span>
+                        </span>
+                      </div>
+                      <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className={`h-full rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })
+              })()}
             </CardContent>
           </Card>
         )
