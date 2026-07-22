@@ -249,6 +249,54 @@ export type Database = {
         }
         Relationships: []
       }
+      queue_entries: {
+        Row: {
+          created_at: string
+          customer_id: string | null
+          customer_name: string | null
+          duration_min: number
+          id: string
+          queue_date: string
+          sale_id: string | null
+          service_id: string | null
+          service_name: string
+          start_time: string
+          status: string
+          therapist_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id?: string | null
+          customer_name?: string | null
+          duration_min: number
+          id?: string
+          queue_date: string
+          sale_id?: string | null
+          service_id?: string | null
+          service_name: string
+          start_time: string
+          status?: string
+          therapist_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string | null
+          customer_name?: string | null
+          duration_min?: number
+          id?: string
+          queue_date?: string
+          sale_id?: string | null
+          service_id?: string | null
+          service_name?: string
+          start_time?: string
+          status?: string
+          therapist_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       receipt_counters: {
         Row: {
           counter_date: string
@@ -375,6 +423,7 @@ export type Database = {
           commission: number
           commission_old: number | null
           created_at: string
+          duration_min: number | null
           id: string
           is_active: boolean
           material_cost: number | null
@@ -386,6 +435,7 @@ export type Database = {
           commission: number
           commission_old?: number | null
           created_at?: string
+          duration_min?: number | null
           id?: string
           is_active?: boolean
           material_cost?: number | null
@@ -397,6 +447,7 @@ export type Database = {
           commission?: number
           commission_old?: number | null
           created_at?: string
+          duration_min?: number | null
           id?: string
           is_active?: boolean
           material_cost?: number | null

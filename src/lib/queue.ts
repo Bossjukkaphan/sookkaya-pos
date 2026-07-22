@@ -1,0 +1,66 @@
+/** บอร์ดคิว 10:00–22:00 · หน่วยภายในคือ "นาทีตั้งแต่เที่ยงคืน" */
+export const BOARD_START_MIN = 10 * 60
+export const BOARD_END_MIN = 22 * 60
+export const SLOT_MIN = 15
+/** 1 นาที = 2px → ชั่วโมงละ 120px · บอร์ดกว้าง 1,440px */
+export const PX_PER_MIN = 2
+
+export function timeToMin(t: string): number {
+  const [h, m] = t.split(":").map(Number)
+  return h * 60 + m
+}
+
+export function minToTime(min: number): string {
+  const h = String(Math.floor(min / 60)).padStart(2, "0")
+  const m = String(min % 60).padStart(2, "0")
+  return `${h}:${m}`
+}
+
+export function minToX(min: number): number {
+  return (min - BOARD_START_MIN) * PX_PER_MIN
+}
+
+export function snapMin(min: number): number {
+  return Math.round(min / SLOT_MIN) * SLOT_MIN
+}
+
+/** หนีบให้การ์ดอยู่ในบอร์ดทั้งใบ — เริ่มช้าสุดคือปิดร้านลบระยะเวลา */
+export function clampStart(startMin: number, durationMin: number): number {
+  return Math.max(BOARD_START_MIN, Math.min(startMin, BOARD_END_MIN - durationMin))
+}
+
+/** ทับกันจริงเท่านั้น ชนขอบพอดี (จบ 11:00 เริ่ม 11:00) ไม่นับ */
+export function overlaps(
+  aStart: number,
+  aDur: number,
+  bStart: number,
+  bDur: number
+): boolean {
+  return aStart < bStart + bDur && bStart < aStart + aDur
+}
+
+type QueueLike = {
+  therapist_id: string | null
+  start_time: string
+  duration_min: number
+  status: string
+}
+
+/** หมอว่าง = ไม่มีคิว (รอ/กำลังนวด) คร่อมเวลานี้ · คิวไม่ระบุหมอไม่ทำให้ใครติด */
+export function countFreeTherapists(
+  therapistIds: string[],
+  entries: QueueLike[],
+  nowMin: number
+): number {
+  const busy = new Set(
+    entries
+      .filter(
+        (e) =>
+          e.therapist_id !== null &&
+          (e.status === "waiting" || e.status === "in_service") &&
+          overlaps(timeToMin(e.start_time), e.duration_min, nowMin, 1)
+      )
+      .map((e) => e.therapist_id)
+  )
+  return therapistIds.filter((id) => !busy.has(id)).length
+}

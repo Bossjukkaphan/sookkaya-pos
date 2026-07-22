@@ -3,8 +3,13 @@ import { PosForm } from "./pos-form"
 
 export const metadata = { title: "บันทึกขาย · สุขกายา POS" }
 
-export default async function PosPage() {
+export default async function PosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ queue?: string }>
+}) {
   const supabase = await createClient()
+  const { queue } = await searchParams
 
   const [{ data: therapists }, { data: services }, { data: promotions }] =
     await Promise.all([
@@ -27,13 +32,49 @@ export default async function PosPage() {
         .order("name"),
     ])
 
+  // มาจากการ์ดคิว → กรอกหมอ/เมนู/ลูกค้าให้ล่วงหน้า (คิวที่จ่ายแล้วไม่รับซ้ำ)
+  const { data: queueEntry } = queue
+    ? await supabase
+        .from("queue_entries")
+        .select("*")
+        .eq("id", queue)
+        .neq("status", "paid")
+        .maybeSingle()
+    : { data: null }
+
+  const { data: queueCustomer } = queueEntry?.customer_id
+    ? await supabase
+        .from("customers")
+        .select("id, name, phone")
+        .eq("id", queueEntry.customer_id)
+        .maybeSingle()
+    : { data: null }
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">บันทึกขาย</h1>
+      {queueEntry && (
+        <p className="rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-800">
+          เก็บเงินจากคิว: {queueEntry.service_name}
+          {queueEntry.customer_name ? ` · ${queueEntry.customer_name}` : ""}
+        </p>
+      )}
       <PosForm
         therapists={therapists ?? []}
         services={services ?? []}
         promotions={promotions ?? []}
+        initial={
+          queueEntry
+            ? {
+                queueEntryId: queueEntry.id,
+                therapistId: queueEntry.therapist_id ?? "",
+                serviceId: queueEntry.service_id ?? "",
+                customerId: queueCustomer?.id ?? "",
+                customerName: queueCustomer?.name ?? queueEntry.customer_name ?? "",
+                customerPhone: queueCustomer?.phone ?? "",
+              }
+            : undefined
+        }
       />
     </div>
   )
