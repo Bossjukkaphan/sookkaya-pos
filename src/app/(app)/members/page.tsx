@@ -1,10 +1,9 @@
-import Link from "next/link"
-
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
-import { creditBucket } from "@/lib/member-credit"
+import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
 import { TopupForm } from "./topup-form"
+import { MemberRow } from "./member-row"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -50,6 +49,24 @@ export default async function MembersPage() {
     (topupCustomers ?? []).map((c) => [c.id, c.name])
   )
 
+  // ระดับล่าสุดของสมาชิกที่ยังมีเครดิต — ใบเติมล่าสุดของแต่ละคนคือระดับปัจจุบัน
+  // (ประวัติ 30 รายการข้างบนไม่พอ เพราะบางคนเติมครั้งล่าสุดนานแล้ว)
+  const activeIds = members
+    .map((m) => m.customer_id)
+    .filter((id): id is string => id !== null)
+  const { data: tierRows } = activeIds.length
+    ? await supabase
+        .from("member_topups")
+        .select("customer_id, tier, topup_date")
+        .in("customer_id", activeIds)
+        .order("topup_date", { ascending: false })
+    : { data: [] }
+  // เรียงจากใหม่ไปเก่าแล้ว — แถวแรกของแต่ละคนคือใบล่าสุด
+  const tierOf = new Map<string, string>()
+  for (const t of tierRows ?? []) {
+    if (!tierOf.has(t.customer_id)) tierOf.set(t.customer_id, t.tier)
+  }
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">ระบบสมาชิก</h1>
@@ -90,47 +107,22 @@ export default async function MembersPage() {
             </p>
           ) : (
             <ul className="space-y-2">
-              {members.map((m) => {
-                const balance =
-                  m.credit_balance ?? 0
-                const expiringSoon =
-                  m.next_expiry && m.next_expiry <= addDays(today, 30)
-                return (
-                  <li key={m.customer_id}>
-                    <Link href={`/customers/${m.customer_id}`}>
-                      <Card className="transition-colors hover:bg-slate-50">
-                        <CardContent className="flex items-center justify-between gap-3 py-3">
-                          <div className="min-w-0">
-                            <p className="font-medium">{m.name}</p>
-                            {m.next_expiry && (
-                              <p
-                                className={
-                                  expiringSoon
-                                    ? "text-sm text-amber-700"
-                                    : "text-sm text-slate-500"
-                                }
-                              >
-                                หมดอายุ {formatThaiDate(m.next_expiry)}
-                                {expiringSoon && " ⚠️"}
-                              </p>
-                            )}
-                          </div>
-                          {/* สีตามระดับเครดิต bucket เดียวกับหน้าภาพรวม — ใกล้หมดเป็นสีเตือน */}
-                          <Badge
-                            className={`whitespace-nowrap ${
-                              creditBucket(balance) === "low"
-                                ? "border-amber-300 bg-amber-100 text-amber-800"
-                                : "bg-violet-600"
-                            }`}
-                          >
-                            {formatBaht(balance)} ฿
-                          </Badge>
-                        </CardContent>
-                      </Card>
-                    </Link>
-                  </li>
-                )
-              })}
+              {members.map((m) => (
+                <li key={m.customer_id}>
+                  <MemberRow
+                    customerId={m.customer_id ?? ""}
+                    name={m.name ?? "ไม่ระบุชื่อ"}
+                    tier={
+                      m.customer_id ? (tierOf.get(m.customer_id) ?? null) : null
+                    }
+                    balance={m.credit_balance ?? 0}
+                    nextExpiry={m.next_expiry}
+                    expiringSoon={
+                      !!m.next_expiry && m.next_expiry <= addDays(today, 30)
+                    }
+                  />
+                </li>
+              ))}
             </ul>
           )}
         </TabsContent>
@@ -155,7 +147,13 @@ export default async function MembersPage() {
                       <div className="min-w-0">
                         <p className="font-medium">
                           {customerName.get(t.customer_id) ?? "ไม่ระบุ"}{" "}
-                          <Badge variant="secondary">{t.tier}</Badge>
+                          {/* สีเดียวกับ badge ในแท็บสมาชิก */}
+                          <Badge
+                            variant="outline"
+                            className={TIER_COLOR[t.tier] ?? TIER_COLOR_DEFAULT}
+                          >
+                            {t.tier}
+                          </Badge>
                         </p>
                         <p className="text-xs text-slate-500">
                           {formatThaiDate(t.topup_date)} · หมดอายุ{" "}
