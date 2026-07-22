@@ -2,45 +2,50 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
-import { todayInShopTz } from "@/lib/datetime"
+import {
+  CHANNEL_LABEL,
+  SOURCE_LABEL,
+  isBookingChannel,
+  isCustomerSource,
+} from "@/lib/customer-source"
+import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { PAY_DOT, PAY_DOT_DEFAULT } from "@/lib/payment-colors"
+import { BarChart } from "@/components/charts/bar-chart"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 export const metadata = { title: "รายงาน · สุขกายา POS" }
 
-const THAI_MONTHS = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-]
-
-function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-").map(Number)
-  return `${THAI_MONTHS[m - 1]} ${y + 543}`
-}
-
-function shiftMonth(ym: string, delta: number): string {
-  const [y, m] = ym.split("-").map(Number)
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
-  return d.toISOString().slice(0, 7)
-}
-
-function lastDayOfMonth(ym: string): string {
-  const [y, m] = ym.split("-").map(Number)
-  const d = new Date(Date.UTC(y, m, 0))
+function shiftDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
   return d.toISOString().slice(0, 10)
 }
 
 export default async function ReportsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>
+  searchParams: Promise<{ from?: string; to?: string }>
 }) {
   const supabase = await createClient()
   const params = await searchParams
-  const month = params.month ?? todayInShopTz().slice(0, 7)
-  const from = `${month}-01`
-  const to = lastDayOfMonth(month)
+  const today = todayInShopTz()
+
+  // ช่วงสำเร็จรูปแบบ Thai Hand: วันนี้ / เมื่อวาน / 7 วัน / เดือนนี้ + กำหนดเอง
+  const presets = [
+    { key: "today", label: "วันนี้", from: today, to: today },
+    { key: "yesterday", label: "เมื่อวาน", from: shiftDate(today, -1), to: shiftDate(today, -1) },
+    { key: "7d", label: "7 วันล่าสุด", from: shiftDate(today, -6), to: today },
+    { key: "month", label: "เดือนนี้", from: `${today.slice(0, 7)}-01`, to: today },
+  ] as const
+
+  const isDate = (s: string | undefined): s is string =>
+    !!s && /^\d{4}-\d{2}-\d{2}$/.test(s)
+  const from = isDate(params.from) ? params.from : presets[3].from
+  const to = isDate(params.to) ? params.to : presets[3].to
+  const activePreset = presets.find((p) => p.from === from && p.to === to)?.key
+  const isSingleDay = from === to
 
   const [
     { data: sales },
@@ -51,7 +56,7 @@ export default async function ReportsPage({
     supabase
       .from("sales")
       .select(
-        "sale_date, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method"
+        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel"
       )
       .gte("sale_date", from)
       .lte("sale_date", to),
@@ -72,14 +77,19 @@ export default async function ReportsPage({
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
 
   const revenue = rows.reduce(
-    (sum, s) => sum + Number(s.revenue_recognize ?? s.net_amount), 0
+    (sum, s) => sum + Number(s.revenue_recognize ?? s.net_amount),
+    0
   )
+  const discountTotal = rows.reduce((sum, s) => sum + Number(s.discount ?? 0), 0)
 
   const commissionCost = (therapistDaily ?? []).reduce(
-    (sum, d) => sum + Number(d.total_income ?? 0), 0
+    (sum, d) => sum + Number(d.total_income ?? 0),
+    0
   )
   const guaranteeTopUp = (therapistDaily ?? []).reduce(
-    (sum, d) => sum + (Number(d.net_commission ?? 0) - Number(d.total_commission ?? 0)), 0
+    (sum, d) =>
+      sum + (Number(d.net_commission ?? 0) - Number(d.total_commission ?? 0)),
+    0
   )
 
   const byTherapist = new Map<string, { income: number; days: number; sessions: number }>()
@@ -92,8 +102,8 @@ export default async function ReportsPage({
     byTherapist.set(id, agg)
   }
 
-  // รายจ่ายหมวด HR/payroll คือ "ค่ามือที่จ่ายจริง" ซึ่งเป็นตัวเดียวกับ commissionCost
-  // ที่คำนวณจากยอดขาย ถ้าเอามารวมด้วยจะนับค่ามือซ้ำสองรอบ กำไรจะติดลบทั้งที่ไม่ได้ขาดทุน
+  // รายจ่ายหมวด HR/payroll คือ "ค่ามือที่จ่ายจริง" ตัวเดียวกับ commissionCost
+  // เอามารวมอีกรอบจะนับค่ามือซ้ำสอง กำไรติดลบทั้งที่ไม่ได้ขาดทุน
   const isPayroll = (c: string) => c.startsWith("HR / payroll")
   const payrollPaid = (expenses ?? [])
     .filter((e) => isPayroll(e.category))
@@ -119,32 +129,106 @@ export default async function ReportsPage({
     },
     {}
   )
-
   const topServices = Object.entries(byService)
     .sort((a, b) => b[1].revenue - a[1].revenue)
     .slice(0, 8)
 
+  // ลูกค้าตามช่วงเวลา (บิลที่มีเวลาเท่านั้น — ของ import เก่าบางส่วนไม่มี)
+  const byHour = new Map<number, number>()
+  for (const s of rows) {
+    if (!s.sale_time) continue
+    const h = Number(s.sale_time.slice(0, 2))
+    byHour.set(h, (byHour.get(h) ?? 0) + 1)
+  }
+  const hourPoints = Array.from({ length: 12 }, (_, i) => {
+    const h = i + 10
+    return { label: String(h), value: byHour.get(h) ?? 0 }
+  })
+
+  // ยอดขาย/จำนวนบิลตามวัน — มีความหมายเมื่อช่วงเกิน 1 วัน
+  const byDay = new Map<string, { revenue: number; bills: number }>()
+  for (const s of rows) {
+    const d = s.sale_date
+    const agg = byDay.get(d) ?? { revenue: 0, bills: 0 }
+    agg.revenue += Number(s.revenue_recognize ?? s.net_amount)
+    agg.bills += 1
+    byDay.set(d, agg)
+  }
+  const dayKeys = [...byDay.keys()].sort()
+  const dayRevenuePoints = dayKeys.map((d) => ({
+    label: d.slice(8, 10),
+    value: byDay.get(d)!.revenue,
+  }))
+  const dayBillPoints = dayKeys.map((d) => ({
+    label: d.slice(8, 10),
+    value: byDay.get(d)!.bills,
+  }))
+
+  // ช่องทางการจอง: booking แยกย่อยตามช่องทาง · เรียงตามรายได้
+  type ChannelAgg = { count: number; revenue: number }
+  const bySource = new Map<string, ChannelAgg>()
+  const byBookingChannel = new Map<string, ChannelAgg>()
+  for (const s of rows) {
+    const src = s.source && isCustomerSource(s.source) ? s.source : "unknown"
+    const a = bySource.get(src) ?? { count: 0, revenue: 0 }
+    a.count += 1
+    a.revenue += Number(s.net_amount)
+    bySource.set(src, a)
+    if (src === "booking") {
+      const ch =
+        s.booking_channel && isBookingChannel(s.booking_channel)
+          ? s.booking_channel
+          : "unknown"
+      const c = byBookingChannel.get(ch) ?? { count: 0, revenue: 0 }
+      c.count += 1
+      c.revenue += Number(s.net_amount)
+      byBookingChannel.set(ch, c)
+    }
+  }
+  const totalBills = rows.length
+  const sourceOrder = ["booking", "walk_in", "agency", "unknown"] as const
+  const sourceLabel = (k: string) =>
+    k === "unknown" ? "ไม่ทราบ (บิลเก่า)" : SOURCE_LABEL[k as keyof typeof SOURCE_LABEL]
+  const channelLabel = (k: string) =>
+    k === "unknown" ? "ไม่ระบุช่องทาง" : CHANNEL_LABEL[k as keyof typeof CHANNEL_LABEL]
+
+  const rangeLabel = isSingleDay
+    ? formatThaiDate(from)
+    : `${formatThaiDate(from)} – ${formatThaiDate(to)}`
+
+  const exportQs = new URLSearchParams({ type: "sales", from, to })
+  const exportExpQs = new URLSearchParams({ type: "expenses", from, to })
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-bold">รายงานรายเดือน</h1>
-          <p className="text-sm text-slate-600">{monthLabel(month)}</p>
-        </div>
-        <div className="flex gap-1">
+      <div>
+        <h1 className="text-xl font-bold">รายงาน</h1>
+        <p className="text-sm text-slate-600">{rangeLabel}</p>
+      </div>
+
+      {/* เลือกช่วง: ปุ่มสำเร็จรูป + กำหนดเอง */}
+      <div className="flex flex-wrap items-center gap-2">
+        {presets.map((p) => (
           <Link
-            href={`/reports?month=${shiftMonth(month, -1)}`}
-            className="rounded-md border px-3 py-2 text-sm hover:bg-slate-100"
+            key={p.key}
+            href={`/reports?from=${p.from}&to=${p.to}`}
+            className={`rounded-md border px-3 py-1.5 text-sm ${
+              activePreset === p.key
+                ? "border-emerald-600 bg-emerald-50 font-medium text-emerald-900"
+                : "text-slate-600 hover:bg-slate-50"
+            }`}
           >
-            ←
+            {p.label}
           </Link>
-          <Link
-            href={`/reports?month=${shiftMonth(month, 1)}`}
-            className="rounded-md border px-3 py-2 text-sm hover:bg-slate-100"
-          >
-            →
-          </Link>
-        </div>
+        ))}
+        <form action="/reports" className="flex items-center gap-1">
+          <Input type="date" name="from" defaultValue={from} className="h-9 w-auto text-sm" />
+          <span className="text-slate-400">–</span>
+          <Input type="date" name="to" defaultValue={to} className="h-9 w-auto text-sm" />
+          <Button type="submit" size="sm" variant="outline">
+            ดู
+          </Button>
+        </form>
       </div>
 
       {/* สรุปกำไรหยาบ */}
@@ -153,7 +237,7 @@ export default async function ReportsPage({
           <CardTitle className="text-base">สรุป</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <Line label="ยอดขายรวม" value={revenue} />
+          <Line label="ยอดขายรวม (รายได้รับรู้)" value={revenue} />
           <Line label="ค่ามือหมอ (รวมประกัน + รีเควส)" value={-commissionCost} />
           <Line label="รายจ่ายอื่นๆ" value={-otherExpenses} />
           <div className="border-t pt-2">
@@ -170,36 +254,118 @@ export default async function ReportsPage({
           </div>
           {guaranteeTopUp > 0 && (
             <p className="text-xs text-amber-700">
-              ในนี้เป็นส่วนที่จ่ายเกินค่ามือจริงเพราะประกันมือ{" "}
-              {formatBaht(guaranteeTopUp)} บาท
+              ในนี้เป็นส่วนที่จ่ายเกินค่ามือจริงเพราะประกันมือ {formatBaht(guaranteeTopUp)} บาท
             </p>
           )}
           {payrollPaid > 0 && (
             <p className="text-xs text-slate-500">
               หมายเหตุ: รายจ่ายหมวด HR / payroll {formatBaht(payrollPaid)} บาท
               ไม่ถูกนำมาหักซ้ำ เพราะเป็นการจ่ายค่ามือก้อนเดียวกับด้านบน
-              (รายจ่ายทั้งเดือนรวม {formatBaht(expenseTotal)} บาท)
+              (รายจ่ายทั้งช่วงรวม {formatBaht(expenseTotal)} บาท)
             </p>
           )}
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-slate-600">จำนวนเซสชัน</p>
-            <p className="text-2xl font-bold">{rows.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="py-4">
-            <p className="text-sm text-slate-600">ยอดเฉลี่ย/เซสชัน</p>
-            <p className="text-2xl font-bold">
-              {formatBaht(rows.length ? Math.round(revenue / rows.length) : 0)}
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <MiniStat label="จำนวนบิล" value={String(totalBills)} />
+        <MiniStat
+          label="เฉลี่ย/บิล"
+          value={`${formatBaht(totalBills ? Math.round(revenue / totalBills) : 0)} ฿`}
+        />
+        <MiniStat
+          label="ส่วนลดที่ให้"
+          value={`${formatBaht(discountTotal)} ฿`}
+          tone={discountTotal > 0 ? "warn" : "normal"}
+        />
+        <MiniStat label="ค่ามือหมอ" value={`${formatBaht(commissionCost)} ฿`} />
       </div>
+
+      {!isSingleDay && dayKeys.length > 1 && (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">ยอดขายตามวัน</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <BarChart points={dayRevenuePoints} unit=" ฿" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">จำนวนบิลตามวัน</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <BarChart points={dayBillPoints} unit=" บิล" color="#0284c7" />
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">ลูกค้าตามช่วงเวลา</CardTitle>
+          <p className="text-xs text-slate-500">นับจากบิลที่บันทึกเวลาไว้ · แตะแท่งดูจำนวน</p>
+        </CardHeader>
+        <CardContent>
+          <BarChart points={hourPoints} unit=" บิล" color="#7c3aed" />
+        </CardContent>
+      </Card>
+
+      {/* ช่องทางการจอง — ข้อมูลจาก Phase A เริ่มเก็บ 22 ก.ค. เป็นต้นไป */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">ช่องทางการจอง</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {sourceOrder
+            .filter((k) => bySource.has(k))
+            .map((k) => {
+              const a = bySource.get(k)!
+              const pct = totalBills > 0 ? (a.count / totalBills) * 100 : 0
+              return (
+                <div key={k}>
+                  <div className="flex justify-between text-sm">
+                    <span className="font-medium">{sourceLabel(k)}</span>
+                    <span>
+                      {a.count} บิล{" "}
+                      <span className="text-xs text-slate-400">({pct.toFixed(0)}%)</span>{" "}
+                      <span className="font-medium text-emerald-700">
+                        {formatBaht(a.revenue)} ฿
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-violet-500"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  {k === "booking" && byBookingChannel.size > 0 && (
+                    <div className="mt-1 mb-2 space-y-0.5 pl-4">
+                      {[...byBookingChannel.entries()]
+                        .sort((x, y) => y[1].revenue - x[1].revenue)
+                        .map(([ch, c]) => (
+                          <div
+                            key={ch}
+                            className="flex justify-between text-xs text-slate-600"
+                          >
+                            <span>{channelLabel(ch)}</span>
+                            <span>
+                              {c.count} บิล · {formatBaht(c.revenue)} ฿
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          {totalBills === 0 && (
+            <p className="py-3 text-center text-sm text-slate-500">ไม่มีบิลในช่วงนี้</p>
+          )}
+        </CardContent>
+      </Card>
 
       {byTherapist.size > 0 && (
         <Card>
@@ -223,7 +389,6 @@ export default async function ReportsPage({
                     </span>
                     <span className="font-medium">{formatBaht(v.income)} ฿</span>
                   </div>
-                  {/* แถบเทียบกันในทีม เห็นเลยใครทำรายได้นำ */}
                   <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                     <div
                       className="h-full rounded-full bg-emerald-500"
@@ -252,7 +417,6 @@ export default async function ReportsPage({
                   <div key={method}>
                     <div className="flex justify-between text-sm">
                       <span className="flex items-center gap-1.5 text-slate-600">
-                        {/* จุดสีเดียวกับ badge ในหน้ายอดวันนี้ */}
                         <span
                           className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
                         />
@@ -260,9 +424,7 @@ export default async function ReportsPage({
                       </span>
                       <span className="font-medium">
                         {formatBaht(amount)} ฿{" "}
-                        <span className="text-xs text-slate-400">
-                          ({pct.toFixed(0)}%)
-                        </span>
+                        <span className="text-xs text-slate-400">({pct.toFixed(0)}%)</span>
                       </span>
                     </div>
                     <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
@@ -312,14 +474,14 @@ export default async function ReportsPage({
 
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">ดาวน์โหลดข้อมูล</CardTitle>
+          <CardTitle className="text-base">ดาวน์โหลดข้อมูล (ตามช่วงที่เลือก)</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild variant="outline">
-            <a href={`/api/export?type=sales&month=${month}`}>ยอดขาย (CSV)</a>
+            <a href={`/api/export?${exportQs.toString()}`}>ยอดขาย (CSV)</a>
           </Button>
           <Button asChild variant="outline">
-            <a href={`/api/export?type=expenses&month=${month}`}>รายจ่าย (CSV)</a>
+            <a href={`/api/export?${exportExpQs.toString()}`}>รายจ่าย (CSV)</a>
           </Button>
         </CardContent>
       </Card>
@@ -335,5 +497,30 @@ function Line({ label, value }: { label: string; value: number }) {
         {formatBaht(value)} ฿
       </span>
     </div>
+  )
+}
+
+function MiniStat({
+  label,
+  value,
+  tone = "normal",
+}: {
+  label: string
+  value: string
+  tone?: "normal" | "warn"
+}) {
+  return (
+    <Card>
+      <CardContent className="py-3.5">
+        <p className="text-xs text-slate-500">{label}</p>
+        <p
+          className={`text-lg font-bold ${
+            tone === "warn" ? "text-amber-600" : "text-slate-900"
+          }`}
+        >
+          {value}
+        </p>
+      </CardContent>
+    </Card>
   )
 }
