@@ -9,8 +9,11 @@ import {
   isCustomerSource,
 } from "@/lib/customer-source"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { InsightsAccessDenied, canSeeInsights } from "@/app/(app)/insights/shared"
+import { MONEY_INFO } from "@/lib/money-info"
 import { PAY_DOT, PAY_DOT_DEFAULT } from "@/lib/payment-colors"
 import { BarChart } from "@/components/charts/bar-chart"
+import { InfoDot } from "@/components/info-dot"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,6 +32,13 @@ export default async function ReportsPage({
   searchParams: Promise<{ from?: string; to?: string }>
 }) {
   const supabase = await createClient()
+
+  // หน้านี้มีกำไรหยาบ — สงวนให้ผู้จัดการขึ้นไป เหมือนหน้าวิเคราะห์อื่น
+  const { data: profile } = await supabase.from("profiles").select("role").single()
+  if (!canSeeInsights(profile?.role)) {
+    return <InsightsAccessDenied title="รายงาน" />
+  }
+
   const params = await searchParams
   const today = todayInShopTz()
 
@@ -334,7 +344,9 @@ export default async function ReportsPage({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded-xl border-2 border-emerald-500 bg-white">
           <div className="flex items-baseline justify-between rounded-t-[10px] bg-emerald-600 px-4 py-2.5 text-white">
-            <span className="text-sm font-semibold">รายรับทั้งหมด</span>
+            <span className="flex items-center gap-1 text-sm font-semibold">
+              รายรับทั้งหมด <InfoDot text={MONEY_INFO.netRevenue} light />
+            </span>
             <span className="text-2xl font-extrabold">{formatBaht(revenue)}</span>
           </div>
           <div className="space-y-1.5 px-4 py-3 text-sm">
@@ -359,7 +371,9 @@ export default async function ReportsPage({
 
         <div className="rounded-xl border-2 border-violet-500 bg-white">
           <div className="flex items-baseline justify-between rounded-t-[10px] bg-violet-600 px-4 py-2.5 text-white">
-            <span className="text-sm font-semibold">เงินเข้าบัญชี</span>
+            <span className="flex items-center gap-1 text-sm font-semibold">
+              เงินเข้าบัญชี <InfoDot text={MONEY_INFO.cashIn} light />
+            </span>
             <span className="text-2xl font-extrabold">{formatBaht(cashInTotal)}</span>
           </div>
           <div className="space-y-1.5 px-4 py-3 text-sm">

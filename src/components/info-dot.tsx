@@ -7,7 +7,14 @@ import { Info } from "lucide-react"
  * ปุ่ม ⓘ เล็กๆ ที่เปิดคำอธิบายแบบซ่อนไว้ · ทำงานทั้งแตะ (แท็บเล็ตพนักงาน) และคลิก (คอมเจ้าของร้าน)
  * hover อย่างเดียวไม่พอ เพราะแท็บเล็ตไม่มี hover — คนที่งงคือพนักงานที่ใช้แท็บเล็ตพอดี
  */
-export function InfoDot({ text }: { text: string }) {
+export function InfoDot({
+  text,
+  light = false,
+}: {
+  text: string
+  /** ใช้บนพื้นสีเข้ม (การ์ดเขียว/ม่วง) — ไอคอนต้องสว่างไม่งั้นมองไม่เห็น */
+  light?: boolean
+}) {
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const ref = useRef<HTMLSpanElement>(null)
   const open = pos !== null
@@ -59,7 +66,11 @@ export function InfoDot({ text }: { text: string }) {
         type="button"
         onClick={toggle}
         aria-label="ความหมาย"
-        className="flex text-slate-300 transition-colors hover:text-slate-500"
+        className={
+          light
+            ? "flex text-white/60 transition-colors hover:text-white"
+            : "flex text-slate-300 transition-colors hover:text-slate-500"
+        }
       >
         <Info className="size-3.5" aria-hidden />
       </button>

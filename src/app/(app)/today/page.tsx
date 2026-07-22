@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
+import { MONEY_INFO } from "@/lib/money-info"
 import { Button } from "@/components/ui/button"
 import { SaleRowActions } from "./sale-row-actions"
 import type {
@@ -241,19 +242,19 @@ export default async function TodayPage({
               ? `รวมเติมสมาชิก ${formatBaht(totalTopup)} ฿`
               : "เงินสด+QR+บัตร"
           }
-          info="เงินที่เข้าบัญชีร้านจริงในวันนั้น = ยอดขายที่ไม่ได้จ่ายด้วยเครดิตสมาชิก บวกเงินที่ลูกค้ามาเติมสมาชิกวันนั้น · ใช้ดูสภาพคล่องว่ามีเงินเข้าจริงเท่าไหร่"
+          info={MONEY_INFO.cashIn}
         />
         <StatCard
           label="รายได้ที่รับรู้"
           value={`${formatBaht(totalNetRevenue)} ฿`}
           hint="รับรู้รายได้ (P&L)"
-          info="รายได้จริงของร้านตามบัญชี = ยอดที่ลูกค้าจ่าย หักส่วนที่เป็นเครดิตแถมออก (ของแถมไม่ใช่เงินที่ใครจ่ายมา) · ใช้คิดกำไรและแบ่งหุ้นส่วน"
+          info={MONEY_INFO.netRevenue}
         />
         <StatCard
           label="ยอดรับจริง"
           value={`${formatBaht(totalVolume)} ฿`}
           hint="ลูกค้าจ่ายจริง รวมเครดิต"
-          info="ยอดที่ลูกค้าจ่ายจริงหลังหักส่วนลด รวมที่จ่ายด้วยเครดิตสมาชิกด้วย · ใช้ดูว่าวันนี้ร้านขายได้เท่าไหร่ และเป็นฐานคิดค่ามือหมอ"
+          info={MONEY_INFO.volume}
         />
         <StatCard
           label="เซสชัน"
