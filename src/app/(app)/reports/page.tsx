@@ -56,7 +56,7 @@ export default async function ReportsPage({
     supabase
       .from("sales")
       .select(
-        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel, customer_id"
+        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel, customer_id, credit_used"
       )
       .gte("sale_date", from)
       .lte("sale_date", to),
@@ -73,6 +73,21 @@ export default async function ReportsPage({
       .lte("work_date", to),
   ])
 
+  // เงินเข้าบัญชีเอาจาก view สูตรกลาง (ยอดขายไม่รวมเครดิต + เงินเติมสมาชิก)
+  // ห้ามคิดสูตรเงินใหม่ในหน้านี้ — แยกช่องทางค่อยประกอบจากข้อมูลดิบให้ผลรวมตรงกัน
+  const [{ data: dailySummary }, { data: topups }] = await Promise.all([
+    supabase
+      .from("v_daily_summary")
+      .select("cash_in")
+      .gte("sale_date", from)
+      .lte("sale_date", to),
+    supabase
+      .from("member_topups")
+      .select("cash_received, payment_method")
+      .gte("topup_date", from)
+      .lte("topup_date", to),
+  ])
+
   const rows = sales ?? []
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
 
@@ -81,6 +96,30 @@ export default async function ReportsPage({
     0
   )
   const discountTotal = rows.reduce((sum, s) => sum + Number(s.discount ?? 0), 0)
+
+  // การ์ดเขียว/ม่วงแบบ Thai Hand — ตัวเลขทุกตัวจากสูตรกลางเดิม ไม่นิยามใหม่
+  const creditUsedTotal = rows.reduce((sum, s) => sum + Number(s.credit_used ?? 0), 0)
+  const topupTotal = (topups ?? []).reduce(
+    (sum, t) => sum + Number(t.cash_received ?? 0),
+    0
+  )
+  const cashInTotal = (dailySummary ?? []).reduce(
+    (sum, d) => sum + Number(d.cash_in ?? 0),
+    0
+  )
+  // แยกช่องทางของเงินเข้าบัญชี: ยอดขายที่ไม่ใช่เครดิต + เงินเติมสมาชิกตามช่องทางที่จ่าย
+  const cashByChannel = new Map<string, number>()
+  for (const s of rows) {
+    if (s.payment_method === "Member Credit") continue // เครดิตไม่ใช่เงินเข้า
+    cashByChannel.set(
+      s.payment_method,
+      (cashByChannel.get(s.payment_method) ?? 0) + Number(s.net_amount)
+    )
+  }
+  for (const t of topups ?? []) {
+    const m = t.payment_method
+    cashByChannel.set(m, (cashByChannel.get(m) ?? 0) + Number(t.cash_received ?? 0))
+  }
 
   const commissionCost = (therapistDaily ?? []).reduce(
     (sum, d) => sum + Number(d.total_income ?? 0),
@@ -291,6 +330,64 @@ export default async function ReportsPage({
         </form>
       </div>
 
+      {/* คู่การ์ดหลักแบบ Thai Hand: รายรับ (เขียว) · เงินเข้าบัญชี (ม่วง) */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border-2 border-emerald-500 bg-white">
+          <div className="flex items-baseline justify-between rounded-t-[10px] bg-emerald-600 px-4 py-2.5 text-white">
+            <span className="text-sm font-semibold">รายรับทั้งหมด</span>
+            <span className="text-2xl font-extrabold">{formatBaht(revenue)}</span>
+          </div>
+          <div className="space-y-1.5 px-4 py-3 text-sm">
+            <p className="text-xs text-slate-500">อิงตามวันที่ลูกค้าเข้าใช้บริการ</p>
+            <div className="flex justify-between">
+              <span className="text-slate-600">รายรับจากการใช้บริการ</span>
+              <span className="font-medium">{formatBaht(revenue)}</span>
+            </div>
+            <div className="flex justify-between pl-3 text-xs text-slate-500">
+              <span>ในนี้จ่ายด้วยเครดิตสมาชิก</span>
+              <span>{formatBaht(creditUsedTotal)}</span>
+            </div>
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="text-slate-600">เติมเงินสมาชิกในช่วงนี้</span>
+              <span className="font-medium">{formatBaht(topupTotal)}</span>
+            </div>
+            <p className="pl-3 text-xs text-slate-400">
+              ไม่นับเป็นรายได้ (เป็นภาระให้บริการ) — ไปโผล่ในเงินเข้าบัญชีแทน
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border-2 border-violet-500 bg-white">
+          <div className="flex items-baseline justify-between rounded-t-[10px] bg-violet-600 px-4 py-2.5 text-white">
+            <span className="text-sm font-semibold">เงินเข้าบัญชี</span>
+            <span className="text-2xl font-extrabold">{formatBaht(cashInTotal)}</span>
+          </div>
+          <div className="space-y-1.5 px-4 py-3 text-sm">
+            <p className="text-xs text-slate-500">
+              ยอดขายที่ไม่ใช่เครดิตสมาชิก + เงินเติมสมาชิก
+            </p>
+            {[...cashByChannel.entries()]
+              .sort((a, b) => b[1] - a[1])
+              .map(([method, amount]) => (
+                <div key={method} className="flex justify-between">
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <span
+                      className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
+                    />
+                    {method}
+                  </span>
+                  <span className="font-medium">{formatBaht(amount)}</span>
+                </div>
+              ))}
+            {cashByChannel.size === 0 && (
+              <p className="py-2 text-center text-xs text-slate-400">
+                ไม่มีเงินเข้าในช่วงนี้
+              </p>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* สรุปกำไรหยาบ */}
       <Card>
         <CardHeader className="pb-2">
@@ -327,7 +424,7 @@ export default async function ReportsPage({
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <MiniStat label="จำนวนบิล" value={String(totalBills)} />
         <MiniStat
           label="เฉลี่ย/บิล"
@@ -338,7 +435,13 @@ export default async function ReportsPage({
           value={`${formatBaht(discountTotal)} ฿`}
           tone={discountTotal > 0 ? "warn" : "normal"}
         />
-        <MiniStat label="ค่ามือหมอ" value={`${formatBaht(commissionCost)} ฿`} />
+        <MiniStat label="ค่ามือหมอนวด" value={`${formatBaht(commissionCost)} ฿`} />
+        <MiniStat label="รายจ่ายในช่วง" value={`${formatBaht(expenseTotal)} ฿`} />
+        <MiniStat
+          label="ค่าคอมเอเจนซี่"
+          value="—"
+          hint="รอตั้งค่า % Gowabi"
+        />
       </div>
 
       {!isSingleDay && dayKeys.length > 1 && (
@@ -651,10 +754,12 @@ function MiniStat({
   label,
   value,
   tone = "normal",
+  hint,
 }: {
   label: string
   value: string
   tone?: "normal" | "warn"
+  hint?: string
 }) {
   return (
     <Card>
@@ -667,6 +772,7 @@ function MiniStat({
         >
           {value}
         </p>
+        {hint && <p className="text-[11px] text-slate-400">{hint}</p>}
       </CardContent>
     </Card>
   )
