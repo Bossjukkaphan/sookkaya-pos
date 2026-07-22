@@ -11,6 +11,12 @@ import {
   PAYMENT_METHODS,
   formatBaht,
 } from "@/lib/constants"
+import {
+  PAY_DOT,
+  PAY_DOT_DEFAULT,
+  PAY_SELECTED,
+  PAY_SELECTED_DEFAULT,
+} from "@/lib/payment-colors"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -165,8 +171,13 @@ export function PosForm({
             <Button
               key={m}
               type="button"
-              variant={paymentMethod === m ? "default" : "outline"}
-              className="h-12 text-xs sm:text-sm"
+              variant="outline"
+              // ตอนถูกเลือกใช้สีประจำช่องทาง (ชุดเดียวกับ badge ทุกหน้า) แทนดำล้วน
+              // จะได้เห็นแวบเดียวว่ากดช่องทางไหนไป และจำสีไปอ่านหน้ารายงานต่อได้
+              className={cn(
+                "h-12 text-xs sm:text-sm",
+                paymentMethod === m && (PAY_SELECTED[m] ?? PAY_SELECTED_DEFAULT)
+              )}
               onClick={() => {
                 // ช่องนี้เปลี่ยนความหมายระหว่าง "รหัสจอง Gowabi" กับ "ชื่อโปรโมชั่น"
                 // ถ้าไม่ล้างค่าเดิม ค่าที่ค้างจะถูกบันทึกข้ามประเภทกันโดยไม่มีอะไรเตือน
@@ -178,6 +189,12 @@ export function PosForm({
               }}
               aria-pressed={paymentMethod === m}
             >
+              <span
+                className={cn(
+                  "mr-1 inline-block h-2 w-2 shrink-0 rounded-full",
+                  paymentMethod === m ? "bg-white/80" : (PAY_DOT[m] ?? PAY_DOT_DEFAULT)
+                )}
+              />
               {m}
             </Button>
           ))}
@@ -284,14 +301,34 @@ export function PosForm({
         )}
       </div>
 
-      {/* สรุปยอด */}
+      {/* สรุปยอด — โชว์ที่มาของตัวเลขให้เห็นก่อนกดบันทึก */}
       <Card className="border-emerald-200 bg-emerald-50">
-        <CardContent className="flex items-baseline justify-between py-4">
-          <span className="font-medium">ยอดรับจริง</span>
-          <span className="text-3xl font-bold text-emerald-800">
-            {formatBaht(netAmount)}{" "}
-            <span className="text-base font-normal">บาท</span>
-          </span>
+        <CardContent className="space-y-1.5 py-4">
+          {service && !isGowabi && Number(discount) > 0 && (
+            <>
+              <div className="flex items-baseline justify-between text-sm text-slate-600">
+                <span>ราคาปกติ</span>
+                <span>{formatBaht(service.price)} บาท</span>
+              </div>
+              <div className="flex items-baseline justify-between text-sm text-red-600">
+                <span>ส่วนลด</span>
+                <span>-{formatBaht(Math.min(Number(discount) || 0, service.price))} บาท</span>
+              </div>
+            </>
+          )}
+          {service && isGowabi && (
+            <div className="flex items-baseline justify-between text-sm text-slate-600">
+              <span>ราคาปกติ (Gowabi เก็บเงินแทนร้าน)</span>
+              <span>{formatBaht(service.price)} บาท</span>
+            </div>
+          )}
+          <div className="flex items-baseline justify-between">
+            <span className="font-medium">ยอดรับจริง</span>
+            <span className="text-3xl font-bold text-emerald-800">
+              {formatBaht(netAmount)}{" "}
+              <span className="text-base font-normal">บาท</span>
+            </span>
+          </div>
         </CardContent>
       </Card>
 
@@ -302,6 +339,19 @@ export function PosForm({
       >
         {pending ? "กำลังบันทึก..." : "บันทึกการขาย"}
       </Button>
+      {/* บอกให้รู้ว่าปุ่มยังกดไม่ได้เพราะขาดอะไร — ไม่ต้องเดา */}
+      {!pending && (!therapistId || !serviceId || !paymentMethod) && (
+        <p className="text-center text-xs text-slate-500">
+          ยังไม่ได้เลือก:{" "}
+          {[
+            !therapistId && "หมอนวด",
+            !serviceId && "เมนูบริการ",
+            !paymentMethod && "ช่องทางชำระเงิน",
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      )}
     </form>
   )
 }

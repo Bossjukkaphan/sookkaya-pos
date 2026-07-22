@@ -18,3 +18,13 @@ export const PAY_DOT: Record<string, string> = {
   "เงินสด": "bg-emerald-500",
 }
 export const PAY_DOT_DEFAULT = "bg-slate-400"
+
+/** ปุ่มช่องทางชำระตอนถูกเลือก (หน้า POS) — สีทึบของช่องทางนั้นแทนดำล้วน */
+export const PAY_SELECTED: Record<string, string> = {
+  "QR Code": "border-sky-600 bg-sky-600 text-white hover:bg-sky-600",
+  "Member Credit": "border-violet-600 bg-violet-600 text-white hover:bg-violet-600",
+  "บัตรเครดิต": "border-amber-500 bg-amber-500 text-white hover:bg-amber-500",
+  "เงินสด": "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
+}
+export const PAY_SELECTED_DEFAULT =
+  "border-slate-700 bg-slate-700 text-white hover:bg-slate-700"
