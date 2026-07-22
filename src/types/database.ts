@@ -512,10 +512,10 @@ export type Database = {
         Row: {
           cash_in: number | null
           discount_total: number | null
-          gross_sales: number | null
           net_revenue: number | null
           sale_date: string | null
           sessions: number | null
+          volume: number | null
         }
         Relationships: []
       }
