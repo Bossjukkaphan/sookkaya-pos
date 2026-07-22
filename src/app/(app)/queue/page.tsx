@@ -26,7 +26,7 @@ export default async function QueuePage({
     params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : today
   const isToday = boardDate === today
 
-  const [{ data: therapists }, { data: services }, { data: entries }] =
+  const [{ data: therapists }, { data: services }, { data: entries }, { data: beds }] =
     await Promise.all([
       supabase
         .from("therapists")
@@ -44,6 +44,11 @@ export default async function QueuePage({
         .eq("queue_date", boardDate)
         .neq("status", "cancelled")
         .order("start_time"),
+      supabase
+        .from("beds")
+        .select("id, room, name")
+        .eq("is_active", true)
+        .order("sort"),
     ])
 
   return (
@@ -82,6 +87,7 @@ export default async function QueuePage({
       <QueueBoard
         therapists={therapists ?? []}
         services={services ?? []}
+        beds={beds ?? []}
         initialEntries={entries ?? []}
         boardDate={boardDate}
         isToday={isToday}
