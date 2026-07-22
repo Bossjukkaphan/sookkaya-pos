@@ -14,6 +14,7 @@ import {
   MoreHorizontal,
   PiggyBank,
   Receipt,
+  ScrollText,
   Settings,
   TrendingUp,
   Users,
@@ -47,6 +48,7 @@ const PRIMARY: NavLink[] = [
 const SECONDARY: NavLink[] = [
   // คิวใช้ทุกวันก็จริง แต่แถบล่างมือถือเต็ม 5 ปุ่มแล้ว — ขึ้นบนสุดของกลุ่มนี้แทน
   { href: "/queue", label: "คิววันนี้", icon: Clock4 },
+  { href: "/history", label: "ประวัติบิล", icon: ScrollText },
   { href: "/sales", label: "ยอดขายย้อนหลัง", icon: TrendingUp },
   { href: "/finance", label: "การเงิน", icon: PiggyBank, minRole: "admin" },
   { href: "/insights/heatmap", label: "ชั่วโมงคนแน่น", icon: CalendarClock, minRole: "manager" },
