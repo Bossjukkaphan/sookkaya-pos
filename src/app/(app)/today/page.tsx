@@ -60,6 +60,7 @@ export default async function TodayPage({
     { data: services },
     { data: promotions },
     { data: memberBalances },
+    { data: topups },
   ] = await Promise.all([
     supabase
       .from("sales")
@@ -98,6 +99,11 @@ export default async function TodayPage({
           .from("member_balances")
           .select("customer_id, credit_balance, credit_granted, cash_paid")
       : Promise.resolve({ data: null }),
+    supabase
+      .from("member_topups")
+      .select("cash_received")
+      .gte("topup_date", from)
+      .lte("topup_date", to),
   ])
 
   const rows = sales ?? []
@@ -134,6 +140,8 @@ export default async function TodayPage({
   const totalNetRevenue = summaryRows.reduce((sum, d) => sum + Number(d.net_revenue ?? 0), 0)
   const totalCashIn = summaryRows.reduce((sum, d) => sum + Number(d.cash_in ?? 0), 0)
   const totalSessions = summaryRows.reduce((sum, d) => sum + Number(d.sessions ?? 0), 0)
+  // เงินเติมสมาชิกในช่วงที่เลือก — เป็นส่วนหนึ่งของ "เงินเข้าจริง" จึงโชว์ให้ตามรอยได้
+  const totalTopup = (topups ?? []).reduce((s, t) => s + Number(t.cash_received ?? 0), 0)
   const dayTotal = new Map(
     summaryRows.map((d) => [String(d.sale_date), Number(d.volume ?? 0)])
   )
@@ -249,17 +257,24 @@ export default async function TodayPage({
         <StatCard
           label="เงินเข้าจริง"
           value={`${formatBaht(totalCashIn)} ฿`}
-          hint="เงินสด+QR+บัตร+เติมเงิน"
+          hint={
+            totalTopup > 0
+              ? `รวมเติมสมาชิก ${formatBaht(totalTopup)} ฿`
+              : "เงินสด+QR+บัตร"
+          }
+          info="เงินที่เข้าบัญชีร้านจริงในวันนั้น = ยอดขายที่ไม่ได้จ่ายด้วยเครดิตสมาชิก บวกเงินที่ลูกค้ามาเติมสมาชิกวันนั้น · ใช้ดูสภาพคล่องว่ามีเงินเข้าจริงเท่าไหร่"
         />
         <StatCard
           label="รายได้ที่รับรู้"
           value={`${formatBaht(totalNetRevenue)} ฿`}
           hint="รับรู้รายได้ (P&L)"
+          info="รายได้จริงของร้านตามบัญชี = ยอดที่ลูกค้าจ่าย หักส่วนที่เป็นเครดิตแถมออก (ของแถมไม่ใช่เงินที่ใครจ่ายมา) · ใช้คิดกำไรและแบ่งหุ้นส่วน"
         />
         <StatCard
           label="ยอดรับจริง"
           value={`${formatBaht(totalVolume)} ฿`}
           hint="ลูกค้าจ่ายจริง รวมเครดิต"
+          info="ยอดที่ลูกค้าจ่ายจริงหลังหักส่วนลด รวมที่จ่ายด้วยเครดิตสมาชิกด้วย · ใช้ดูว่าวันนี้ร้านขายได้เท่าไหร่ และเป็นฐานคิดค่ามือหมอ"
         />
         <StatCard
           label="เซสชัน"
