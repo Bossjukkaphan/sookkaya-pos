@@ -66,6 +66,60 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   return { ok: true }
 }
 
+/** แก้ไขคิวจากฟอร์ม (ทุก field ยกเว้นวัน/สถานะ) · คิวที่จ่ายแล้วแก้ไม่ได้ */
+export async function updateQueueEntry(id: string, form: FormData): Promise<Result> {
+  const supabase = await createClient()
+  const serviceId = String(form.get("service_id") ?? "")
+  const startTime = String(form.get("start_time") ?? "")
+  const durationMin = Number(form.get("duration_min") ?? 0)
+  const therapistId = String(form.get("therapist_id") ?? "") || null
+  const customerId = String(form.get("customer_id") ?? "") || null
+  const customerName = String(form.get("customer_name") ?? "").trim() || null
+  const bedId = String(form.get("bed_id") ?? "") || null
+  const notes = String(form.get("notes") ?? "").trim() || null
+  const source = String(form.get("source") ?? "walk_in")
+  const channelInput = String(form.get("booking_channel") ?? "")
+  const bookingChannel =
+    source === "booking" && isBookingChannel(channelInput) ? channelInput : null
+
+  if (!serviceId) return { ok: false, error: "เลือกเมนูก่อน" }
+  if (!/^\d{2}:\d{2}$/.test(startTime))
+    return { ok: false, error: "เวลาเริ่มไม่ถูกต้อง" }
+  if (durationMin < 15 || durationMin > 240)
+    return { ok: false, error: "ระยะเวลาไม่ถูกต้อง" }
+  if (!isCustomerSource(source))
+    return { ok: false, error: "ที่มาลูกค้าไม่ถูกต้อง" }
+
+  const { data: service } = await supabase
+    .from("services")
+    .select("name")
+    .eq("id", serviceId)
+    .single()
+  if (!service) return { ok: false, error: "ไม่พบเมนูนี้" }
+
+  const { error } = await supabase
+    .from("queue_entries")
+    .update({
+      therapist_id: therapistId,
+      service_id: serviceId,
+      service_name: service.name,
+      duration_min: durationMin,
+      customer_id: customerId,
+      customer_name: customerName,
+      start_time: startTime,
+      source,
+      bed_id: bedId,
+      booking_channel: bookingChannel,
+      notes,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .neq("status", "paid")
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/queue")
+  return { ok: true }
+}
+
 /** ลากการ์ด: ย้ายหมอ/เลื่อนเวลา · การ์ดที่จ่ายแล้วห้ามย้าย */
 export async function moveQueueEntry(
   id: string,
