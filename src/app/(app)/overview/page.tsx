@@ -385,7 +385,7 @@ export default async function OverviewPage({
                 { name: "รายจ่าย", color: "#f97316", points: expensePoints },
               ]}
               line={{ name: "กำไรเงินสด", color: "#1e293b", points: profitPoints }}
-              format={(v) => `${formatBaht(v)} ฿`}
+              unit=" ฿"
             />
           </CardContent>
         </Card>
@@ -394,7 +394,7 @@ export default async function OverviewPage({
             <CardTitle className="text-base">Margin 6 เดือนล่าสุด</CardTitle>
           </CardHeader>
           <CardContent>
-            <LineChart points={marginPoints} format={(v) => `${v}%`} />
+            <LineChart points={marginPoints} unit="%" />
           </CardContent>
         </Card>
       </div>
