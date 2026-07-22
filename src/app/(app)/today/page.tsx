@@ -19,6 +19,15 @@ export const metadata = { title: "ยอดขาย · สุขกายา PO
 /** ดึงได้มากสุดเท่านี้ต่อหนึ่งช่วงวัน — supabase-js ตัดที่ 1,000 แถวเงียบๆ อยู่แล้ว */
 const ROW_CAP = 500
 
+/** สีของ badge ช่องทางชำระ · ช่องทางที่ไม่ได้กำหนด → เทา (default กันพัง) */
+const PAY_COLOR: Record<string, string> = {
+  "QR Code": "bg-sky-100 text-sky-700",
+  "Member Credit": "bg-violet-100 text-violet-700",
+  "บัตรเครดิต": "bg-amber-100 text-amber-700",
+  "เงินสด": "bg-emerald-100 text-emerald-700",
+}
+const PAY_COLOR_DEFAULT = "bg-slate-100 text-slate-600"
+
 export default async function TodayPage({
   searchParams,
 }: {
@@ -270,6 +279,53 @@ export default async function TodayPage({
         />
       </div>
 
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            {isSingleDay ? "รายการขายวันนี้" : "รายการขายในช่วงที่เลือก"}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          {rows.length === 0 ? (
+            <p className="px-6 py-6 text-center text-sm text-slate-500">
+              ไม่มีรายการขายในช่วงที่เลือก
+            </p>
+          ) : isSingleDay ? (
+            <ul className="divide-y">
+              {rows.map((s) => (
+                <SaleRow
+                  key={s.id}
+                  sale={s}
+                  therapistName={therapistName}
+                  editable={editable}
+                  editOptions={editOptions}
+                />
+              ))}
+            </ul>
+          ) : (
+            byDate.map((group) => (
+              <div key={group.date}>
+                <div className="sticky top-0 z-10 flex justify-between border-y bg-slate-100 px-4 py-2 text-sm font-semibold sm:px-6">
+                  <span>{formatThaiDate(group.date)}</span>
+                  <span>{formatBaht(dayTotal.get(group.date) ?? 0)} ฿</span>
+                </div>
+                <ul className="divide-y">
+                  {group.rows.map((s) => (
+                    <SaleRow
+                      key={s.id}
+                      sale={s}
+                      therapistName={therapistName}
+                      editable={editable}
+                      editOptions={editOptions}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
       {truncated ? (
         <Card>
           <CardHeader className="pb-2">
@@ -350,53 +406,6 @@ export default async function TodayPage({
           </CardContent>
         </Card>
       )}
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">
-            {isSingleDay ? "รายการขายวันนี้" : "รายการขายในช่วงที่เลือก"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-0">
-          {rows.length === 0 ? (
-            <p className="px-6 py-6 text-center text-sm text-slate-500">
-              ไม่มีรายการขายในช่วงที่เลือก
-            </p>
-          ) : isSingleDay ? (
-            <ul className="divide-y">
-              {rows.map((s) => (
-                <SaleRow
-                  key={s.id}
-                  sale={s}
-                  therapistName={therapistName}
-                  editable={editable}
-                  editOptions={editOptions}
-                />
-              ))}
-            </ul>
-          ) : (
-            byDate.map((group) => (
-              <div key={group.date}>
-                <div className="sticky top-0 z-10 flex justify-between border-y bg-slate-100 px-4 py-2 text-sm font-semibold sm:px-6">
-                  <span>{formatThaiDate(group.date)}</span>
-                  <span>{formatBaht(dayTotal.get(group.date) ?? 0)} ฿</span>
-                </div>
-                <ul className="divide-y">
-                  {group.rows.map((s) => (
-                    <SaleRow
-                      key={s.id}
-                      sale={s}
-                      therapistName={therapistName}
-                      editable={editable}
-                      editOptions={editOptions}
-                    />
-                  ))}
-                </ul>
-              </div>
-            ))
-          )}
-        </CardContent>
-      </Card>
     </div>
   )
 }
@@ -474,39 +483,50 @@ function SaleRow({
 
   return (
     <li className="flex items-start gap-3 px-4 py-3 sm:px-6">
+      <span className="mt-0.5 text-sm font-semibold tabular-nums text-slate-400">
+        {s.sale_time?.slice(0, 5) ?? "--:--"}
+      </span>
+
       <div className="min-w-0 flex-1 space-y-0.5">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium">{s.service_name}</span>
           {s.is_request && (
-            <Badge variant="outline" className="text-xs">
+            <Badge variant="outline" className="text-[10px]">
               รีเควส
             </Badge>
           )}
-          {s.member_status && <Badge className="text-xs">{s.member_status}</Badge>}
+          {s.member_status && (
+            <Badge className="bg-violet-600 text-[10px]">{s.member_status}</Badge>
+          )}
         </div>
+
         <p className="text-sm text-slate-600">
-          {s.sale_time?.slice(0, 5)} ·{" "}
+          👤 {s.customer_name ? `${s.customer_name} · ` : ""}
           {therapistName.get(s.therapist_id ?? "") ?? "ไม่ระบุ"}
-          {s.customer_name && ` · ${s.customer_name}`}
         </p>
-        <p className="text-xs text-slate-400">
-          {s.receipt_no} · {s.payment_method}
-        </p>
-        {/* ราคาปกติกับส่วนลดโชว์เฉพาะเมื่อมีส่วนลด ไม่งั้นมันซ้ำกับยอดสุทธิ */}
-        {discount > 0 && (
-          <p className="text-xs text-slate-500">
-            ราคาปกติ {formatBaht(Number(s.price_normal ?? 0))} ฿ · ลด{" "}
-            {formatBaht(discount)} ฿
-            {s.coupon_promo && ` (${s.coupon_promo})`}
-          </p>
-        )}
-        <p className="text-xs text-slate-500">
-          ค่ามือ {formatBaht(commission)} ฿
-          {requestFee > 0 && ` · ค่ารีเควส ${formatBaht(requestFee)} ฿`}
-        </p>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5 text-xs">
+          <span
+            className={`rounded-full px-2 py-0.5 font-medium ${
+              PAY_COLOR[s.payment_method] ?? PAY_COLOR_DEFAULT
+            }`}
+          >
+            {s.payment_method}
+          </span>
+          <span className="text-slate-400">ค่ามือ {formatBaht(commission)} ฿</span>
+          {requestFee > 0 && (
+            <span className="text-slate-400">ค่ารีเควส {formatBaht(requestFee)} ฿</span>
+          )}
+          {discount > 0 && (
+            <span className="text-rose-500">
+              ลด {formatBaht(discount)} ฿{s.coupon_promo ? ` (${s.coupon_promo})` : ""}
+            </span>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-1">
-        <span className="font-semibold whitespace-nowrap">
+
+      <div className="flex items-start gap-1">
+        <span className="mt-0.5 text-lg font-bold whitespace-nowrap text-emerald-800">
           {formatBaht(netAmount)} ฿
         </span>
         {editable && (
@@ -520,9 +540,7 @@ function SaleRow({
                 ? editOptions.balanceByCustomer.get(s.customer_id) ?? null
                 : null
             }
-            currentTherapistName={
-              therapistName.get(s.therapist_id ?? "") ?? null
-            }
+            currentTherapistName={therapistName.get(s.therapist_id ?? "") ?? null}
             label={`${s.service_name} ${formatBaht(netAmount)} บาท`}
           />
         )}
