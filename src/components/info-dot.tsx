@@ -4,43 +4,60 @@ import { useEffect, useRef, useState } from "react"
 import { Info } from "lucide-react"
 
 /**
- * ปุ่ม ⓘ เล็กๆ ที่เปิดคำอธิบายแบบซ่อนไว้ · ทำงานทั้งแตะ (แท็บเล็ตพนักงาน) และชี้เมาส์ (คอมเจ้าของร้าน)
+ * ปุ่ม ⓘ เล็กๆ ที่เปิดคำอธิบายแบบซ่อนไว้ · ทำงานทั้งแตะ (แท็บเล็ตพนักงาน) และคลิก (คอมเจ้าของร้าน)
  * hover อย่างเดียวไม่พอ เพราะแท็บเล็ตไม่มี hover — คนที่งงคือพนักงานที่ใช้แท็บเล็ตพอดี
  */
 export function InfoDot({ text }: { text: string }) {
-  const [open, setOpen] = useState(false)
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
   const ref = useRef<HTMLSpanElement>(null)
+  const open = pos !== null
 
-  // แตะที่อื่นหรือกด Esc แล้วปิด
+  // กล่องคำอธิบายใช้ position: fixed เพราะ Card แม่มี overflow-hidden
+  // ถ้าใช้ absolute กล่องจะโดนขอบการ์ดตัด — fixed หลุดจากการตัดนั้น (ไม่มีบรรพบุรุษที่ transform)
+  const BUBBLE_W = 192 // ต้องตรงกับ w-48 ด้านล่าง
+
+  function toggle() {
+    if (open) {
+      setPos(null)
+      return
+    }
+    const r = ref.current!.getBoundingClientRect()
+    // หนีบไม่ให้ล้นขอบขวาจอ (การ์ดคอลัมน์ขวาบนมือถือแคบ)
+    const left = Math.max(8, Math.min(r.left, window.innerWidth - BUBBLE_W - 8))
+    setPos({ top: r.bottom + 4, left })
+  }
+
+  // แตะที่อื่น เลื่อนจอ หรือกด Esc แล้วปิด (ปิดตอนเลื่อนเพราะกล่องเป็น fixed จะค้างที่เดิม)
   useEffect(() => {
     if (!open) return
     function onDown(e: MouseEvent | TouchEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+      if (ref.current && !ref.current.contains(e.target as Node)) setPos(null)
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false)
+      if (e.key === "Escape") setPos(null)
+    }
+    function onScroll() {
+      setPos(null)
     }
     document.addEventListener("mousedown", onDown)
     document.addEventListener("touchstart", onDown)
     document.addEventListener("keydown", onKey)
+    document.addEventListener("scroll", onScroll, true)
     return () => {
       document.removeEventListener("mousedown", onDown)
       document.removeEventListener("touchstart", onDown)
       document.removeEventListener("keydown", onKey)
+      document.removeEventListener("scroll", onScroll, true)
     }
   }, [open])
 
+  // ใช้แตะ/คลิกอย่างเดียว ไม่ผูก hover — บนแท็บเล็ตการแตะจะยิง mouseenter แล้วตามด้วย click
+  // ถ้าผูก hover ไว้ด้วย สองอันจะหักล้างกัน (เปิดแล้วปิดทันที) แตะแล้วไม่ขึ้น
   return (
-    <span
-      ref={ref}
-      className="group relative inline-flex"
-      // เปิดค้างเมื่อชี้เมาส์บนคอม — บนแท็บเล็ตไม่มี hover จึงไม่มีผล
-      onMouseEnter={() => setOpen(true)}
-      onMouseLeave={() => setOpen(false)}
-    >
+    <span ref={ref} className="relative inline-flex">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
         aria-label="ความหมาย"
         className="flex text-slate-300 transition-colors hover:text-slate-500"
       >
@@ -49,8 +66,8 @@ export function InfoDot({ text }: { text: string }) {
       {open && (
         <span
           role="tooltip"
-          // max-w กันไม่ให้กล่องล้นขอบจอบนมือถือแคบ ไม่ว่าการ์ดจะอยู่คอลัมน์ไหน
-          className="absolute top-5 left-0 z-30 w-48 max-w-[calc(100vw-2rem)] rounded-lg border bg-white p-2.5 text-[11px] leading-relaxed font-normal text-slate-600 shadow-lg"
+          style={{ top: pos.top, left: pos.left }}
+          className="fixed z-30 w-48 rounded-lg border bg-white p-2.5 text-[11px] leading-relaxed font-normal text-slate-600 shadow-lg"
         >
           {text}
         </span>
