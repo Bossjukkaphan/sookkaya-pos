@@ -1,20 +1,38 @@
+import Link from "next/link"
+
 import { createClient } from "@/lib/supabase/server"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
-import { OPEN_HOURS, WEEKDAY_LABELS, heatIntensity } from "@/lib/insights"
+import { OPEN_HOURS, WEEKDAY_LABELS } from "@/lib/insights"
 import { formatBaht } from "@/lib/constants"
+import { todayInShopTz } from "@/lib/datetime"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { HeatmapGrid, type HeatCell } from "./heatmap-grid"
 
 export const metadata = { title: "ชั่วโมงคนแน่น · สุขกายา POS" }
 
-const HEAT_CLASSES = [
-  "bg-slate-50 text-slate-300",
-  "bg-emerald-50 text-emerald-900",
-  "bg-emerald-100 text-emerald-900",
-  "bg-emerald-300 text-emerald-950",
-  "bg-emerald-600 font-semibold text-white",
+/**
+ * ค่าเริ่มต้น 90 วัน: หนึ่งเดือนมีวันจันทร์แค่ ~4 วัน ตัวเลขต่อช่องจะแกว่งจนอ่านไม่ได้
+ * ส่วนแบบทั้งหมดโดนช่วงเพิ่งเปิดร้าน (คนยังน้อย) ถ่วงภาพให้เก่ากว่าพฤติกรรมปัจจุบัน
+ */
+const RANGE_OPTIONS = [
+  { key: "30", label: "30 วันล่าสุด", days: 30 },
+  { key: "90", label: "90 วันล่าสุด", days: 90 },
+  { key: "all", label: "ทั้งหมดตั้งแต่เปิดร้าน", days: null },
 ] as const
 
-export default async function HeatmapPage() {
+type RangeKey = (typeof RANGE_OPTIONS)[number]["key"]
+
+function shiftDate(isoDate: string, days: number): string {
+  const d = new Date(`${isoDate}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+export default async function HeatmapPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>
+}) {
   const supabase = await createClient()
   const { data: profile } = await supabase.from("profiles").select("role").single()
 
@@ -22,18 +40,40 @@ export default async function HeatmapPage() {
     return <InsightsAccessDenied title="ชั่วโมงคนแน่น" />
   }
 
-  const [{ data: density }, { count: totalSales }] = await Promise.all([
-    supabase.from("v_hourly_density").select("weekday, hour, sessions, revenue"),
-    supabase.from("sales").select("id", { count: "exact", head: true }),
-  ])
+  const params = await searchParams
+  const range: RangeKey =
+    params.range === "all" || params.range === "30" ? params.range : "90"
+  const option = RANGE_OPTIONS.find((o) => o.key === range)!
+  const fromDate =
+    option.days === null ? null : shiftDate(todayInShopTz(), -option.days)
+
+  // นับจำนวนรายการในช่วงเดียวกันไว้บอกความครบของข้อมูล — บาง import เก่าไม่มีเวลาขาย
+  let totalQuery = supabase
+    .from("sales")
+    .select("id", { count: "exact", head: true })
+  let withTimeQuery = supabase
+    .from("sales")
+    .select("id", { count: "exact", head: true })
+    .not("sale_time", "is", null)
+  if (fromDate) {
+    totalQuery = totalQuery.gte("sale_date", fromDate)
+    withTimeQuery = withTimeQuery.gte("sale_date", fromDate)
+  }
+
+  const [{ data: density }, { count: totalSales }, { count: withTime }] =
+    await Promise.all([
+      // ฟังก์ชันใช้สูตรรายได้เดียวกับ v_hourly_density แต่กรองช่วงวันได้
+      supabase.rpc("hourly_density", fromDate ? { from_date: fromDate } : {}),
+      totalQuery,
+      withTimeQuery,
+    ])
 
   const rows = density ?? []
-  const counted = rows.reduce((sum, r) => sum + Number(r.sessions ?? 0), 0)
   const total = totalSales ?? 0
+  const counted = withTime ?? 0
 
   // ช่องที่แน่นที่สุดคือฐานของสเกลสี — นับเฉพาะชั่วโมงที่ร้านเปิดจริง
-  const cells = new Map<string, { sessions: number; revenue: number }>()
-  let max = 0
+  const cells: HeatCell[] = []
   let outsideHours = 0
   for (const r of rows) {
     const hour = Number(r.hour ?? -1)
@@ -42,48 +82,64 @@ export default async function HeatmapPage() {
       outsideHours += sessions
       continue
     }
-    cells.set(`${r.weekday}-${hour}`, {
+    cells.push({
+      weekday: Number(r.weekday ?? 0),
+      hour,
       sessions,
       revenue: Number(r.revenue ?? 0),
     })
-    if (sessions > max) max = sessions
   }
 
-  const busiest = [...cells.entries()].sort(
-    (a, b) => b[1].sessions - a[1].sessions
-  )[0]
+  const busiest = [...cells].sort((a, b) => b.sessions - a.sessions)[0]
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-bold">ชั่วโมงคนแน่น</h1>
         <p className="text-sm text-slate-600">
-          รวมทุกวันตั้งแต่เปิดร้าน แยกตามวันในสัปดาห์และชั่วโมง
+          แยกตามวันในสัปดาห์และชั่วโมง · {option.label}
         </p>
       </div>
 
-      {/* ถ้าไม่บอกสัดส่วนนี้ จะเข้าใจว่าเป็นภาพรวมทั้งร้าน ทั้งที่ข้อมูลเก่ามีเวลาแค่ 70% */}
-      <Card className="border-amber-200 bg-amber-50">
-        <CardContent className="py-3 text-xs text-amber-900">
-          คำนวณจาก {counted.toLocaleString()} รายการที่บันทึกเวลาไว้ จากทั้งหมด{" "}
-          {total.toLocaleString()} รายการ (
-          {total > 0 ? Math.round((counted / total) * 100) : 0}%) —
-          ข้อมูลที่ import จากไฟล์เก่าบางส่วนไม่มีเวลาขาย
-          {outsideHours > 0 &&
-            ` · ในจำนวนนี้มี ${outsideHours} รายการที่เวลาอยู่นอกเวลาทำการ ไม่ถูกนำมาแสดงในตาราง`}
-        </CardContent>
-      </Card>
+      <div className="flex gap-2">
+        {RANGE_OPTIONS.map((o) => (
+          <Link
+            key={o.key}
+            href={o.key === "90" ? "/insights/heatmap" : `/insights/heatmap?range=${o.key}`}
+            className={`rounded-md border px-3 py-1.5 text-sm ${
+              o.key === range
+                ? "border-emerald-600 bg-emerald-50 font-medium text-emerald-900"
+                : "text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {o.label}
+          </Link>
+        ))}
+      </div>
+
+      {/* ถ้าไม่บอกสัดส่วนนี้ จะเข้าใจว่าเป็นภาพรวมทั้งช่วง ทั้งที่ข้อมูลเก่าบางส่วนไม่มีเวลา */}
+      {counted < total && (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="py-3 text-xs text-amber-900">
+            คำนวณจาก {counted.toLocaleString()} รายการที่บันทึกเวลาไว้ จากทั้งหมด{" "}
+            {total.toLocaleString()} รายการในช่วงนี้ (
+            {total > 0 ? Math.round((counted / total) * 100) : 0}%) —
+            ข้อมูลที่ import จากไฟล์เก่าบางส่วนไม่มีเวลาขาย
+            {outsideHours > 0 &&
+              ` · ในจำนวนนี้มี ${outsideHours} รายการที่เวลาอยู่นอกเวลาทำการ ไม่ถูกนำมาแสดงในตาราง`}
+          </CardContent>
+        </Card>
+      )}
 
       {busiest && (
         <Card>
           <CardContent className="py-4">
             <p className="text-sm text-slate-600">ช่วงที่แน่นที่สุด</p>
             <p className="text-2xl font-bold">
-              {WEEKDAY_LABELS[Number(busiest[0].split("-")[0])]}{" "}
-              {busiest[0].split("-")[1]}:00 น.
+              {WEEKDAY_LABELS[busiest.weekday]} {busiest.hour}:00 น.
             </p>
             <p className="text-sm text-slate-600">
-              {busiest[1].sessions} เซสชัน · {formatBaht(busiest[1].revenue)} บาท
+              {busiest.sessions} เซสชัน · {formatBaht(busiest.revenue)} บาท
             </p>
           </CardContent>
         </Card>
@@ -93,41 +149,14 @@ export default async function HeatmapPage() {
         <CardHeader className="pb-2">
           <CardTitle className="text-base">ตารางความหนาแน่น</CardTitle>
         </CardHeader>
-        <CardContent className="overflow-x-auto">
-          <table className="w-full min-w-[520px] border-separate border-spacing-0.5 text-center text-xs">
-            <thead>
-              <tr>
-                <th className="w-8" />
-                {OPEN_HOURS.map((h) => (
-                  <th key={h} className="font-normal text-slate-500">
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {WEEKDAY_LABELS.map((label, weekday) => (
-                <tr key={label}>
-                  <th className="pr-1 text-right font-normal text-slate-500">
-                    {label}
-                  </th>
-                  {OPEN_HOURS.map((hour) => {
-                    const cell = cells.get(`${weekday}-${hour}`)
-                    const sessions = cell?.sessions ?? 0
-                    return (
-                      <td
-                        key={hour}
-                        className={`rounded py-1.5 ${HEAT_CLASSES[heatIntensity(sessions, max)]}`}
-                        title={`${label} ${hour}:00 — ${sessions} เซสชัน`}
-                      >
-                        {sessions || "·"}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <CardContent>
+          {cells.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-500">
+              ไม่มีข้อมูลในช่วงนี้
+            </p>
+          ) : (
+            <HeatmapGrid cells={cells} />
+          )}
         </CardContent>
       </Card>
     </div>
