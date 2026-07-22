@@ -566,6 +566,16 @@ export type Database = {
         }
         Relationships: []
       }
+      v_monthly_member_activity: {
+        Row: {
+          bonus_used: number | null
+          credit_used: number | null
+          month: string | null
+          topup_in: number | null
+          volume: number | null
+        }
+        Relationships: []
+      }
       v_monthly_pl: {
         Row: {
           cash_in: number | null
