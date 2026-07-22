@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { CustomerSearch } from "./customer-search"
 
 export const metadata = { title: "ลูกค้า · สุขกายา POS" }
 
@@ -32,6 +32,20 @@ export default async function CustomersPage({
 
   const { data: customers } = await query
 
+  // member_balances ไม่มี customer_type — ดึงเพิ่มเฉพาะ id ที่แสดง (≤50 แถว)
+  // เพื่อติด badge สมาชิกให้เห็นแวบแรกว่าใครเป็น member
+  const ids = (customers ?? [])
+    .map((c) => c.customer_id)
+    .filter((id): id is string => id !== null)
+  const { data: typeRows } = ids.length
+    ? await supabase.from("customers").select("id, customer_type").in("id", ids)
+    : { data: [] }
+  const isMember = new Set(
+    (typeRows ?? [])
+      .filter((t) => t.customer_type === "สมาชิก")
+      .map((t) => t.id)
+  )
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -41,18 +55,7 @@ export default async function CustomersPage({
         </Button>
       </div>
 
-      <form className="flex gap-2" action="/customers">
-        <Input
-          name="q"
-          defaultValue={term}
-          className="h-11"
-          placeholder="ค้นหาด้วยชื่อ ชื่อเล่น หรือเบอร์โทร"
-          aria-label="ค้นหาลูกค้า"
-        />
-        <Button type="submit" className="h-11">
-          ค้นหา
-        </Button>
-      </form>
+      <CustomerSearch initialTerm={term} />
 
       {(customers ?? []).length === 0 ? (
         <p className="py-8 text-center text-sm text-slate-500">
@@ -69,23 +72,37 @@ export default async function CustomersPage({
                   <Card className="transition-colors hover:bg-slate-50">
                     <CardContent className="flex items-center justify-between gap-3 py-3">
                       <div className="min-w-0">
-                        <p className="font-medium">
-                          {c.name}
-                          {c.nickname && (
-                            <span className="font-normal text-slate-500">
-                              {" "}
-                              ({c.nickname})
-                            </span>
+                        <div className="flex items-center gap-2">
+                          <p className="truncate font-medium">
+                            {c.name}
+                            {c.nickname && (
+                              <span className="font-normal text-slate-500">
+                                {" "}
+                                ({c.nickname})
+                              </span>
+                            )}
+                          </p>
+                          {/* สีม่วงชุดเดียวกับ Member Credit ทุกหน้า */}
+                          {c.customer_id && isMember.has(c.customer_id) && (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-violet-200 bg-violet-100 text-violet-700"
+                            >
+                              สมาชิก
+                            </Badge>
                           )}
-                        </p>
+                        </div>
                         {c.phone && (
                           <p className="text-sm text-slate-500">{c.phone}</p>
                         )}
                       </div>
                       {balance > 0 && (
-                        <Badge className="whitespace-nowrap">
-                          เครดิต {formatBaht(balance)} ฿
-                        </Badge>
+                        <div className="shrink-0 text-right">
+                          <p className="text-base font-bold whitespace-nowrap text-emerald-700">
+                            {formatBaht(balance)} ฿
+                          </p>
+                          <p className="text-[10px] text-slate-400">เครดิตเหลือ</p>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
