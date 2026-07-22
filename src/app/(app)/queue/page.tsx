@@ -51,6 +51,11 @@ export default async function QueuePage({
         .order("sort"),
     ])
 
+  const { count: turnAwayCount } = await supabase
+    .from("turn_aways")
+    .select("id", { count: "exact", head: true })
+    .eq("queue_date", boardDate)
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
@@ -91,6 +96,7 @@ export default async function QueuePage({
         initialEntries={entries ?? []}
         boardDate={boardDate}
         isToday={isToday}
+        turnAwayCount={turnAwayCount ?? 0}
       />
     </div>
   )
