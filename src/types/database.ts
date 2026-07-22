@@ -260,6 +260,7 @@ export type Database = {
           sale_id: string | null
           service_id: string | null
           service_name: string
+          source: string
           start_time: string
           status: string
           therapist_id: string | null
@@ -275,6 +276,7 @@ export type Database = {
           sale_id?: string | null
           service_id?: string | null
           service_name: string
+          source?: string
           start_time: string
           status?: string
           therapist_id?: string | null
@@ -290,6 +292,7 @@ export type Database = {
           sale_id?: string | null
           service_id?: string | null
           service_name?: string
+          source?: string
           start_time?: string
           status?: string
           therapist_id?: string | null
@@ -337,6 +340,7 @@ export type Database = {
           sale_time: string | null
           service_id: string | null
           service_name: string | null
+          source: string | null
           therapist_id: string | null
           updated_at: string
         }
@@ -364,6 +368,7 @@ export type Database = {
           sale_time?: string | null
           service_id?: string | null
           service_name?: string | null
+          source?: string | null
           therapist_id?: string | null
           updated_at?: string
         }
@@ -391,6 +396,7 @@ export type Database = {
           sale_time?: string | null
           service_id?: string | null
           service_name?: string | null
+          source?: string | null
           therapist_id?: string | null
           updated_at?: string
         }

@@ -4,6 +4,11 @@ import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { CustomerPicker } from "@/app/(app)/pos/customer-picker"
+import {
+  CUSTOMER_SOURCES,
+  SOURCE_LABEL,
+  type CustomerSource,
+} from "@/lib/customer-source"
 import { minToTime, snapMin } from "@/lib/queue"
 import { createQueueEntry } from "./queue-actions"
 import type { ServiceOption, Therapist } from "./queue-board"
@@ -34,17 +39,24 @@ function nowRounded(): string {
 export function AddQueueDialog({
   therapists,
   services,
+  boardDate,
+  isToday,
   onDone,
 }: {
   therapists: Therapist[]
   services: ServiceOption[]
+  /** คิวถูกสร้างลงวันที่บอร์ดกำลังแสดง — เลื่อนไปวันหน้าก็รับจองล่วงหน้าได้ */
+  boardDate: string
+  isToday: boolean
   onDone: () => void
 }) {
   const [open, setOpen] = useState(false)
   const [therapistId, setTherapistId] = useState("")
   const [serviceId, setServiceId] = useState("")
   const [duration, setDuration] = useState(60)
-  const [startTime, setStartTime] = useState(nowRounded)
+  // วันนี้เริ่มที่เวลาปัจจุบัน · วันอื่นเริ่มที่เปิดร้าน (เวลาปัจจุบันไม่เกี่ยวกับวันนั้น)
+  const [startTime, setStartTime] = useState(isToday ? nowRounded() : "10:00")
+  const [source, setSource] = useState<CustomerSource>("walk_in")
   const [customerId, setCustomerId] = useState("")
   const [customerName, setCustomerName] = useState("")
   const [customerPhone, setCustomerPhone] = useState("")
@@ -54,7 +66,8 @@ export function AddQueueDialog({
     setTherapistId("")
     setServiceId("")
     setDuration(60)
-    setStartTime(nowRounded())
+    setStartTime(isToday ? nowRounded() : "10:00")
+    setSource("walk_in")
     setCustomerId("")
     setCustomerName("")
     setCustomerPhone("")
@@ -88,6 +101,24 @@ export function AddQueueDialog({
         <form onSubmit={submit} className="space-y-4">
           <input type="hidden" name="therapist_id" value={therapistId} />
           <input type="hidden" name="duration_min" value={duration} />
+          <input type="hidden" name="queue_date" value={boardDate} />
+          <input type="hidden" name="source" value={source} />
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">ลูกค้ามาจาก</legend>
+            <div className="grid grid-cols-3 gap-2">
+              {CUSTOMER_SOURCES.map((s) => (
+                <Button
+                  key={s}
+                  type="button"
+                  variant={source === s ? "default" : "outline"}
+                  onClick={() => setSource(s)}
+                >
+                  {SOURCE_LABEL[s]}
+                </Button>
+              ))}
+            </div>
+          </fieldset>
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">หมอนวด</legend>

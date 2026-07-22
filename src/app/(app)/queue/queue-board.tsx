@@ -51,12 +51,14 @@ export function QueueBoard({
   therapists,
   services,
   initialEntries,
-  today,
+  boardDate,
+  isToday,
 }: {
   therapists: Therapist[]
   services: ServiceOption[]
   initialEntries: QueueEntry[]
-  today: string
+  boardDate: string
+  isToday: boolean
 }) {
   const [entries, setEntries] = useState(initialEntries)
   const [nowMin, setNowMin] = useState(nowMinInShopTz)
@@ -82,11 +84,19 @@ export function QueueBoard({
     const { data } = await supabase
       .from("queue_entries")
       .select("*")
-      .eq("queue_date", today)
+      .eq("queue_date", boardDate)
       .neq("status", "cancelled")
       .order("start_time")
     if (data) setEntries(data)
-  }, [today])
+  }, [boardDate])
+
+  // เปลี่ยนวัน (กดลูกศร) → เริ่มจากข้อมูลของวันใหม่ที่ server ส่งมา
+  // ปรับ state ระหว่าง render ตามสูตร React (ไม่ใช้ effect — เลี่ยง render ซ้อน)
+  const [prevInitial, setPrevInitial] = useState(initialEntries)
+  if (prevInitial !== initialEntries) {
+    setPrevInitial(initialEntries)
+    setEntries(initialEntries)
+  }
 
   // เครื่องอื่นแก้คิว → ดึงใหม่ทั้งวัน (ข้อมูลวันละไม่กี่สิบแถว เอาถูกไว้ก่อน)
   useEffect(() => {
@@ -109,12 +119,12 @@ export function QueueBoard({
     return () => clearInterval(t)
   }, [])
 
-  // เปิดหน้ามาเลื่อนไปเวลาปัจจุบัน (เห็นย้อนหลัง 1 ชม.)
+  // วันนี้เลื่อนไปเวลาปัจจุบัน (เห็นย้อนหลัง 1 ชม.) · วันอื่นเริ่มที่หัววัน
   useEffect(() => {
     scrollRef.current?.scrollTo({
-      left: Math.max(0, minToX(nowMinInShopTz()) - 60 * PX_PER_MIN),
+      left: isToday ? Math.max(0, minToX(nowMinInShopTz()) - 60 * PX_PER_MIN) : 0,
     })
-  }, [])
+  }, [isToday, boardDate])
 
   function onCardPointerDown(
     e: React.PointerEvent,
@@ -228,11 +238,24 @@ export function QueueBoard({
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-slate-600">
-          ว่างตอนนี้{" "}
-          <span className="font-semibold text-emerald-700">{freeCount} คน</span>
-          {" · "}คิวรอ <span className="font-semibold">{waitingCount}</span>
+          {/* "ว่างตอนนี้" มีความหมายเฉพาะวันนี้ — วันอื่นบอกจำนวนคิวพอ */}
+          {isToday && (
+            <>
+              ว่างตอนนี้{" "}
+              <span className="font-semibold text-emerald-700">{freeCount} คน</span>
+              {" · "}
+            </>
+          )}
+          คิวรอ <span className="font-semibold">{waitingCount}</span>
+          {" · "}ทั้งหมด <span className="font-semibold">{entries.length}</span>
         </p>
-        <AddQueueDialog therapists={therapists} services={services} onDone={refetch} />
+        <AddQueueDialog
+          therapists={therapists}
+          services={services}
+          boardDate={boardDate}
+          isToday={isToday}
+          onDone={refetch}
+        />
       </div>
 
       <div ref={scrollRef} className="overflow-x-auto rounded-lg border bg-white">
@@ -271,7 +294,7 @@ export function QueueBoard({
                     style={{ left: minToX(h * 60) }}
                   />
                 ))}
-                {nowMin >= BOARD_START_MIN && nowMin <= BOARD_END_MIN && (
+                {isToday && nowMin >= BOARD_START_MIN && nowMin <= BOARD_END_MIN && (
                   <div
                     className="absolute inset-y-0 z-10 w-0.5 bg-violet-500"
                     style={{ left: minToX(nowMin) }}

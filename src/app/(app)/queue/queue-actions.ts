@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { createClient } from "@/lib/supabase/server"
+import { isCustomerSource } from "@/lib/customer-source"
 import { todayInShopTz } from "@/lib/datetime"
 
 type Result = { ok: true } | { ok: false; error: string }
@@ -10,7 +11,7 @@ type Result = { ok: true } | { ok: false; error: string }
 // paid ตั้งได้ทาง createSale เท่านั้น — หน้าคิวห้ามยิงสถานะนี้ตรงๆ
 const STATUSES = ["waiting", "in_service", "cancelled"] as const
 
-/** เพิ่มคิวใหม่ของวันนี้ · service_name เอาจาก DB ไม่เชื่อ client */
+/** เพิ่มคิวลงวันของบอร์ดที่แสดงอยู่ (จองล่วงหน้าได้) · service_name เอาจาก DB ไม่เชื่อ client */
 export async function createQueueEntry(form: FormData): Promise<Result> {
   const supabase = await createClient()
   const serviceId = String(form.get("service_id") ?? "")
@@ -19,12 +20,19 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   const therapistId = String(form.get("therapist_id") ?? "") || null
   const customerId = String(form.get("customer_id") ?? "") || null
   const customerName = String(form.get("customer_name") ?? "").trim() || null
+  const queueDateInput = String(form.get("queue_date") ?? "")
+  const queueDate = /^\d{4}-\d{2}-\d{2}$/.test(queueDateInput)
+    ? queueDateInput
+    : todayInShopTz()
+  const source = String(form.get("source") ?? "walk_in")
 
   if (!serviceId) return { ok: false, error: "เลือกเมนูก่อน" }
   if (!/^\d{2}:\d{2}$/.test(startTime))
     return { ok: false, error: "เวลาเริ่มไม่ถูกต้อง" }
   if (durationMin < 15 || durationMin > 240)
     return { ok: false, error: "ระยะเวลาไม่ถูกต้อง" }
+  if (!isCustomerSource(source))
+    return { ok: false, error: "ที่มาลูกค้าไม่ถูกต้อง" }
 
   const { data: service } = await supabase
     .from("services")
@@ -34,7 +42,7 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   if (!service) return { ok: false, error: "ไม่พบเมนูนี้" }
 
   const { error } = await supabase.from("queue_entries").insert({
-    queue_date: todayInShopTz(),
+    queue_date: queueDate,
     therapist_id: therapistId,
     service_id: serviceId,
     service_name: service.name,
@@ -42,6 +50,7 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     customer_id: customerId,
     customer_name: customerName,
     start_time: startTime,
+    source,
   })
   if (error) return { ok: false, error: error.message }
   revalidatePath("/queue")

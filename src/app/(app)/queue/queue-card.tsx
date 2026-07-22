@@ -4,6 +4,11 @@ import { useState, useTransition } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 
+import {
+  SOURCE_BADGE,
+  SOURCE_LABEL,
+  isCustomerSource,
+} from "@/lib/customer-source"
 import { PX_PER_MIN, minToX, overlaps, timeToMin } from "@/lib/queue"
 import { setQueueStatus } from "./queue-actions"
 import type { QueueEntry } from "./queue-board"
@@ -95,7 +100,17 @@ export function QueueCard({
             : undefined,
         }}
       >
-        <p className="truncate font-semibold">{entry.service_name}</p>
+        <p className="truncate font-semibold">
+          {/* ป้ายเฉพาะจอง/agency — walk-in คือกรณีปกติไม่ติดป้าย */}
+          {isCustomerSource(entry.source) && SOURCE_BADGE[entry.source] && (
+            <span
+              className={`mr-1 rounded border px-1 text-[10px] font-medium ${SOURCE_BADGE[entry.source]}`}
+            >
+              {SOURCE_LABEL[entry.source]}
+            </span>
+          )}
+          {entry.service_name}
+        </p>
         <p className="truncate text-slate-500">
           {entry.customer_name || "ไม่ระบุลูกค้า"} · {STATUS_LABEL[entry.status]}
         </p>
@@ -111,6 +126,10 @@ export function QueueCard({
               เริ่ม {entry.start_time.slice(0, 5)} น. · {entry.duration_min} นาที
             </p>
             <p>ลูกค้า: {entry.customer_name || "ไม่ระบุ"}</p>
+            <p>
+              มาจาก:{" "}
+              {isCustomerSource(entry.source) ? SOURCE_LABEL[entry.source] : "ไม่ทราบ"}
+            </p>
             <p>สถานะ: {STATUS_LABEL[entry.status]}</p>
             {hasOverlap && (
               <p className="text-orange-600">

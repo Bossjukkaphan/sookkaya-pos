@@ -12,6 +12,12 @@ import {
   formatBaht,
 } from "@/lib/constants"
 import {
+  CUSTOMER_SOURCES,
+  SOURCE_LABEL,
+  isCustomerSource,
+  type CustomerSource,
+} from "@/lib/customer-source"
+import {
   PAY_DOT,
   PAY_DOT_DEFAULT,
   PAY_SELECTED,
@@ -36,6 +42,7 @@ export type PosInitial = {
   customerId: string
   customerName: string
   customerPhone: string
+  source: string
 }
 
 export function PosForm({
@@ -59,6 +66,9 @@ export function PosForm({
   const [customerId, setCustomerId] = useState(initial?.customerId ?? "")
   const [customerName, setCustomerName] = useState(initial?.customerName ?? "")
   const [customerPhone, setCustomerPhone] = useState(initial?.customerPhone ?? "")
+  const [source, setSource] = useState<CustomerSource>(
+    initial && isCustomerSource(initial.source) ? initial.source : "walk_in"
+  )
   const [couponPromo, setCouponPromo] = useState("")
   // Gowabi ต้องพิมพ์รหัสจองเป็นเลขเสมอ จึงบังคับเป็นช่องพิมพ์
   // กรณีอื่นเริ่มจาก dropdown แล้วเปิดช่องพิมพ์เฉพาะเมื่อเลือก "อื่นๆ"
@@ -90,6 +100,7 @@ export function PosForm({
     setCustomerId("")
     setCustomerName("")
     setCustomerPhone("")
+    setSource("walk_in")
     setCouponPromo("")
     setCustomPromo(false)
   }
@@ -177,6 +188,26 @@ export function PosForm({
         onPhoneChange={setCustomerPhone}
         requireMember={isMemberCredit}
       />
+
+      {/* ที่มาลูกค้า — metadata สำหรับวิเคราะห์ช่องทาง ไม่กระทบยอดเงิน */}
+      <fieldset className="space-y-2">
+        <legend className="mb-2 text-sm font-medium">ลูกค้ามาจาก</legend>
+        <input type="hidden" name="source" value={source} />
+        <div className="grid grid-cols-3 gap-2">
+          {CUSTOMER_SOURCES.map((s) => (
+            <Button
+              key={s}
+              type="button"
+              variant={source === s ? "default" : "outline"}
+              className="h-10"
+              onClick={() => setSource(s)}
+              aria-pressed={source === s}
+            >
+              {SOURCE_LABEL[s]}
+            </Button>
+          ))}
+        </div>
+      </fieldset>
 
       {/* ช่องทางชำระเงิน */}
       <fieldset className="space-y-2">

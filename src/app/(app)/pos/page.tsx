@@ -72,6 +72,7 @@ export default async function PosPage({
                 customerId: queueCustomer?.id ?? "",
                 customerName: queueCustomer?.name ?? queueEntry.customer_name ?? "",
                 customerPhone: queueCustomer?.phone ?? "",
+                source: queueEntry.source,
               }
             : undefined
         }

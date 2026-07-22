@@ -121,6 +121,12 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       bonus_used: amounts.bonusUsed,
       revenue_recognize: amounts.revenueRecognize,
       created_by: profile?.full_name ?? user.email ?? null,
+      // ที่มาลูกค้า (walk_in/booking/agency) — metadata ไม่กระทบสูตรเงิน
+      // ค่าเพี้ยนจาก client เก่า → null (ไม่ทราบ) ดีกว่าเดาผิด
+      source: (() => {
+        const s = String(formData.get("source") ?? "")
+        return ["walk_in", "booking", "agency"].includes(s) ? s : null
+      })(),
     })
     .select("id, receipt_no")
     .single()
