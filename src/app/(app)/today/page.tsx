@@ -76,7 +76,7 @@ export default async function TodayPage({
     supabase.from("therapists").select("id, name, status").order("name"),
     supabase
       .from("v_daily_summary")
-      .select("sale_date, sessions, volume, net_revenue, cash_in")
+      .select("sale_date, sessions, volume, net_revenue, cash_in, discount_total")
       .gte("sale_date", from)
       .lte("sale_date", to),
     supabase
@@ -189,6 +189,12 @@ export default async function TodayPage({
   // จึงแม่นเสมอแม้รายการด้านล่างโดนตัดที่ ROW_CAP
   const bonusUsedTotal = totalVolume - totalNetRevenue
   const creditUsedTotal = totalVolume + totalTopup - totalCashIn
+  // ต่อยอด waterfall ขึ้นไปถึงมูลค่าเต็มตามเมนู: gross = volume + ส่วนลด
+  const totalDiscount = summaryRows.reduce(
+    (sum, d) => sum + Number(d.discount_total ?? 0),
+    0
+  )
+  const totalGross = totalVolume + totalDiscount
 
   // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
   // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
@@ -254,10 +260,26 @@ export default async function TodayPage({
             </span>
           </div>
           <div className="space-y-1.5 px-4 py-3 text-sm">
-            {/* สมการที่มาของตัวเลข: ยอดรับจริง − เครดิตแถมที่ใช้ = รายรับที่รับรู้ */}
+            {/* waterfall เต็ม: มูลค่าเมนู − ส่วนลด = Volume − เครดิตแถม = รายรับที่รับรู้ */}
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">
-                ยอดรับจริง (Volume) <InfoDot text={MONEY_INFO.volume} />
+                มูลค่าเต็มตามเมนู{" "}
+                <InfoDot text="ยอดถ้าทุกบิลจ่ายราคาเต็มตามเมนู ไม่หักส่วนลดใดๆ — ใช้ดูว่าร้านให้ส่วนลดไปกี่ % ของมูลค่างาน" />
+              </span>
+              <span className="font-medium">{formatBaht(totalGross)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                − ส่วนลดที่ให้{" "}
+                <InfoDot text="ส่วนลดโปรโมชั่นหน้าร้านทุกแบบ (Happy Hour, Gowabi, KOL ฯลฯ) — ไม่รวมเครดิตแถมสมาชิกซึ่งแยกบรรทัดข้างล่าง" />
+              </span>
+              <span className="font-medium text-rose-600">
+                -{formatBaht(totalDiscount)}
+              </span>
+            </div>
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="flex items-center gap-1 text-slate-600">
+                = ยอดรับจริง (Volume) <InfoDot text={MONEY_INFO.volume} />
               </span>
               <span className="font-medium">{formatBaht(totalVolume)}</span>
             </div>

@@ -13,6 +13,7 @@ import { InsightsAccessDenied, canSeeInsights } from "@/app/(app)/insights/share
 import { getMyProfile } from "@/lib/auth"
 import { MONEY_INFO } from "@/lib/money-info"
 import { PAY_DOT, PAY_DOT_DEFAULT } from "@/lib/payment-colors"
+import { promoKey } from "@/lib/promo"
 import { BarChart } from "@/components/charts/bar-chart"
 import { InfoDot } from "@/components/info-dot"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -67,7 +68,7 @@ export default async function ReportsPage({
     supabase
       .from("sales")
       .select(
-        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel, customer_id, credit_used, bonus_used"
+        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, coupon_promo, source, booking_channel, customer_id, credit_used, bonus_used"
       )
       .gte("sale_date", from)
       .lte("sale_date", to),
@@ -86,18 +87,23 @@ export default async function ReportsPage({
 
   // เงินเข้าบัญชีเอาจาก view สูตรกลาง (ยอดขายไม่รวมเครดิต + เงินเติมสมาชิก)
   // ห้ามคิดสูตรเงินใหม่ในหน้านี้ — แยกช่องทางค่อยประกอบจากข้อมูลดิบให้ผลรวมตรงกัน
-  const [{ data: dailySummary }, { data: topups }] = await Promise.all([
-    supabase
-      .from("v_daily_summary")
-      .select("cash_in")
-      .gte("sale_date", from)
-      .lte("sale_date", to),
-    supabase
-      .from("member_topups")
-      .select("cash_received, payment_method")
-      .gte("topup_date", from)
-      .lte("topup_date", to),
-  ])
+  const [{ data: dailySummary }, { data: topups }, { data: promos }, { data: promoAliases }] =
+    await Promise.all([
+      supabase
+        .from("v_daily_summary")
+        .select("cash_in")
+        .gte("sale_date", from)
+        .lte("sale_date", to),
+      supabase
+        .from("member_topups")
+        .select("cash_received, payment_method")
+        .gte("topup_date", from)
+        .lte("topup_date", to),
+      // จัดกลุ่มส่วนลดตามชื่อโปรจริง — พนักงานพิมพ์ชื่อโปรได้หลายแบบ (เคยมี Happy Hour 8 แบบ)
+      // ต้อง map ผ่าน aliases ไม่งั้นโปรเดียวกันแตกเป็นหลายบรรทัด
+      supabase.from("promotions").select("id, name"),
+      supabase.from("promotion_aliases").select("raw_key, promotion_id"),
+    ])
 
   const rows = sales ?? []
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
@@ -108,11 +114,37 @@ export default async function ReportsPage({
   )
   const discountTotal = rows.reduce((sum, s) => sum + Number(s.discount ?? 0), 0)
 
+  // ส่วนลดแยกตามโปรโมชั่น: map ชื่อที่พนักงานพิมพ์ → โปรจริงผ่าน aliases
+  // ที่จับคู่ไม่ได้รวมเป็น "อื่นๆ" พร้อมโชว์ข้อความดิบที่เจอบ่อยสุด
+  const promoNameById = new Map((promos ?? []).map((p) => [p.id, p.name]))
+  const promoIdByKey = new Map(
+    (promoAliases ?? []).map((a) => [a.raw_key, a.promotion_id])
+  )
+  const discountByPromo = new Map<string, { amount: number; uses: number }>()
+  for (const s of rows) {
+    const discount = Number(s.discount ?? 0)
+    if (discount <= 0) continue
+    const key = promoKey(s.coupon_promo)
+    const promoId = promoIdByKey.get(key)
+    const name =
+      (promoId ? promoNameById.get(promoId) : null) ??
+      (s.coupon_promo?.trim() || "ไม่ระบุโปรโมชั่น")
+    const agg = discountByPromo.get(name) ?? { amount: 0, uses: 0 }
+    agg.amount += discount
+    agg.uses += 1
+    discountByPromo.set(name, agg)
+  }
+  const promoBreakdown = [...discountByPromo.entries()].sort(
+    (a, b) => b[1].amount - a[1].amount
+  )
+
   // การ์ดเขียว/ม่วงแบบ Thai Hand — ตัวเลขทุกตัวจากสูตรกลางเดิม ไม่นิยามใหม่
   // สมการที่ต้องลงตัวเสมอ: ยอดรับจริง − เครดิตแถมที่ใช้ = รายได้ที่รับรู้
   const volumeTotal = rows.reduce((sum, s) => sum + Number(s.net_amount ?? 0), 0)
   const bonusUsedTotal = rows.reduce((sum, s) => sum + Number(s.bonus_used ?? 0), 0)
   const creditUsedTotal = rows.reduce((sum, s) => sum + Number(s.credit_used ?? 0), 0)
+  // มูลค่าเต็มตามเมนูก่อนหักส่วนลด — จุดตั้งต้นของ waterfall รายรับ
+  const grossTotal = volumeTotal + discountTotal
   const topupTotal = (topups ?? []).reduce(
     (sum, t) => sum + Number(t.cash_received ?? 0),
     0
@@ -355,10 +387,26 @@ export default async function ReportsPage({
           </div>
           <div className="space-y-1.5 px-4 py-3 text-sm">
             <p className="text-xs text-slate-500">อิงตามวันที่ลูกค้าเข้าใช้บริการ</p>
-            {/* สมการที่มาของตัวเลข: ยอดรับจริง − เครดิตแถมที่ใช้ = รายรับที่รับรู้ */}
+            {/* waterfall เต็ม: มูลค่าเมนู − ส่วนลด = Volume − เครดิตแถม = รายรับที่รับรู้ */}
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">
-                ยอดรับจริง (Volume) <InfoDot text={MONEY_INFO.volume} />
+                มูลค่าเต็มตามเมนู{" "}
+                <InfoDot text="ยอดถ้าทุกบิลจ่ายราคาเต็มตามเมนู ไม่หักส่วนลดใดๆ — ใช้ดูว่าร้านให้ส่วนลดไปกี่ % ของมูลค่างาน" />
+              </span>
+              <span className="font-medium">{formatBaht(grossTotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                − ส่วนลดที่ให้{" "}
+                <InfoDot text="ส่วนลดโปรโมชั่นหน้าร้านทุกแบบ (Happy Hour, Gowabi, KOL ฯลฯ) — ไม่รวมเครดิตแถมสมาชิกซึ่งแยกบรรทัดข้างล่าง" />
+              </span>
+              <span className="font-medium text-rose-600">
+                -{formatBaht(discountTotal)}
+              </span>
+            </div>
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="flex items-center gap-1 text-slate-600">
+                = ยอดรับจริง (Volume) <InfoDot text={MONEY_INFO.volume} />
               </span>
               <span className="font-medium">{formatBaht(volumeTotal)}</span>
             </div>
@@ -478,6 +526,48 @@ export default async function ReportsPage({
           hint="รอตั้งค่า % Gowabi"
         />
       </div>
+
+      {/* ส่วนลดแยกตามโปรโมชั่น — เห็นว่าเงินส่วนลดไหลไปโปรไหนเท่าไหร่ */}
+      {promoBreakdown.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">ส่วนลดตามโปรโมชั่น</CardTitle>
+            <p className="text-xs text-slate-500">
+              รวม {formatBaht(discountTotal)} ฿ · คุ้มไหมดูที่{" "}
+              <Link href="/insights/promotions" className="text-emerald-700 underline">
+                ROI ส่วนลด
+              </Link>
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {promoBreakdown.map(([name, agg]) => {
+              const pct = discountTotal > 0 ? (agg.amount / discountTotal) * 100 : 0
+              return (
+                <div key={name}>
+                  <div className="flex justify-between text-sm">
+                    <span className="min-w-0 truncate text-slate-600">
+                      {name}{" "}
+                      <span className="text-xs text-slate-400">× {agg.uses}</span>
+                    </span>
+                    <span className="font-medium whitespace-nowrap text-rose-600">
+                      -{formatBaht(agg.amount)} ฿{" "}
+                      <span className="text-xs font-normal text-slate-400">
+                        ({pct.toFixed(0)}%)
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-full rounded-full bg-rose-400"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       {!isSingleDay && dayKeys.length > 1 && (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
