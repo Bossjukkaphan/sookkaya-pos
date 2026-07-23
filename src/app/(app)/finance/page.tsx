@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { formatBaht } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
 import { isMonthIncomplete } from "@/lib/finance"
@@ -20,7 +21,7 @@ export default async function FinancePage({
   const supabase = await createClient()
   const params = await searchParams
 
-  const { data: profile } = await supabase.from("profiles").select("role").single()
+  const profile = await getMyProfile()
   const role = profile?.role ?? "staff"
 
   if (role !== "admin") {

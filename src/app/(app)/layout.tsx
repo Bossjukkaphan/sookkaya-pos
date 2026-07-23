@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { signOut } from "@/app/actions"
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
@@ -15,11 +15,7 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name, role")
-    .single()
+  const profile = await getMyProfile()
 
   return (
     <div className="flex min-h-full flex-1 flex-col sm:flex-row">

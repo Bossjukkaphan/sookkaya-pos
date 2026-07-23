@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
 import { OPEN_HOURS, WEEKDAY_LABELS } from "@/lib/insights"
 import { formatBaht } from "@/lib/constants"
@@ -34,7 +35,7 @@ export default async function HeatmapPage({
   searchParams: Promise<{ range?: string }>
 }) {
   const supabase = await createClient()
-  const { data: profile } = await supabase.from("profiles").select("role").single()
+  const profile = await getMyProfile()
 
   if (!canSeeInsights(profile?.role)) {
     return <InsightsAccessDenied title="ชั่วโมงคนแน่น" />

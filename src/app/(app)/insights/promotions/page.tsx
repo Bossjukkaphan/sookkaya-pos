@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
@@ -29,7 +30,7 @@ const SECTIONS = [
 
 export default async function PromotionsInsightPage() {
   const supabase = await createClient()
-  const { data: profile } = await supabase.from("profiles").select("role").single()
+  const profile = await getMyProfile()
 
   if (!canSeeInsights(profile?.role)) {
     return <InsightsAccessDenied title="ROI ส่วนลด" />

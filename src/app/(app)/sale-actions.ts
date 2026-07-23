@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import { GOWABI_METHOD, MEMBER_CREDIT_METHOD, PAYMENT_METHODS } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
@@ -92,10 +93,12 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
   }
 
+  // ต้องกรอง id เอง — admin เห็นได้ทุกโปรไฟล์ ถ้า .single() เฉยๆ จะเจอหลายแถวแล้ว error
   const { data: profile } = await supabase
     .from("profiles")
     .select("full_name")
-    .single()
+    .eq("id", user.id)
+    .maybeSingle()
 
   const { data: inserted, error } = await supabase
     .from("sales")
@@ -301,11 +304,8 @@ export async function updateSale(
     return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
   }
 
-  // audit: ใครเป็นคนแก้บิลครั้งล่าสุด (RLS จำกัด profiles ให้เห็นแค่ของตัวเอง)
-  const { data: editorProfile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .single()
+  // audit: ใครเป็นคนแก้บิลครั้งล่าสุด — ต้องกรอง id เอง เพราะ admin เห็นทุกโปรไฟล์
+  const editorProfile = await getMyProfile()
 
   const { data: updated, error } = await supabase
     .from("sales")

@@ -2,6 +2,7 @@ import Link from "next/link"
 import { Suspense } from "react"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
 import { type DateRange, rangeFromPreset } from "@/lib/date-range"
@@ -20,11 +21,7 @@ export default async function CommissionSummaryPage({
   const supabase = await createClient()
   const params = await searchParams
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .single()
-
+  const profile = await getMyProfile()
   const role = profile?.role ?? "staff"
   const canView = role === "admin" || role === "manager"
 

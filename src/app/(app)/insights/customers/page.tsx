@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
 import { daysSince, dormantCutoff } from "@/lib/insights"
 import { formatBaht } from "@/lib/constants"
@@ -17,7 +18,7 @@ export default async function CustomerInsightPage({
   searchParams: Promise<{ tab?: string; days?: string }>
 }) {
   const supabase = await createClient()
-  const { data: profile } = await supabase.from("profiles").select("role").single()
+  const profile = await getMyProfile()
 
   if (!canSeeInsights(profile?.role)) {
     return <InsightsAccessDenied title="ลูกค้า" />

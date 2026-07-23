@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 
 import { promoKey } from "@/lib/promo"
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import type { TablesInsert } from "@/types/database"
 
 export type ActionResult = { ok: true } | { ok: false; error: string }
@@ -131,7 +132,8 @@ export async function saveAllowedUser(formData: FormData): Promise<ActionResult>
 export async function removeAllowedUser(email: string): Promise<ActionResult> {
   const supabase = await createClient()
 
-  const { data: me } = await supabase.from("profiles").select("email").single()
+  // ต้องกรอง id เอง — admin เห็นทุกโปรไฟล์ ถ้า .single() เฉยๆ จะเจอหลายแถวแล้ว error
+  const me = await getMyProfile()
   if (me?.email?.toLowerCase() === email.toLowerCase()) {
     return { ok: false, error: "ลบสิทธิ์ของตัวเองไม่ได้" }
   }

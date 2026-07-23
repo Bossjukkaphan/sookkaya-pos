@@ -10,6 +10,7 @@ import {
 } from "@/lib/customer-source"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { InsightsAccessDenied, canSeeInsights } from "@/app/(app)/insights/shared"
+import { getMyProfile } from "@/lib/auth"
 import { MONEY_INFO } from "@/lib/money-info"
 import { PAY_DOT, PAY_DOT_DEFAULT } from "@/lib/payment-colors"
 import { BarChart } from "@/components/charts/bar-chart"
@@ -34,7 +35,7 @@ export default async function ReportsPage({
   const supabase = await createClient()
 
   // หน้านี้มีกำไรหยาบ — สงวนให้ผู้จัดการขึ้นไป เหมือนหน้าวิเคราะห์อื่น
-  const { data: profile } = await supabase.from("profiles").select("role").single()
+  const profile = await getMyProfile()
   if (!canSeeInsights(profile?.role)) {
     return <InsightsAccessDenied title="รายงาน" />
   }

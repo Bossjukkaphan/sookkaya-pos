@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
 import { todayInShopTz } from "@/lib/datetime"
 
@@ -73,10 +74,8 @@ export async function recordTurnAway(
 ): Promise<Result> {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(queueDate) ? queueDate : todayInShopTz()
   const supabase = await createClient()
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .single()
+  // ต้องกรอง id เอง — admin เห็นทุกโปรไฟล์ ถ้า .single() เฉยๆ จะเจอหลายแถวแล้ว error
+  const profile = await getMyProfile()
   const { error } = await supabase.from("turn_aways").insert({
     queue_date: date,
     note: note.trim() || null,

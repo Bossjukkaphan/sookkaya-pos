@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { TherapistsTab } from "./therapists-tab"
 import { ServicesTab } from "./services-tab"
 import { UsersTab } from "./users-tab"
@@ -12,8 +13,10 @@ export const metadata = { title: "ตั้งค่า · สุขกายา
 export default async function SettingsPage() {
   const supabase = await createClient()
 
+  // อ่านสิทธิ์ตัวเองต้องกรอง id เอง (ดู getMyProfile) — .single() บน profiles พังเมื่อเป็น admin
+  const profile = await getMyProfile()
+
   const [
-    { data: profile },
     { data: therapists },
     { data: services },
     { data: settingsRows },
@@ -25,7 +28,6 @@ export default async function SettingsPage() {
     { data: unmatchedRows },
     { data: aliasRows },
   ] = await Promise.all([
-    supabase.from("profiles").select("email, role").single(),
     supabase.from("therapists").select("id, name, status").order("name"),
     supabase
       .from("services")
