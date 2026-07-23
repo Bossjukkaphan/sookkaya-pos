@@ -79,7 +79,11 @@ function LoginForm() {
         </p>
       )}
 
-      <Button type="submit" className="w-full h-11" disabled={loading}>
+      <Button
+        type="submit"
+        className="h-11 w-full bg-[#664343] text-[#FFF0D1] hover:bg-[#3B3030]"
+        disabled={loading}
+      >
         {loading ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
       </Button>
     </form>
@@ -88,18 +92,37 @@ function LoginForm() {
 
 export default function LoginPage() {
   return (
-    <main className="flex-1 flex items-center justify-center p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">สุขกายา</CardTitle>
-          <CardDescription>ระบบบันทึกขาย — เข้าสู่ระบบเพื่อใช้งาน</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Suspense fallback={null}>
-            <LoginForm />
-          </Suspense>
-        </CardContent>
-      </Card>
+    // พื้นหลังสี CI น้ำตาลแดง → เข้ม (จาก Brand Assets) — หน้าเดียวที่จัดเต็มสีแบรนด์
+    // เพราะไม่มีตัวเลขเงินที่ต้องรักษาสีความหมาย
+    <main
+      className="flex flex-1 items-center justify-center p-4"
+      style={{
+        background: "linear-gradient(160deg, #664343 0%, #4a3636 55%, #3B3030 100%)",
+      }}
+    >
+      <div className="w-full max-w-sm space-y-8">
+        {/* โลโก้ครีมบนพื้นแบรนด์ — ตามคู่มือ CI */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/logo-cream.png"
+          alt="SOOK KAYA Thai Massage"
+          className="mx-auto w-52"
+        />
+        <Card className="w-full border-0 shadow-2xl">
+          <CardHeader className="text-center">
+            <CardTitle className="text-lg text-[#3B3030]">เข้าสู่ระบบ</CardTitle>
+            <CardDescription>ระบบบันทึกขายและจัดการร้าน</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Suspense fallback={null}>
+              <LoginForm />
+            </Suspense>
+          </CardContent>
+        </Card>
+        <p className="text-center text-xs" style={{ color: "#FFF0D1", opacity: 0.55 }}>
+          SOOK KAYA THAI MASSAGE
+        </p>
+      </div>
     </main>
   )
 }

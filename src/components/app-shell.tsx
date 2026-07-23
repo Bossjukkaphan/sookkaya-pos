@@ -131,7 +131,7 @@ export function AppShell({ role }: { role: string }) {
               className={cn(
                 "flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors",
                 isActive(href)
-                  ? "font-semibold text-emerald-700"
+                  ? "font-semibold text-[#664343]"
                   : "text-slate-500 hover:text-slate-900"
               )}
             >
@@ -149,7 +149,7 @@ export function AppShell({ role }: { role: string }) {
             className={cn(
               "flex flex-col items-center gap-1 py-2.5 text-[11px] transition-colors",
               isActive(MORE_LINK.href)
-                ? "font-semibold text-emerald-700"
+                ? "font-semibold text-[#664343]"
                 : "text-slate-500 hover:text-slate-900"
             )}
           >
@@ -162,7 +162,7 @@ export function AppShell({ role }: { role: string }) {
         {sections.map((section, si) => (
           <Fragment key={section.title}>
             <li className={cn("hidden sm:block", si > 0 && "sm:mt-3")}>
-              <p className="px-3 pb-1 text-[10px] font-semibold tracking-wide text-slate-400 uppercase">
+              <p className="px-3 pb-1 text-[10px] font-semibold tracking-wide text-[#795757]/70 uppercase">
                 {section.title}
               </p>
             </li>
@@ -174,7 +174,7 @@ export function AppShell({ role }: { role: string }) {
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
                     isActive(href)
-                      ? "font-semibold text-emerald-700 sm:bg-emerald-50"
+                      ? "font-semibold text-[#664343] sm:bg-[#FFF0D1]/70"
                       : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
                   )}
                 >

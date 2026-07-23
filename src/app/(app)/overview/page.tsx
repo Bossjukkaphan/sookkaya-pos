@@ -242,14 +242,26 @@ export default async function OverviewPage({
         </div>
       </div>
 
-      {/* การ์ดใหญ่โทนเข้ม — ตัวเลขที่เจ้าของร้านต้องเห็นก่อนอย่างอื่น */}
-      <div className="rounded-xl bg-gradient-to-br from-emerald-800 to-emerald-950 p-5 text-white">
-        <p className="flex items-center gap-1 text-xs text-emerald-300">
+      {/* การ์ดใหญ่โทนแบรนด์ (CI น้ำตาลแดง→เข้ม) — ตัวเลขที่เจ้าของร้านต้องเห็นก่อน
+          สีความหมายของเงินยังอยู่ครบ: บวก/ขึ้น = เขียว · ลบ/ลง = แดง บนพื้นแบรนด์ */}
+      <div
+        className="relative overflow-hidden rounded-xl p-5 text-white"
+        style={{ background: "linear-gradient(135deg, #664343 0%, #4a3636 60%, #3B3030 100%)" }}
+      >
+        {/* ลายน้ำ OO ของแบรนด์ มุมขวา — จางพอไม่กวนตัวเลข */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/mark.png"
+          alt=""
+          aria-hidden
+          className="pointer-events-none absolute -right-6 -top-6 w-40 opacity-[0.07] invert"
+        />
+        <p className="flex items-center gap-1 text-xs" style={{ color: "#FFF0D1" }}>
           รายได้เดือนนี้ <InfoDot text={MONEY_INFO.netRevenue} light />
         </p>
         <p className="text-3xl font-extrabold">{formatBaht(netRevenue)} ฿</p>
         {prevRevenue > 0 && (
-          <p className="text-xs text-emerald-200">
+          <p className="text-xs text-white/70">
             {/* ทิศทางต้องอ่านออกจากสีได้ทันที ไม่ต้องเพ่งลูกศร */}
             <span className={deltaPct >= 0 ? "text-emerald-300" : "text-red-300"}>
               {deltaPct >= 0 ? "▲" : "▼"} {Math.abs(Math.round(deltaPct))}%
@@ -262,18 +274,18 @@ export default async function OverviewPage({
           <>
             <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/20">
               <div
-                className="h-full rounded-full bg-emerald-300"
-                style={{ width: `${Math.min(targetPct, 100)}%` }}
+                className="h-full rounded-full"
+                style={{ width: `${Math.min(targetPct, 100)}%`, background: "#FFF0D1" }}
               />
             </div>
-            <p className="mt-1 text-[11px] text-emerald-100">
+            <p className="mt-1 text-[11px] text-white/75">
               เป้า {formatBaht(target)} ฿ · ทำได้ {targetPct.toFixed(1)}%
               {targetRemaining >= 0
                 ? ` · เหลืออีก ${formatBaht(targetRemaining)} ฿`
                 : ` · เกินเป้า ${formatBaht(-targetRemaining)} ฿`}
             </p>
             {runRate && (
-              <p className="text-[11px] text-emerald-100">
+              <p className="text-[11px] text-white/75">
                 ต้องทำอีกวันละ{" "}
                 <span className="font-semibold text-white">
                   {formatBaht(runRate.perDay)} ฿
@@ -284,30 +296,34 @@ export default async function OverviewPage({
           </>
         )}
 
-        <div className="mt-4 grid grid-cols-3 gap-3">
+        <div className="mt-4 grid grid-cols-3 gap-3 border-t border-white/15 pt-3">
           <div>
-            <p className="flex items-center gap-1 text-[10px] text-emerald-300">
+            <p className="flex items-center gap-1 text-[10px]" style={{ color: "#FFF0D1" }}>
               กำไรเงินสด <InfoDot text={MONEY_INFO.profitCash} light />
             </p>
-            {/* ขาดทุนต้องสะดุดตาแม้อยู่บนการ์ดเขียวเข้ม */}
-            <p className={`text-base font-bold ${profitCash < 0 ? "text-red-300" : ""}`}>
+            {/* กำไรเขียว ขาดทุนแดง — ภาษาเดียวกันทุกหน้าแม้อยู่บนการ์ดแบรนด์ */}
+            <p
+              className={`text-base font-bold ${
+                profitCash < 0 ? "text-red-300" : "text-emerald-300"
+              }`}
+            >
               {formatBaht(profitCash)} ฿
             </p>
           </div>
           <div>
-            <p className="flex items-center gap-1 text-[10px] text-emerald-300">
+            <p className="flex items-center gap-1 text-[10px]" style={{ color: "#FFF0D1" }}>
               Margin <InfoDot text={MONEY_INFO.margin} light />
             </p>
             <p
               className={`text-base font-bold ${
-                margin !== null && margin < 0 ? "text-red-300" : ""
+                margin !== null && margin < 0 ? "text-red-300" : "text-emerald-300"
               }`}
             >
               {margin === null ? "—" : `${margin.toFixed(1)}%`}
             </p>
           </div>
           <div>
-            <p className="flex items-center gap-1 text-[10px] text-emerald-300">
+            <p className="flex items-center gap-1 text-[10px]" style={{ color: "#FFF0D1" }}>
               เงินเข้าจริง <InfoDot text={MONEY_INFO.cashIn} light />
             </p>
             <p className="text-base font-bold">{formatBaht(cashIn)} ฿</p>
@@ -349,7 +365,7 @@ export default async function OverviewPage({
       {/* กิจกรรม Member เดือนนี้ — คนละเรื่องกับเครดิตคงเหลือด้านล่าง (นั่นคือยอด ณ ปัจจุบัน)
           ทุกตัวเลขมาจากแถวเดือนเดียวกันของ v_monthly_member_activity */}
       <div>
-        <h2 className="mb-2 text-sm font-semibold text-slate-600">
+        <h2 className="mb-2 text-sm font-semibold text-[#664343]">
           กิจกรรมสมาชิก · {monthShortLabel(month)}
         </h2>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

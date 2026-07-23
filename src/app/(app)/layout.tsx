@@ -22,12 +22,17 @@ export default async function AppLayout({
       <AppShell role={profile?.role ?? "staff"} />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="border-b bg-white">
-          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-3 lg:px-6">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-emerald-800">สุขกายา</span>
+        {/* แถบบนขาวตามธีมรวม — โลโก้น้ำตาลแดง (เวอร์ชันสำหรับพื้นสว่างตามคู่มือ CI) */}
+        <header className="border-b border-[#664343]/15 bg-white">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-2.5 lg:px-6">
+            <div className="flex items-center gap-2.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo-maroon.png" alt="SOOK KAYA" className="h-9 w-auto" />
               {profile?.role && (
-                <Badge variant="secondary">
+                <Badge
+                  variant="outline"
+                  className="border-[#664343]/25 bg-[#FFF0D1]/60 text-[#664343]"
+                >
                   {ROLE_LABEL[profile.role] ?? profile.role}
                 </Badge>
               )}
