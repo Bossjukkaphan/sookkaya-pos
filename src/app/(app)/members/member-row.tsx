@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 export function MemberRow({
   customerId,
   name,
+  nickname,
   tier,
   balance,
   nextExpiry,
@@ -21,6 +22,7 @@ export function MemberRow({
 }: {
   customerId: string
   name: string
+  nickname?: string | null
   /** ระดับจากใบเติมเงินล่าสุด — null เมื่อไม่พบประวัติเติม */
   tier: string | null
   balance: number
@@ -34,7 +36,12 @@ export function MemberRow({
         <CardContent className="flex items-center justify-between gap-3 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <p className="truncate font-medium">{name}</p>
+              <p className="truncate font-medium">
+                {name}
+                {nickname && (
+                  <span className="font-normal text-slate-500"> ({nickname})</span>
+                )}
+              </p>
               {tier && (
                 <Badge
                   variant="outline"

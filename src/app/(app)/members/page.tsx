@@ -1,12 +1,13 @@
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
-import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
-import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
+import { todayInShopTz } from "@/lib/datetime"
+import { StatCard } from "@/components/stat-card"
 import { TopupForm } from "./topup-form"
-import { MemberRow } from "./member-row"
+import { MemberList } from "./member-list"
+import { TopupHistoryList, type TopupRow } from "./topup-history-list"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import type { MemberListItem } from "@/lib/member-list"
 
 export const metadata = { title: "สมาชิก · สุขกายา POS" }
 
@@ -37,6 +38,9 @@ export default async function MembersPage() {
     (sum, m) => sum + (m.credit_balance ?? 0),
     0
   )
+  const expiringSoonCount = members.filter(
+    (m) => !!m.next_expiry && m.next_expiry <= addDays(today, 30)
+  ).length
 
   // ประวัติการเติมเงินอาจมีคนที่ใช้เครดิตหมดแล้ว ซึ่งไม่อยู่ในรายการข้างบน
   // จึงดึงชื่อจากตาราง customers เฉพาะ id ที่ปรากฏในประวัติ 30 รายการล่าสุด
@@ -67,9 +71,56 @@ export default async function MembersPage() {
     if (!tierOf.has(t.customer_id)) tierOf.set(t.customer_id, t.tier)
   }
 
+  const tierCounts = new Map<string, number>()
+  for (const m of members) {
+    const tier = m.customer_id ? (tierOf.get(m.customer_id) ?? null) : null
+    if (tier) tierCounts.set(tier, (tierCounts.get(tier) ?? 0) + 1)
+  }
+  const tierSummary =
+    [...tierCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([tier, n]) => `${tier} ${n}`)
+      .join(" · ") || "—"
+
+  const memberItems: MemberListItem[] = members.map((m) => ({
+    customerId: m.customer_id ?? "",
+    name: m.name ?? "ไม่ระบุชื่อ",
+    nickname: m.nickname,
+    phone: m.phone,
+    tier: m.customer_id ? (tierOf.get(m.customer_id) ?? null) : null,
+    balance: m.credit_balance ?? 0,
+    nextExpiry: m.next_expiry,
+  }))
+
+  const topupRows: TopupRow[] = (topups ?? []).map((t) => ({
+    id: t.id,
+    customerName: customerName.get(t.customer_id) ?? "ไม่ระบุ",
+    tier: t.tier,
+    topupDate: t.topup_date,
+    expiryDate: t.expiry_date,
+    creditAdded: t.credit_added,
+    cashReceived: t.cash_received,
+  }))
+
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-bold">ระบบสมาชิก</h1>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <StatCard label="สมาชิกมีเครดิต" value={`${members.length} คน`} />
+        <StatCard
+          label="เครดิตคงค้างทั้งหมด"
+          value={`${formatBaht(totalOutstanding)} ฿`}
+          hint="ภาระที่ร้านต้องให้บริการในอนาคต ไม่ใช่รายได้"
+          tone="warn"
+        />
+        <StatCard
+          label="ใกล้หมดอายุ (30 วัน)"
+          value={`${expiringSoonCount} คน`}
+          tone={expiringSoonCount > 0 ? "warn" : "normal"}
+        />
+        <StatCard label="แยกตามระดับ" value={tierSummary} />
+      </div>
 
       <Tabs defaultValue="topup">
         <TabsList className="w-full">
@@ -88,43 +139,8 @@ export default async function MembersPage() {
           <TopupForm />
         </TabsContent>
 
-        <TabsContent value="members" className="space-y-3 pt-4">
-          <Card className="border-emerald-200 bg-emerald-50">
-            <CardContent className="flex items-baseline justify-between py-4">
-              <span className="text-sm font-medium">เครดิตคงค้างทั้งหมด</span>
-              <span className="text-2xl font-bold text-emerald-800">
-                {formatBaht(totalOutstanding)} ฿
-              </span>
-            </CardContent>
-          </Card>
-          <p className="text-xs text-slate-500">
-            คือภาระที่ร้านต้องให้บริการในอนาคต ไม่ใช่รายได้
-          </p>
-
-          {members.length === 0 ? (
-            <p className="py-8 text-center text-sm text-slate-500">
-              ยังไม่มีสมาชิกที่มีเครดิตคงเหลือ
-            </p>
-          ) : (
-            <ul className="space-y-2">
-              {members.map((m) => (
-                <li key={m.customer_id}>
-                  <MemberRow
-                    customerId={m.customer_id ?? ""}
-                    name={m.name ?? "ไม่ระบุชื่อ"}
-                    tier={
-                      m.customer_id ? (tierOf.get(m.customer_id) ?? null) : null
-                    }
-                    balance={m.credit_balance ?? 0}
-                    nextExpiry={m.next_expiry}
-                    expiringSoon={
-                      !!m.next_expiry && m.next_expiry <= addDays(today, 30)
-                    }
-                  />
-                </li>
-              ))}
-            </ul>
-          )}
+        <TabsContent value="members" className="pt-4">
+          <MemberList members={memberItems} today={today} />
         </TabsContent>
 
         <TabsContent value="history" className="pt-4">
@@ -132,46 +148,8 @@ export default async function MembersPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-base">ประวัติการเติมเงิน</CardTitle>
             </CardHeader>
-            <CardContent className="px-0">
-              {(topups ?? []).length === 0 ? (
-                <p className="px-6 py-6 text-center text-sm text-slate-500">
-                  ยังไม่มีประวัติการเติมเงิน
-                </p>
-              ) : (
-                <ul className="divide-y">
-                  {(topups ?? []).map((t) => (
-                    <li
-                      key={t.id}
-                      className="flex items-center justify-between gap-3 px-4 py-3 sm:px-6"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium">
-                          {customerName.get(t.customer_id) ?? "ไม่ระบุ"}{" "}
-                          {/* สีเดียวกับ badge ในแท็บสมาชิก */}
-                          <Badge
-                            variant="outline"
-                            className={TIER_COLOR[t.tier] ?? TIER_COLOR_DEFAULT}
-                          >
-                            {t.tier}
-                          </Badge>
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {formatThaiDate(t.topup_date)} · หมดอายุ{" "}
-                          {formatThaiDate(t.expiry_date)}
-                        </p>
-                      </div>
-                      <div className="text-right whitespace-nowrap">
-                        <p className="font-semibold">
-                          +{formatBaht(t.credit_added)} ฿
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          รับ {formatBaht(t.cash_received)} ฿
-                        </p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <CardContent className="px-4 pb-4 sm:px-6">
+              <TopupHistoryList topups={topupRows} />
             </CardContent>
           </Card>
         </TabsContent>

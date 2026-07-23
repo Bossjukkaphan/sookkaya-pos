@@ -633,9 +633,11 @@ export type Database = {
         Row: {
           bonus_granted: number | null
           cash_paid: number | null
+          created_at: string | null
           credit_balance: number | null
           credit_granted: number | null
           customer_id: string | null
+          customer_type: string | null
           name: string | null
           next_expiry: string | null
           nickname: string | null

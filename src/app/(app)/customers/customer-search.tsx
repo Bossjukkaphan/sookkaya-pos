@@ -33,10 +33,15 @@ async function searchCustomers(term: string): Promise<CustomerMatch[]> {
  */
 export function CustomerSearch({
   initialTerm = "",
+  // ตัวกรอง/เรียงลำดับปัจจุบัน — ต้องพกไปด้วยตอนกดค้นหา ไม่งั้นเปลี่ยนช่องค้นหาแล้วตัวกรองหลุด
+  type = "",
+  sort = "",
   // ฉีดฟังก์ชันค้นหาได้ เพื่อพรีวิว/เทสโดยไม่ต้องต่อฐานข้อมูลจริง
   searchFn = searchCustomers,
 }: {
   initialTerm?: string
+  type?: string
+  sort?: string
   searchFn?: (term: string) => Promise<CustomerMatch[]>
 }) {
   const router = useRouter()
@@ -89,7 +94,12 @@ export function CustomerSearch({
   function submit(e: React.FormEvent) {
     e.preventDefault()
     setOpen(false)
-    router.push(term.trim() ? `/customers?q=${encodeURIComponent(term.trim())}` : "/customers")
+    const qs = new URLSearchParams()
+    if (term.trim()) qs.set("q", term.trim())
+    if (type) qs.set("type", type)
+    if (sort) qs.set("sort", sort)
+    const query = qs.toString()
+    router.push(query ? `/customers?${query}` : "/customers")
   }
 
   return (
