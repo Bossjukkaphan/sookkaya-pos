@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { createSale } from "../sale-actions"
+import { CustomerPicker } from "./customer-picker"
 import { formatBaht } from "@/lib/constants"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
@@ -158,25 +159,14 @@ export function GroupPosForm({
               <Card className={savingIndex === i ? "ring-2 ring-emerald-400" : undefined}>
                 <CardContent className="space-y-2.5 py-3.5">
                   <div className="flex items-center justify-between gap-2">
-                    {standalone ? (
-                      <div className="flex min-w-0 flex-1 items-center gap-2">
-                        <span className="shrink-0 font-semibold">คนที่ {i + 1}</span>
-                        <Input
-                          value={p.customerName}
-                          onChange={(e) => setPerson(i, { customerName: e.target.value })}
-                          placeholder="ชื่อลูกค้า (ไม่บังคับ)"
-                          className="h-9"
-                          aria-label={`ชื่อลูกค้าคนที่ ${i + 1}`}
-                        />
-                      </div>
-                    ) : (
-                      <p className="font-semibold">
-                        คนที่ {i + 1}
+                    <p className="font-semibold">
+                      คนที่ {i + 1}
+                      {!standalone && (
                         <span className="ml-1 font-normal text-slate-500">
                           {p.customerName || "ไม่ระบุชื่อ"}
                         </span>
-                      </p>
-                    )}
+                      )}
+                    </p>
                     <p className="text-lg font-bold whitespace-nowrap text-emerald-700">
                       {formatBaht(nets[i])} ฿
                     </p>
@@ -195,6 +185,28 @@ export function GroupPosForm({
                       </Button>
                     )}
                   </div>
+
+                  {/* ค้นหาลูกค้าตัวเดียวกับฟอร์มเดี่ยว — พิมพ์แล้วชื่อ/เบอร์ที่เคยมาเด้งให้เลือก
+                      เลือกแล้วเห็นเครดิตสมาชิกคงเหลือ + บิลผูก customer_id ลงประวัติลูกค้าถูกคน */}
+                  {standalone && (
+                    <CustomerPicker
+                      customerId={p.customerId}
+                      customerName={p.customerName}
+                      customerPhone={p.customerPhone}
+                      onPick={(c) =>
+                        setPerson(i, {
+                          customerId: c.id,
+                          customerName: c.name,
+                          customerPhone: c.phone ?? "",
+                        })
+                      }
+                      onNameChange={(name) =>
+                        setPerson(i, { customerName: name, customerId: "" })
+                      }
+                      onPhoneChange={(phone) => setPerson(i, { customerPhone: phone })}
+                      requireMember={false}
+                    />
+                  )}
 
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     <select
