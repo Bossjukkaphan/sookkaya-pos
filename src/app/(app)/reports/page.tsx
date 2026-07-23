@@ -66,7 +66,7 @@ export default async function ReportsPage({
     supabase
       .from("sales")
       .select(
-        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel, customer_id, credit_used"
+        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, source, booking_channel, customer_id, credit_used, bonus_used"
       )
       .gte("sale_date", from)
       .lte("sale_date", to),
@@ -108,6 +108,9 @@ export default async function ReportsPage({
   const discountTotal = rows.reduce((sum, s) => sum + Number(s.discount ?? 0), 0)
 
   // การ์ดเขียว/ม่วงแบบ Thai Hand — ตัวเลขทุกตัวจากสูตรกลางเดิม ไม่นิยามใหม่
+  // สมการที่ต้องลงตัวเสมอ: ยอดรับจริง − เครดิตแถมที่ใช้ = รายได้ที่รับรู้
+  const volumeTotal = rows.reduce((sum, s) => sum + Number(s.net_amount ?? 0), 0)
+  const bonusUsedTotal = rows.reduce((sum, s) => sum + Number(s.bonus_used ?? 0), 0)
   const creditUsedTotal = rows.reduce((sum, s) => sum + Number(s.credit_used ?? 0), 0)
   const topupTotal = (topups ?? []).reduce(
     (sum, t) => sum + Number(t.cash_received ?? 0),
@@ -351,13 +354,29 @@ export default async function ReportsPage({
           </div>
           <div className="space-y-1.5 px-4 py-3 text-sm">
             <p className="text-xs text-slate-500">อิงตามวันที่ลูกค้าเข้าใช้บริการ</p>
+            {/* สมการที่มาของตัวเลข: ยอดรับจริง − เครดิตแถมที่ใช้ = รายรับที่รับรู้ */}
             <div className="flex justify-between">
-              <span className="text-slate-600">รายรับจากการใช้บริการ</span>
-              <span className="font-medium">{formatBaht(revenue)}</span>
+              <span className="flex items-center gap-1 text-slate-600">
+                ยอดรับจริง (Volume) <InfoDot text={MONEY_INFO.volume} />
+              </span>
+              <span className="font-medium">{formatBaht(volumeTotal)}</span>
             </div>
             <div className="flex justify-between pl-3 text-xs text-slate-500">
               <span>ในนี้จ่ายด้วยเครดิตสมาชิก</span>
               <span>{formatBaht(creditUsedTotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                − ส่วนลดจากเครดิตแถมสมาชิก{" "}
+                <InfoDot text="เครดิตแถมจากแพ็กเกจสมาชิกที่ถูกใช้จ่ายในช่วงนี้ — คือส่วนลดที่ร้านให้เพราะเป็นเมมเบอร์ ไม่ใช่เงินที่ใครจ่ายมา จึงหักออกจากรายได้" />
+              </span>
+              <span className="font-medium text-rose-600">
+                -{formatBaht(bonusUsedTotal)}
+              </span>
+            </div>
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="font-semibold">= รายรับที่รับรู้</span>
+              <span className="font-bold text-emerald-700">{formatBaht(revenue)}</span>
             </div>
             <div className="flex justify-between border-t pt-1.5">
               <span className="text-slate-600">เติมเงินสมาชิกในช่วงนี้</span>
@@ -448,6 +467,7 @@ export default async function ReportsPage({
           label="ส่วนลดที่ให้"
           value={`${formatBaht(discountTotal)} ฿`}
           tone={discountTotal > 0 ? "warn" : "normal"}
+          hint="ส่วนลดโปรฯ หน้าร้าน · ไม่รวมเครดิตแถมสมาชิก"
         />
         <MiniStat label="ค่ามือหมอนวด" value={`${formatBaht(commissionCost)} ฿`} />
         <MiniStat label="รายจ่ายในช่วง" value={`${formatBaht(expenseTotal)} ฿`} />
