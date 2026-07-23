@@ -13,7 +13,8 @@ import {
 } from "@/lib/customer-source"
 import { PX_PER_MIN, minToX, overlaps, timeToMin } from "@/lib/queue"
 import { setQueueStatus } from "./queue-actions"
-import { shortBedName, type Bed, type QueueEntry } from "./queue-board"
+import { shortBedName, type Bed } from "@/lib/beds"
+import { type QueueEntry } from "./queue-board"
 import {
   Dialog,
   DialogContent,

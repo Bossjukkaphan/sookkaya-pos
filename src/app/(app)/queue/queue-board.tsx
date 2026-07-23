@@ -25,14 +25,10 @@ import { Button } from "@/components/ui/button"
 export type QueueEntry = Tables<"queue_entries">
 export type Therapist = { id: string; name: string }
 export type ServiceOption = { id: string; name: string; duration_min: number | null }
-export type Bed = { id: string; room: string; name: string }
-
-/** ชื่อเตียงแบบย่อไว้โชว์บนการ์ด เช่น "ไทย·3" "สปา1·2" */
-export function shortBedName(bed: Bed): string {
-  const room = bed.room.replace("ห้องนวดไทย", "ไทย").replace("ห้องสปา ", "สปา")
-  const num = bed.name.replace("เตียง ", "")
-  return `${room}·${num}`
-}
+// Bed/shortBedName ย้ายไป @/lib/beds — ไฟล์นี้เป็น "use client" ห้ามมี util
+// ที่ฝั่ง server ต้องเรียก (หน้าประวัติบิลเคยพังเพราะ import จากที่นี่)
+import type { Bed } from "@/lib/beds"
+export type { Bed }
 
 const ROW_H = 64
 const BOARD_W = (BOARD_END_MIN - BOARD_START_MIN) * PX_PER_MIN

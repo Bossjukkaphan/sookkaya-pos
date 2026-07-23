@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { PAYMENT_METHODS } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
-import { shortBedName } from "@/app/(app)/queue/queue-board"
+import { shortBedName } from "@/lib/beds"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
