@@ -27,7 +27,7 @@ export default async function AppLayout({
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="border-b bg-white">
-          <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-4 py-3">
+          <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-3 lg:px-6">
             <div className="flex items-center gap-2">
               <span className="text-lg font-bold text-emerald-800">สุขกายา</span>
               {profile?.role && (
@@ -49,7 +49,7 @@ export default async function AppLayout({
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-3xl flex-1 p-4">{children}</main>
+        <main className="mx-auto w-full max-w-[1600px] flex-1 p-4 lg:p-6">{children}</main>
       </div>
     </div>
   )

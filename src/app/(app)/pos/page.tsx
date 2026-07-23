@@ -56,7 +56,7 @@ export default async function PosPage({
     : { data: null }
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-bold">บันทึกขาย</h1>
       {queueEntry && (
         <p className="rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-800">

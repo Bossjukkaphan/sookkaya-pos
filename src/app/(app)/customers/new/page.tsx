@@ -6,7 +6,7 @@ export const metadata = { title: "เพิ่มลูกค้า · สุข
 
 export default function NewCustomerPage() {
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-2xl space-y-4">
       <Link href="/customers" className="text-sm text-slate-600 hover:underline">
         ← กลับไปรายชื่อลูกค้า
       </Link>

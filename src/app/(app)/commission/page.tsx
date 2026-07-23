@@ -121,7 +121,7 @@ export default async function CommissionPage({
         จะจ่ายตามประกันแทน
       </p>
 
-      <ul className="space-y-3">
+      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {summary.map((s) => (
           <li key={s.therapistId}>
             <Card className={s.worked ? undefined : "opacity-60"}>

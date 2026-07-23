@@ -42,7 +42,7 @@ export default async function CustomerDetailPage({
   )
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
       <Link href="/customers" className="text-sm text-slate-600 hover:underline">
         ← กลับไปรายชื่อลูกค้า
       </Link>

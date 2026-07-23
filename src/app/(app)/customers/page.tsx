@@ -151,7 +151,7 @@ export default async function CustomersPage({
           {term || type ? "ไม่พบลูกค้าตามเงื่อนไข" : "ยังไม่มีข้อมูลลูกค้า"}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {rows.map((c) => {
             const balance = c.credit_balance ?? 0
             return (

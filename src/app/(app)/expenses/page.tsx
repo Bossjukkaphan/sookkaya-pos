@@ -51,7 +51,7 @@ export default async function ExpensesPage() {
   }, {})
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-bold">รายจ่าย</h1>
 
       <Tabs defaultValue="add">

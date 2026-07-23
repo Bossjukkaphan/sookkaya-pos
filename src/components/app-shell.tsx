@@ -33,14 +33,15 @@ type NavLink = {
 }
 
 /**
- * แถบล่างมือถือ (สูงสุด 5 ปุ่ม + เพิ่มเติม) — เรียงตามงานที่พนักงานกดบ่อยสุด
- * ภาพรวมโผล่เฉพาะผู้จัดการขึ้นไป พนักงานเห็น 4 ปุ่ม
+ * แถบล่างมือถือ (สูงสุด 5 ปุ่ม + เพิ่มเติม) — เรียงตามงานที่กดบ่อยสุด
+ * พนักงานเห็น 4 ปุ่ม (ไม่มีรายงาน) · ผู้จัดการขึ้นไปได้ปุ่มรายงานเพิ่มเป็น 5
+ * ภาพรวมย้ายไป "เพิ่มเติม" เพราะซ้อนกับยอดวันนี้+รายงาน และแถบมีที่จำกัด
  */
 const PRIMARY: NavLink[] = [
-  { href: "/overview", label: "ภาพรวม", icon: LayoutDashboard, minRole: "manager" },
   { href: "/pos", label: "บันทึกขาย", icon: Receipt },
   { href: "/queue", label: "คิววันนี้", icon: Clock4 },
   { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
+  { href: "/reports", label: "รายงาน", icon: FileBarChart, minRole: "manager" },
   { href: "/commission", label: "ค่ามือ", icon: HandCoins },
 ]
 

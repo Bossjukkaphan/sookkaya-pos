@@ -50,7 +50,7 @@ export function MemberList({
         <Input
           value={term}
           onChange={(e) => setTerm(e.target.value)}
-          className="h-11 flex-1"
+          className="h-11 w-full sm:flex-1"
           placeholder="ค้นหาด้วยชื่อ ชื่อเล่น หรือเบอร์โทร"
           aria-label="ค้นหาสมาชิก"
         />
@@ -58,7 +58,7 @@ export function MemberList({
           <select
             value={tier}
             onChange={(e) => setTier(e.target.value)}
-            className={SELECT_CLASS}
+            className={`${SELECT_CLASS} flex-1 sm:flex-none`}
             aria-label="กรองตามระดับ"
           >
             <option value="">ทุกระดับ</option>
@@ -72,7 +72,7 @@ export function MemberList({
         <select
           value={sort}
           onChange={(e) => setSort(e.target.value as MemberSort)}
-          className={SELECT_CLASS}
+          className={`${SELECT_CLASS} flex-1 sm:flex-none`}
           aria-label="เรียงลำดับ"
         >
           {(Object.keys(SORT_LABEL) as MemberSort[]).map((s) => (
@@ -92,7 +92,7 @@ export function MemberList({
           {term || tier ? "ไม่พบสมาชิกตามเงื่อนไข" : "ยังไม่มีสมาชิกที่มีเครดิตคงเหลือ"}
         </p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((m) => (
             <li key={m.customerId}>
               <MemberRow
