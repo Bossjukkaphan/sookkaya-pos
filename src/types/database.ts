@@ -367,6 +367,7 @@ export type Database = {
           booking_channel: string | null
           commission: number | null
           coupon_promo: string | null
+          credit_after: number | null
           created_at: string
           created_by: string | null
           credit_used: number
@@ -400,6 +401,7 @@ export type Database = {
           booking_channel?: string | null
           commission?: number | null
           coupon_promo?: string | null
+          credit_after?: number | null
           created_at?: string
           created_by?: string | null
           credit_used?: number
@@ -433,6 +435,7 @@ export type Database = {
           booking_channel?: string | null
           commission?: number | null
           coupon_promo?: string | null
+          credit_after?: number | null
           created_at?: string
           created_by?: string | null
           credit_used?: number

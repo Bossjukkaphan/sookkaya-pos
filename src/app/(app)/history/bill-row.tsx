@@ -37,6 +37,8 @@ export type BillRecord = {
   is_request: boolean
   payment_method: string
   credit_used: number
+  /** เครดิตคงเหลือหลังบิลนี้ (snapshot ตอนขาย) — null สำหรับบิลเก่าก่อนมีฟีเจอร์ */
+  credit_after: number | null
   bonus_used: number
   revenue_recognize: number
   source: string | null
@@ -173,6 +175,14 @@ export function BillRow({ bill }: { bill: BillRecord }) {
             <Row label="ช่องทางชำระ" value={bill.payment_method} />
             {bill.credit_used > 0 && (
               <Row label="เครดิตที่ใช้" value={`${formatBaht(bill.credit_used)} ฿`} />
+            )}
+            {bill.credit_after !== null && (
+              <div className="flex justify-between gap-3 text-sm">
+                <span className="shrink-0 text-slate-500">เครดิตคงเหลือหลังบิลนี้</span>
+                <span className="font-semibold text-violet-700">
+                  {formatBaht(bill.credit_after)} ฿
+                </span>
+              </div>
             )}
             {bill.bonus_used > 0 && (
               <Row label="โบนัสที่ใช้" value={`${formatBaht(bill.bonus_used)} ฿`} />

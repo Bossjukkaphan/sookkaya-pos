@@ -1,10 +1,14 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
+import { deleteTopup } from "./member-actions"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
 import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 
@@ -20,7 +24,28 @@ export type TopupRow = {
 
 /** ค้นหาในประวัติเติมเงิน 30 รายการล่าสุด — พิมพ์แล้วกรองชื่อทันที ไม่ต้องยิง query ใหม่ */
 export function TopupHistoryList({ topups }: { topups: TopupRow[] }) {
+  const router = useRouter()
   const [term, setTerm] = useState("")
+  // ลบมี 2 จังหวะ: กดครั้งแรกเปลี่ยนปุ่มเป็นยืนยัน กดซ้ำถึงลบจริง — กันมือลั่น
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const [pending, startTransition] = useTransition()
+
+  function handleDelete(row: TopupRow) {
+    if (confirmId !== row.id) {
+      setConfirmId(row.id)
+      return
+    }
+    startTransition(async () => {
+      const r = await deleteTopup(row.id)
+      if (r.ok) {
+        toast.success(`ลบใบเติมเงินของ ${row.customerName} แล้ว`)
+        router.refresh()
+      } else {
+        toast.error(r.error)
+      }
+      setConfirmId(null)
+    })
+  }
 
   const shown = useMemo(() => {
     const t = term.trim().toLowerCase()
@@ -60,14 +85,29 @@ export function TopupHistoryList({ topups }: { topups: TopupRow[] }) {
                   {formatThaiDate(t.topupDate)} · หมดอายุ {formatThaiDate(t.expiryDate)}
                 </p>
               </div>
-              <div className="text-right whitespace-nowrap">
-                <p className="font-semibold">+{formatBaht(t.creditAdded)} ฿</p>
-                <p className="text-xs text-slate-500">รับ {formatBaht(t.cashReceived)} ฿</p>
+              <div className="flex items-center gap-2">
+                <div className="text-right whitespace-nowrap">
+                  <p className="font-semibold">+{formatBaht(t.creditAdded)} ฿</p>
+                  <p className="text-xs text-slate-500">รับ {formatBaht(t.cashReceived)} ฿</p>
+                </div>
+                <Button
+                  variant={confirmId === t.id ? "destructive" : "ghost"}
+                  size="sm"
+                  disabled={pending}
+                  className={confirmId === t.id ? "" : "text-red-600"}
+                  onClick={() => handleDelete(t)}
+                >
+                  {confirmId === t.id ? "ยืนยันลบ?" : "ลบ"}
+                </Button>
               </div>
             </li>
           ))}
         </ul>
       )}
+      <p className="text-xs text-slate-400">
+        คีย์ผิดหรือลูกค้าเปลี่ยนแพ็กเกจ (เช่น 5,000 → 10,000): ลบใบเดิมแล้วเติมใหม่ ·
+        ลบได้เฉพาะเดือนนี้และเฉพาะใบที่เครดิตยังไม่ถูกใช้
+      </p>
     </div>
   )
 }

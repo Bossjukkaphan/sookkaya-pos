@@ -140,7 +140,14 @@ export function PosForm({
     startTransition(async () => {
       const result = await createSale(formData)
       if (result.ok) {
-        toast.success(`บันทึกแล้ว — ใบเสร็จ ${result.receiptNo}`)
+        toast.success(
+          `บันทึกแล้ว — ใบเสร็จ ${result.receiptNo}` +
+            (result.creditAfter !== null
+              ? ` · เครดิตคงเหลือ ${formatBaht(result.creditAfter)} ฿`
+              : ""),
+          // มีเลขเครดิตให้พนักงานอ่านแจ้งลูกค้า — ค้างไว้นานกว่าปกติ
+          result.creditAfter !== null ? { duration: 8000 } : undefined
+        )
         resetForm()
       } else {
         toast.error(result.error)

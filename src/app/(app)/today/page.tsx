@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
+import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
 import { MONEY_INFO } from "@/lib/money-info"
 import { Button } from "@/components/ui/button"
 import { SaleRowActions } from "./sale-row-actions"
@@ -103,9 +104,10 @@ export default async function TodayPage({
       : Promise.resolve({ data: null }),
     supabase
       .from("member_topups")
-      .select("cash_received")
+      .select("id, topup_date, cash_received, credit_added, tier, customer_id")
       .gte("topup_date", from)
-      .lte("topup_date", to),
+      .lte("topup_date", to)
+      .order("topup_date", { ascending: false }),
   ])
 
   const rows = sales ?? []
@@ -147,6 +149,15 @@ export default async function TodayPage({
   const dayTotal = new Map(
     summaryRows.map((d) => [String(d.sale_date), Number(d.volume ?? 0)])
   )
+
+  // ชื่อคนเติมเงิน — เติมเงินไม่ใช่บิลขาย แต่พนักงานต้องเห็นในหน้านี้ว่า "วันนี้ใครซื้อเมมเบอร์"
+  const topupCustomerIds = [
+    ...new Set((topups ?? []).map((t) => t.customer_id).filter(Boolean)),
+  ]
+  const { data: topupCustomers } = topupCustomerIds.length
+    ? await supabase.from("customers").select("id, name").in("id", topupCustomerIds)
+    : { data: [] }
+  const topupName = new Map((topupCustomers ?? []).map((c) => [c.id, c.name]))
 
   // ลูกค้าไม่ซ้ำ: นับข้ามวันไม่ได้ (คนเดิมมาสองวันยังคือหนึ่งคน) และผลรวมรายวันก็บวกกันไม่ได้
   // โหมดวันเดียวรายการไม่โดนตัด (วันหนึ่งแทบไม่ถึง ROW_CAP) จึงนับจากแถวที่โหลดมาได้ครบ
@@ -442,6 +453,45 @@ export default async function TodayPage({
           )}
         </CardContent>
       </Card>
+
+      {/* เติมเงินสมาชิกไม่ใช่บิลขาย แต่คือเงินเข้าของวัน — ต้องเห็นในหน้านี้ว่าใครซื้อแพ็กเกจ */}
+      {(topups ?? []).length > 0 && (
+        <Card className="border-violet-200">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              เติมเงินสมาชิก{isSingleDay ? "วันนี้" : "ในช่วงนี้"} ({(topups ?? []).length} รายการ)
+            </CardTitle>
+            <p className="text-xs text-slate-500">
+              ไม่นับเป็นรายได้ (เป็นภาระให้บริการ) · ลบ/แก้ได้ที่ ระบบสมาชิก → ประวัติ
+            </p>
+          </CardHeader>
+          <CardContent className="px-0">
+            <ul className="divide-y">
+              {(topups ?? []).map((t) => (
+                <li
+                  key={t.id}
+                  className="flex items-center justify-between gap-3 px-4 py-2.5 sm:px-6"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">
+                      {topupName.get(t.customer_id) ?? "ไม่ระบุชื่อ"}{" "}
+                      <Badge variant="outline" className={TIER_COLOR[t.tier] ?? TIER_COLOR_DEFAULT}>
+                        {t.tier}
+                      </Badge>
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {formatThaiDate(t.topup_date)} · ได้เครดิต {formatBaht(t.credit_added)} ฿
+                    </p>
+                  </div>
+                  <span className="shrink-0 font-bold whitespace-nowrap text-violet-700">
+                    +{formatBaht(t.cash_received)} ฿
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {truncated ? (
         <Card>

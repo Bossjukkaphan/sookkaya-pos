@@ -92,6 +92,7 @@ export default async function HistoryPage({
     is_request: s.is_request ?? false,
     payment_method: s.payment_method,
     credit_used: n(s.credit_used),
+    credit_after: s.credit_after === null ? null : n(s.credit_after),
     bonus_used: n(s.bonus_used),
     revenue_recognize: n(s.revenue_recognize),
     source: s.source,

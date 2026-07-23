@@ -8,7 +8,14 @@ import { nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import { GOWABI_METHOD, MEMBER_CREDIT_METHOD, PAYMENT_METHODS } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
 
-export type SaleResult = { ok: true; receiptNo: string } | { ok: false; error: string }
+export type SaleResult =
+  | {
+      ok: true
+      receiptNo: string
+      /** เครดิตคงเหลือหลังบิลนี้ — มีค่าเฉพาะบิลที่จ่ายด้วยเครดิตสมาชิก */
+      creditAfter: number | null
+    }
+  | { ok: false; error: string }
 
 function toNumber(value: FormDataEntryValue | null, fallback = 0): number {
   const n = Number(value)
@@ -33,10 +40,10 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     return { ok: false, error: "กรุณาเลือกช่องทางชำระเงิน" }
   }
 
-  // อ่านราคา/ค่ามือจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาจากฟอร์ม
+  // อ่านราคา/ค่ามือจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาจากฟอร์ม (duration ใช้สร้างการ์ดคิว)
   const { data: service } = await supabase
     .from("services")
-    .select("name, price, commission")
+    .select("name, price, commission, duration_min")
     .eq("id", serviceId)
     .single()
 
@@ -51,6 +58,8 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
   // สัดส่วนรับรู้รายได้ของสมาชิก — อ่านก่อนคำนวณ เพราะสูตรต้องใช้
   let memberRatio: number | null = null
+  // เครดิตคงเหลือหลังหักบิลนี้ — โชว์บนใบเสร็จให้ลูกค้าเห็นทันที (snapshot ณ ตอนขาย)
+  let creditAfter: number | null = null
   if (paymentMethod === MEMBER_CREDIT_METHOD) {
     if (!customerId) {
       return { ok: false, error: "ชำระด้วย Member Credit ต้องเลือกลูกค้าที่เป็นสมาชิก" }
@@ -73,6 +82,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
         error: `เครดิตคงเหลือไม่พอ (มี ${credit} บาท ต้องใช้ ${wanted} บาท)`,
       }
     }
+    creditAfter = credit - wanted
   }
 
   const amounts = computeSaleAmounts({
@@ -100,15 +110,18 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .eq("id", user.id)
     .maybeSingle()
 
+  const saleDate = todayInShopTz()
+  // sale_time = เวลาที่ลูกค้าใช้บริการ (พนักงานแก้ได้ เพราะบิลมักคีย์หลังนวดเสร็จ)
+  // ส่วนเวลาที่บันทึกจริงอยู่ที่ created_at ซึ่งฐานข้อมูลประทับให้เองเสมอ
+  const saleTime = /^\d{2}:\d{2}$/.test(String(formData.get("sale_time") ?? ""))
+    ? String(formData.get("sale_time"))
+    : nowTimeInShopTz()
+
   const { data: inserted, error } = await supabase
     .from("sales")
     .insert({
-      sale_date: todayInShopTz(),
-      // sale_time = เวลาที่ลูกค้าใช้บริการ (พนักงานแก้ได้ เพราะบิลมักคีย์หลังนวดเสร็จ)
-      // ส่วนเวลาที่บันทึกจริงอยู่ที่ created_at ซึ่งฐานข้อมูลประทับให้เองเสมอ
-      sale_time: /^\d{2}:\d{2}$/.test(String(formData.get("sale_time") ?? ""))
-        ? String(formData.get("sale_time"))
-        : nowTimeInShopTz(),
+      sale_date: saleDate,
+      sale_time: saleTime,
       customer_id: customerId,
       customer_name: String(formData.get("customer_name") ?? "").trim() || null,
       customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
@@ -125,6 +138,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       request_fee: amounts.requestFee,
       member_status: paymentMethod === MEMBER_CREDIT_METHOD ? "💳 Member" : null,
       credit_used: amounts.creditUsed,
+      credit_after: creditAfter,
       bonus_used: amounts.bonusUsed,
       revenue_recognize: amounts.revenueRecognize,
       created_by: profile?.full_name ?? user.email ?? null,
@@ -166,13 +180,39 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       })
       .eq("id", queueEntryId)
       .neq("status", "paid")
-    revalidatePath("/queue")
+  } else {
+    // บิลที่คีย์ตรงไม่ผ่านคิว → สร้างการ์ดคิว "ชำระแล้ว" ให้อัตโนมัติ
+    // บอร์ดคิวจะเห็นว่าหมอคนนี้มีงานช่วงเวลานั้นจริง จัดคิวไม่ทับซ้อน
+    // (คิวเป็นผังงานไม่ใช่สมุดเงิน — พลาดก็ไม่กระทบบิล จึงไม่เช็ค error)
+    await supabase.from("queue_entries").insert({
+      queue_date: saleDate,
+      therapist_id: therapistId,
+      service_id: serviceId,
+      service_name: service.name,
+      duration_min: service.duration_min ?? 60,
+      customer_id: customerId,
+      customer_name: String(formData.get("customer_name") ?? "").trim() || null,
+      start_time: saleTime,
+      status: "paid",
+      sale_id: inserted.id,
+      bed_id: String(formData.get("bed_id") ?? "") || null,
+      source: (() => {
+        const s = String(formData.get("source") ?? "")
+        return ["walk_in", "booking", "agency"].includes(s) ? s : "walk_in"
+      })(),
+      group_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(formData.get("group_id") ?? "")
+      )
+        ? String(formData.get("group_id"))
+        : null,
+    })
   }
+  revalidatePath("/queue")
 
   revalidatePath("/")
   revalidatePath("/commission")
 
-  return { ok: true, receiptNo: inserted.receipt_no ?? "" }
+  return { ok: true, receiptNo: inserted.receipt_no ?? "", creditAfter }
 }
 
 export async function deleteSale(id: string): Promise<{ ok: boolean; error?: string }> {

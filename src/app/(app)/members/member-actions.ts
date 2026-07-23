@@ -50,3 +50,45 @@ export async function createTopup(formData: FormData): Promise<TopupResult> {
   revalidatePath(`/customers/${customerId}`)
   return { ok: true }
 }
+
+/**
+ * ลบใบเติมเงิน (คีย์ผิด/ลูกค้าเปลี่ยนใจ เช่นเปลี่ยน 5,000 → 10,000: ลบใบเดิมแล้วเติมใหม่)
+ * กันสองเรื่อง: เดือนที่ปิดงบแล้วห้ามแตะ · เครดิตที่ลูกค้าใช้ไปแล้วดึงคืนไม่ได้
+ */
+export async function deleteTopup(id: string): Promise<TopupResult> {
+  const supabase = await createClient()
+
+  const { data: topup } = await supabase
+    .from("member_topups")
+    .select("id, topup_date, customer_id, credit_added, cash_received")
+    .eq("id", id)
+    .maybeSingle()
+  if (!topup) return { ok: false, error: "ไม่พบใบเติมเงินนี้" }
+
+  if (topup.topup_date.slice(0, 7) !== todayInShopTz().slice(0, 7)) {
+    return { ok: false, error: "ลบได้เฉพาะใบเติมเงินของเดือนปัจจุบัน (เดือนก่อนปิดงบแล้ว)" }
+  }
+
+  // ถ้าเครดิตคงเหลือปัจจุบันน้อยกว่าเครดิตของใบนี้ = ส่วนหนึ่งถูกใช้จ่ายไปแล้ว
+  // ลบทั้งใบจะทำยอดคงเหลือติดลบ — ให้ไปลบบิลที่ใช้เครดิตก่อน (หรือปล่อยไว้)
+  const { data: balance } = await supabase
+    .from("member_balances")
+    .select("credit_balance")
+    .eq("customer_id", topup.customer_id)
+    .maybeSingle()
+  const remaining = Number(balance?.credit_balance ?? 0)
+  if (remaining < Number(topup.credit_added)) {
+    return {
+      ok: false,
+      error: `ลบไม่ได้ — เครดิตจากใบนี้ถูกใช้ไปแล้วบางส่วน (คงเหลือ ${remaining} จาก ${topup.credit_added} บาท) ต้องลบบิลที่จ่ายด้วยเครดิตของลูกค้าคนนี้ก่อน`,
+    }
+  }
+
+  const { error } = await supabase.from("member_topups").delete().eq("id", id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath("/members")
+  revalidatePath("/today")
+  revalidatePath(`/customers/${topup.customer_id}`)
+  return { ok: true }
+}

@@ -40,20 +40,48 @@ export type GroupPerson = {
  */
 const GROUP_PAYMENT_METHODS = ["เงินสด", "QR Code", "บัตรเครดิต"] as const
 
+/** คนเปล่าสำหรับโหมด standalone (เพิ่มคนเองในหน้า POS ไม่ผ่านคิว) */
+function blankPerson(groupId: string): GroupPerson {
+  return {
+    queueEntryId: "",
+    groupId,
+    therapistId: "",
+    serviceId: "",
+    customerId: "",
+    customerName: "",
+    customerPhone: "",
+    serviceTime: "",
+    bedId: "",
+    source: "walk_in",
+    bookingChannel: "",
+    notes: "",
+  }
+}
+
 export function GroupPosForm({
   therapists,
   services,
   promotions,
   people: initialPeople,
+  standalone = false,
 }: {
   therapists: Therapist[]
   services: Service[]
   promotions: Promotion[]
   people: GroupPerson[]
+  /** เปิดจากหน้า POS ตรงๆ (ไม่ผ่านคิว) — เพิ่ม/ลบคน + แก้ชื่อได้ */
+  standalone?: boolean
 }) {
   const router = useRouter()
-  const [people, setPeople] = useState(
-    initialPeople.map((p) => ({ ...p, discount: "", couponPromo: "" }))
+  // โหมด standalone สร้าง group id ใหม่ครั้งเดียวตอน mount — ทุกบิลผูกกลุ่มเดียวกัน
+  const [standaloneGroupId] = useState(() =>
+    standalone ? crypto.randomUUID() : ""
+  )
+  const [people, setPeople] = useState(() =>
+    (standalone && initialPeople.length === 0
+      ? [blankPerson(standaloneGroupId), blankPerson(standaloneGroupId)]
+      : initialPeople
+    ).map((p) => ({ ...p, discount: "", couponPromo: "" }))
   )
   const [paymentMethod, setPaymentMethod] = useState("")
   // บันทึกทีละใบตามลำดับ — ใบที่สำเร็จแล้วปิดคิวไปเลย ใบที่เหลือยังอยู่ให้ลองใหม่
@@ -126,19 +154,46 @@ export function GroupPosForm({
         {people.map((p, i) => {
           const service = serviceById.get(p.serviceId)
           return (
-            <li key={p.queueEntryId}>
+            <li key={p.queueEntryId || `person-${i}`}>
               <Card className={savingIndex === i ? "ring-2 ring-emerald-400" : undefined}>
                 <CardContent className="space-y-2.5 py-3.5">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="font-semibold">
-                      คนที่ {i + 1}
-                      <span className="ml-1 font-normal text-slate-500">
-                        {p.customerName || "ไม่ระบุชื่อ"}
-                      </span>
-                    </p>
+                    {standalone ? (
+                      <div className="flex min-w-0 flex-1 items-center gap-2">
+                        <span className="shrink-0 font-semibold">คนที่ {i + 1}</span>
+                        <Input
+                          value={p.customerName}
+                          onChange={(e) => setPerson(i, { customerName: e.target.value })}
+                          placeholder="ชื่อลูกค้า (ไม่บังคับ)"
+                          className="h-9"
+                          aria-label={`ชื่อลูกค้าคนที่ ${i + 1}`}
+                        />
+                      </div>
+                    ) : (
+                      <p className="font-semibold">
+                        คนที่ {i + 1}
+                        <span className="ml-1 font-normal text-slate-500">
+                          {p.customerName || "ไม่ระบุชื่อ"}
+                        </span>
+                      </p>
+                    )}
                     <p className="text-lg font-bold whitespace-nowrap text-emerald-700">
                       {formatBaht(nets[i])} ฿
                     </p>
+                    {standalone && people.length > 2 && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-red-600"
+                        aria-label={`ลบคนที่ ${i + 1}`}
+                        onClick={() =>
+                          setPeople((arr) => arr.filter((_, j) => j !== i))
+                        }
+                      >
+                        ✕
+                      </Button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -161,6 +216,7 @@ export function GroupPosForm({
                       className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
                       aria-label={`เมนูคนที่ ${i + 1}`}
                     >
+                      <option value="">— เลือกเมนู —</option>
                       {services.map((s) => (
                         <option key={s.id} value={s.id}>
                           {s.name} · {formatBaht(s.price)}฿
@@ -197,7 +253,8 @@ export function GroupPosForm({
 
                   {service && (
                     <p className="text-xs text-slate-500">
-                      ราคาปกติ {formatBaht(service.price)} ฿ · เวลาใช้บริการ {p.serviceTime || "—"}
+                      ราคาปกติ {formatBaht(service.price)} ฿
+                      {p.serviceTime ? ` · เวลาใช้บริการ ${p.serviceTime}` : ""}
                     </p>
                   )}
                 </CardContent>
@@ -206,6 +263,22 @@ export function GroupPosForm({
           )
         })}
       </ul>
+
+      {standalone && (
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() =>
+            setPeople((arr) => [
+              ...arr,
+              { ...blankPerson(standaloneGroupId), discount: "", couponPromo: "" },
+            ])
+          }
+        >
+          + เพิ่มคนในกลุ่ม
+        </Button>
+      )}
 
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">
@@ -246,16 +319,19 @@ export function GroupPosForm({
       <Button
         type="button"
         className="h-12 w-full"
-        disabled={savingIndex !== null || people.some((p) => !p.therapistId)}
+        disabled={
+          savingIndex !== null ||
+          people.some((p) => !p.therapistId || !p.serviceId)
+        }
         onClick={submitAll}
       >
         {savingIndex !== null
           ? `กำลังบันทึกคนที่ ${savingIndex + 1}/${people.length}...`
           : `บันทึก ${people.length} บิล — รับเงิน ${formatBaht(total)} ฿`}
       </Button>
-      {people.some((p) => !p.therapistId) && (
+      {people.some((p) => !p.therapistId || !p.serviceId) && (
         <p className="text-center text-xs text-amber-700">
-          เลือกหมอนวดให้ครบทุกคนก่อนบันทึก
+          เลือกหมอนวดและเมนูให้ครบทุกคนก่อนบันทึก
         </p>
       )}
     </div>

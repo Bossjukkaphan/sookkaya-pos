@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 import { createClient } from "@/lib/supabase/server"
 import { PosForm } from "./pos-form"
 import { GroupPosForm, type GroupPerson } from "./group-pos-form"
@@ -17,10 +19,10 @@ function toShopTime(iso: string): string {
 export default async function PosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ queue?: string; group?: string }>
+  searchParams: Promise<{ queue?: string; group?: string; multi?: string }>
 }) {
   const supabase = await createClient()
-  const { queue, group } = await searchParams
+  const { queue, group, multi } = await searchParams
 
   const [{ data: therapists }, { data: services }, { data: promotions }, { data: beds }] =
     await Promise.all([
@@ -47,6 +49,27 @@ export default async function PosPage({
         .eq("is_active", true)
         .order("sort"),
     ])
+
+  // ลูกค้ามาหลายคนแบบไม่ได้ลงคิวไว้ → ฟอร์มกลุ่มเปล่า เพิ่มคนเองได้เลย
+  // (บันทึกแล้วระบบสร้างการ์ดคิว "ชำระแล้ว" ให้ทุกคนอัตโนมัติ บอร์ดคิวเห็นครบ)
+  if (multi === "1") {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <h1 className="text-xl font-bold">บันทึกขายหลายคน</h1>
+        <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          ครอบครัว/กลุ่มที่มาโดยไม่ได้ลงคิว — กรอกรายคนแล้วจ่ายรวมครั้งเดียว
+          ระบบออกใบเสร็จแยกรายคนและลงบอร์ดคิวให้อัตโนมัติ
+        </p>
+        <GroupPosForm
+          therapists={therapists ?? []}
+          services={services ?? []}
+          promotions={promotions ?? []}
+          people={[]}
+          standalone
+        />
+      </div>
+    )
+  }
 
   // เก็บเงินทั้งกลุ่ม → โหลดทุกคนในกลุ่มที่ยังไม่จ่าย/ไม่ยกเลิก มาลงจอเดียว
   const { data: groupEntries } = group
@@ -126,7 +149,15 @@ export default async function PosPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-xl font-bold">บันทึกขาย</h1>
+      <div className="flex items-center justify-between gap-2">
+        <h1 className="text-xl font-bold">บันทึกขาย</h1>
+        <Link
+          href="/pos?multi=1"
+          className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-800 hover:bg-sky-100"
+        >
+          👨‍👩‍👧 มาหลายคน
+        </Link>
+      </div>
       {queueEntry && (
         <p className="rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-800">
           เก็บเงินจากคิว: {queueEntry.service_name}
