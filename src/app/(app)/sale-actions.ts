@@ -179,6 +179,15 @@ export async function deleteSale(id: string): Promise<{ ok: boolean; error?: str
     return { ok: false, error: "ลบได้เฉพาะรายการของเดือนปัจจุบัน" }
   }
 
+  // บิลที่มาจากคิว: ถอยการ์ดกลับเป็น "กำลังให้บริการ" ให้เก็บเงินใหม่ได้
+  // ไม่งั้นการ์ดค้างเป็น "ชำระแล้ว" ทั้งที่บิลถูกลบไปแล้ว (FK เป็น set null ก็จริง
+  // แต่ set null ไม่ได้แก้สถานะให้) — ต้องทำก่อนลบ เพราะหลังลบจะหา sale_id ไม่เจอแล้ว
+  await supabase
+    .from("queue_entries")
+    .update({ status: "in_service", sale_id: null })
+    .eq("sale_id", id)
+    .eq("status", "paid")
+
   const { error } = await supabase.from("sales").delete().eq("id", id)
 
   if (error) return { ok: false, error: error.message }
@@ -187,6 +196,7 @@ export async function deleteSale(id: string): Promise<{ ok: boolean; error?: str
   revalidatePath("/")
   revalidatePath("/commission")
   revalidatePath("/overview")
+  revalidatePath("/queue")
   return { ok: true }
 }
 
