@@ -286,6 +286,7 @@ export type Database = {
           created_at: string
           customer_id: string | null
           customer_name: string | null
+          group_id: string | null
           duration_min: number
           id: string
           notes: string | null
@@ -306,6 +307,7 @@ export type Database = {
           created_at?: string
           customer_id?: string | null
           customer_name?: string | null
+          group_id?: string | null
           duration_min: number
           id?: string
           notes?: string | null
@@ -326,6 +328,7 @@ export type Database = {
           created_at?: string
           customer_id?: string | null
           customer_name?: string | null
+          group_id?: string | null
           duration_min?: number
           id?: string
           notes?: string | null
@@ -373,6 +376,7 @@ export type Database = {
           customer_phone: string | null
           discount: number
           id: string
+          group_id: string | null
           is_request: boolean
           member_status: string | null
           net_amount: number
@@ -405,6 +409,7 @@ export type Database = {
           customer_phone?: string | null
           discount?: number
           id?: string
+          group_id?: string | null
           is_request?: boolean
           member_status?: string | null
           net_amount: number
@@ -437,6 +442,7 @@ export type Database = {
           customer_phone?: string | null
           discount?: number
           id?: string
+          group_id?: string | null
           is_request?: boolean
           member_status?: string | null
           net_amount?: number

@@ -355,6 +355,11 @@ export function QueueBoard({
                       siblings={entries.filter(
                         (s) => s.therapist_id === row.id && s.id !== e.id
                       )}
+                      groupSize={
+                        e.group_id
+                          ? entries.filter((s) => s.group_id === e.group_id).length
+                          : 1
+                      }
                       dragging={drag?.lifted === true && drag.id === e.id}
                       dragOffset={
                         drag?.lifted === true && drag.id === e.id

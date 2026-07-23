@@ -46,6 +46,7 @@ export function QueueCard({
   entry,
   bed,
   siblings,
+  groupSize = 1,
   dragging,
   dragOffset,
   movedRef,
@@ -56,6 +57,8 @@ export function QueueCard({
   entry: QueueEntry
   bed: Bed | null
   siblings: QueueEntry[]
+  /** จำนวนคนทั้งกลุ่มของการ์ดนี้ (นับตัวเองด้วย) — 1 = มาคนเดียว */
+  groupSize?: number
   dragging: boolean
   dragOffset: { dx: number; dy: number } | null
   movedRef: React.RefObject<boolean>
@@ -119,6 +122,11 @@ export function QueueCard({
           {entry.service_name}
         </p>
         <p className="truncate text-slate-500">
+          {groupSize > 1 && (
+            <span className="mr-1 rounded border border-sky-200 bg-sky-50 px-1 text-[10px] font-medium text-sky-700">
+              กลุ่ม {groupSize} คน
+            </span>
+          )}
           {entry.customer_name || "ไม่ระบุลูกค้า"} · {STATUS_LABEL[entry.status]}
           {bed && ` · ${shortBedName(bed)}`}
         </p>
@@ -172,6 +180,17 @@ export function QueueCard({
                 <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
                   <Link href={`/pos?queue=${entry.id}`}>💰 เก็บเงิน</Link>
                 </Button>
+                {groupSize > 1 && entry.group_id && (
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="border-emerald-600 text-emerald-700"
+                  >
+                    <Link href={`/pos?group=${entry.group_id}`}>
+                      💰 เก็บเงินทั้งกลุ่ม ({groupSize} คน)
+                    </Link>
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   disabled={pending}

@@ -67,6 +67,81 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   return { ok: true }
 }
 
+/** คนหนึ่งในกลุ่ม — หมอ/เมนู/เตียงแยกรายคน ส่วนเวลา·ลูกค้าติดต่อ·ที่มา ใช้ร่วมกัน */
+export type GroupPerson = {
+  therapistId: string | null
+  serviceId: string
+  bedId: string | null
+}
+
+/**
+ * จองเป็นกลุ่ม (ครอบครัว/เพื่อนมาด้วยกัน) — สร้างการ์ดคิวหลายใบผูก group_id เดียว
+ * แต่ละใบยังลาก/แก้/ยกเลิกแยกอิสระได้เหมือนคิวปกติทุกอย่าง
+ */
+export async function createQueueGroup(
+  shared: FormData,
+  people: GroupPerson[]
+): Promise<Result> {
+  if (people.length < 2)
+    return { ok: false, error: "กลุ่มต้องมีอย่างน้อย 2 คน" }
+  if (people.some((p) => !p.serviceId))
+    return { ok: false, error: "เลือกเมนูให้ครบทุกคนก่อน" }
+
+  const supabase = await createClient()
+  const startTime = String(shared.get("start_time") ?? "")
+  const queueDateInput = String(shared.get("queue_date") ?? "")
+  const queueDate = /^\d{4}-\d{2}-\d{2}$/.test(queueDateInput)
+    ? queueDateInput
+    : todayInShopTz()
+  const customerId = String(shared.get("customer_id") ?? "") || null
+  const customerName = String(shared.get("customer_name") ?? "").trim() || null
+  const source = String(shared.get("source") ?? "walk_in")
+  const notes = String(shared.get("notes") ?? "").trim() || null
+  const channelInput = String(shared.get("booking_channel") ?? "")
+  const bookingChannel =
+    source === "booking" && isBookingChannel(channelInput) ? channelInput : null
+
+  if (!/^\d{2}:\d{2}$/.test(startTime))
+    return { ok: false, error: "เวลาเริ่มไม่ถูกต้อง" }
+  if (!isCustomerSource(source))
+    return { ok: false, error: "ที่มาลูกค้าไม่ถูกต้อง" }
+
+  // ชื่อ/ระยะเวลาเมนูเอาจาก DB ไม่เชื่อ client — ดึงทีเดียวทุกเมนูที่ใช้ในกลุ่ม
+  const serviceIds = [...new Set(people.map((p) => p.serviceId))]
+  const { data: services } = await supabase
+    .from("services")
+    .select("id, name, duration_min")
+    .in("id", serviceIds)
+  const serviceById = new Map((services ?? []).map((s) => [s.id, s]))
+  if (serviceById.size !== serviceIds.length)
+    return { ok: false, error: "มีเมนูที่ไม่พบในระบบ" }
+
+  const groupId = crypto.randomUUID()
+  const { error } = await supabase.from("queue_entries").insert(
+    people.map((p) => {
+      const service = serviceById.get(p.serviceId)!
+      return {
+        queue_date: queueDate,
+        therapist_id: p.therapistId || null,
+        service_id: p.serviceId,
+        service_name: service.name,
+        duration_min: service.duration_min ?? 60,
+        customer_id: customerId,
+        customer_name: customerName,
+        start_time: startTime,
+        source,
+        bed_id: p.bedId || null,
+        booking_channel: bookingChannel,
+        notes,
+        group_id: groupId,
+      }
+    })
+  )
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/queue")
+  return { ok: true }
+}
+
 /** บันทึกปฏิเสธลูกค้า (คิวเต็ม/หมอไม่ว่าง) — ข้อมูลตัดสินใจจ้างหมอเพิ่ม */
 export async function recordTurnAway(
   queueDate: string,

@@ -1,15 +1,26 @@
 import { createClient } from "@/lib/supabase/server"
 import { PosForm } from "./pos-form"
+import { GroupPosForm, type GroupPerson } from "./group-pos-form"
 
 export const metadata = { title: "บันทึกขาย · สุขกายา POS" }
+
+/** timestamptz → HH:MM เวลาไทย — เวลาเริ่มนวดจริงของแต่ละคนในกลุ่ม */
+function toShopTime(iso: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso))
+}
 
 export default async function PosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ queue?: string }>
+  searchParams: Promise<{ queue?: string; group?: string }>
 }) {
   const supabase = await createClient()
-  const { queue } = await searchParams
+  const { queue, group } = await searchParams
 
   const [{ data: therapists }, { data: services }, { data: promotions }, { data: beds }] =
     await Promise.all([
@@ -36,6 +47,64 @@ export default async function PosPage({
         .eq("is_active", true)
         .order("sort"),
     ])
+
+  // เก็บเงินทั้งกลุ่ม → โหลดทุกคนในกลุ่มที่ยังไม่จ่าย/ไม่ยกเลิก มาลงจอเดียว
+  const { data: groupEntries } = group
+    ? await supabase
+        .from("queue_entries")
+        .select("*")
+        .eq("group_id", group)
+        .not("status", "in", "(paid,cancelled)")
+        .order("start_time")
+    : { data: null }
+
+  if (groupEntries && groupEntries.length > 0) {
+    const customerIds = [
+      ...new Set(
+        groupEntries.map((e) => e.customer_id).filter((id): id is string => !!id)
+      ),
+    ]
+    const { data: groupCustomers } = customerIds.length
+      ? await supabase.from("customers").select("id, name, phone").in("id", customerIds)
+      : { data: [] }
+    const customerById = new Map((groupCustomers ?? []).map((c) => [c.id, c]))
+
+    const people: GroupPerson[] = groupEntries.map((e) => {
+      const customer = e.customer_id ? customerById.get(e.customer_id) : null
+      return {
+        queueEntryId: e.id,
+        groupId: group as string,
+        therapistId: e.therapist_id ?? "",
+        serviceId: e.service_id ?? "",
+        customerId: customer?.id ?? "",
+        customerName: customer?.name ?? e.customer_name ?? "",
+        customerPhone: customer?.phone ?? "",
+        serviceTime: e.started_at
+          ? toShopTime(e.started_at)
+          : (e.start_time?.slice(0, 5) ?? ""),
+        bedId: e.bed_id ?? "",
+        source: e.source,
+        bookingChannel: e.booking_channel ?? "",
+        notes: e.notes ?? "",
+      }
+    })
+
+    return (
+      <div className="mx-auto max-w-3xl space-y-4">
+        <h1 className="text-xl font-bold">เก็บเงินทั้งกลุ่ม</h1>
+        <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
+          กลุ่ม {people.length} คน — แก้เมนู/ส่วนลดรายคนได้ จ่ายรวมครั้งเดียว
+          ระบบออกใบเสร็จแยกรายคนให้อัตโนมัติ
+        </p>
+        <GroupPosForm
+          therapists={therapists ?? []}
+          services={services ?? []}
+          promotions={promotions ?? []}
+          people={people}
+        />
+      </div>
+    )
+  }
 
   // มาจากการ์ดคิว → กรอกหมอ/เมนู/ลูกค้าให้ล่วงหน้า (คิวที่จ่ายแล้วไม่รับซ้ำ)
   const { data: queueEntry } = queue

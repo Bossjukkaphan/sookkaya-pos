@@ -128,6 +128,12 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       bonus_used: amounts.bonusUsed,
       revenue_recognize: amounts.revenueRecognize,
       created_by: profile?.full_name ?? user.email ?? null,
+      // บิลกลุ่ม (ครอบครัวจ่ายพร้อมกัน) — ผูกไว้แค่ให้รู้ว่าบิลไหนมาด้วยกัน ไม่กระทบสูตรเงิน
+      group_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(formData.get("group_id") ?? "")
+      )
+        ? String(formData.get("group_id"))
+        : null,
       // metadata ของบิล (ที่มา/ช่องทางย่อย/เตียง/หมายเหตุ) — ไม่กระทบสูตรเงิน
       // ค่าเพี้ยนจาก client เก่า → null (ไม่ทราบ) ดีกว่าเดาผิด
       source: (() => {

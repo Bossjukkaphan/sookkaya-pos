@@ -8,9 +8,12 @@
  */
 export type Bed = { id: string; room: string; name: string }
 
-/** ชื่อเตียงแบบย่อไว้โชว์บนการ์ด เช่น "ไทย·3" "สปา1·2" */
+/** ชื่อเตียงแบบย่อไว้โชว์บนการ์ด เช่น "ไทย·3" "สปา1·2" "เก้าอี้·1" */
 export function shortBedName(bed: Bed): string {
-  const room = bed.room.replace("ห้องนวดไทย", "ไทย").replace("ห้องสปา ", "สปา")
-  const num = bed.name.replace("เตียง ", "")
+  const room = bed.room
+    .replace("ห้องนวดไทย", "ไทย")
+    .replace("ห้องสปา ", "สปา")
+    .replace("เก้าอี้นวด", "เก้าอี้")
+  const num = bed.name.replace("เตียง ", "").replace("เก้าอี้ ", "")
   return `${room}·${num}`
 }

@@ -13,7 +13,12 @@ import {
   type CustomerSource,
 } from "@/lib/customer-source"
 import { busyBedIds, minToTime, snapMin, timeToMin } from "@/lib/queue"
-import { createQueueEntry, updateQueueEntry } from "./queue-actions"
+import {
+  createQueueEntry,
+  createQueueGroup,
+  updateQueueEntry,
+  type GroupPerson,
+} from "./queue-actions"
 import type { Bed, QueueEntry, ServiceOption, Therapist } from "./queue-board"
 import {
   Dialog,
@@ -98,15 +103,31 @@ export function QueueFormDialog({
   const [customerId, setCustomerId] = useState(entry?.customer_id ?? "")
   const [customerName, setCustomerName] = useState(entry?.customer_name ?? "")
   const [customerPhone, setCustomerPhone] = useState("")
+  // ลูกค้ามาเป็นครอบครัว/กลุ่ม: คนแรกใช้ช่องหลักด้านบน คนต่อไปเพิ่มเป็นแถวย่อย
+  // (เวลา·ลูกค้าผู้ติดต่อ·ที่มา·หมายเหตุ ใช้ร่วมกันทั้งกลุ่ม)
+  const [extraPeople, setExtraPeople] = useState<GroupPerson[]>([])
   const [pending, startTransition] = useTransition()
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
-      const r = entry ? await updateQueueEntry(entry.id, fd) : await createQueueEntry(fd)
+      const r = entry
+        ? await updateQueueEntry(entry.id, fd)
+        : extraPeople.length > 0
+          ? await createQueueGroup(fd, [
+              { therapistId: therapistId || null, serviceId, bedId: bedId || null },
+              ...extraPeople,
+            ])
+          : await createQueueEntry(fd)
       if (r.ok) {
-        toast.success(entry ? "แก้ไขคิวแล้ว" : "เพิ่มคิวแล้ว")
+        toast.success(
+          entry
+            ? "แก้ไขคิวแล้ว"
+            : extraPeople.length > 0
+              ? `เพิ่มคิวกลุ่ม ${extraPeople.length + 1} คนแล้ว`
+              : "เพิ่มคิวแล้ว"
+        )
         onClose()
         onDone()
       } else {
@@ -282,6 +303,96 @@ export function QueueFormDialog({
             })()}
           </fieldset>
 
+          {/* จองเป็นกลุ่ม: คนแรกคือช่องหลักด้านบน คนต่อไปเพิ่มแถวตรงนี้
+              ทั้งกลุ่มเริ่มเวลาเดียวกัน ใช้ลูกค้าผู้ติดต่อ/ที่มา/หมายเหตุร่วมกัน */}
+          {!isEdit && (
+            <fieldset className="space-y-2 rounded-lg border border-dashed p-3">
+              <legend className="px-1 text-sm font-medium">
+                มากันหลายคน?{" "}
+                <span className="font-normal text-slate-500">
+                  (ครอบครัว/กลุ่ม — สร้างการ์ดให้ทุกคนพร้อมกัน)
+                </span>
+              </legend>
+              {extraPeople.map((p, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <span className="w-10 shrink-0 text-xs text-slate-500">
+                    คนที่ {i + 2}
+                  </span>
+                  <select
+                    value={p.therapistId ?? ""}
+                    onChange={(e) =>
+                      setExtraPeople((arr) =>
+                        arr.map((x, j) =>
+                          j === i ? { ...x, therapistId: e.target.value || null } : x
+                        )
+                      )
+                    }
+                    className="h-10 w-24 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                    aria-label={`หมอนวดคนที่ ${i + 2}`}
+                  >
+                    <option value="">หมอ?</option>
+                    {therapists.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={p.serviceId}
+                    onChange={(e) =>
+                      setExtraPeople((arr) =>
+                        arr.map((x, j) =>
+                          j === i ? { ...x, serviceId: e.target.value } : x
+                        )
+                      )
+                    }
+                    className="h-10 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                    aria-label={`เมนูคนที่ ${i + 2}`}
+                  >
+                    <option value="">— เมนู —</option>
+                    {services.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 text-red-600"
+                    aria-label={`ลบคนที่ ${i + 2}`}
+                    onClick={() =>
+                      setExtraPeople((arr) => arr.filter((_, j) => j !== i))
+                    }
+                  >
+                    ✕
+                  </Button>
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full"
+                onClick={() =>
+                  setExtraPeople((arr) => [
+                    ...arr,
+                    { therapistId: null, serviceId: "", bedId: null },
+                  ])
+                }
+              >
+                + เพิ่มคนในกลุ่ม
+              </Button>
+              {extraPeople.length > 0 && (
+                <p className="text-xs text-slate-500">
+                  รวม {extraPeople.length + 1} คน เริ่ม {startTime} พร้อมกัน ·
+                  เตียงของคนที่ 2 ขึ้นไปค่อยเลือกทีหลังได้จากการ์ด
+                </p>
+              )}
+            </fieldset>
+          )}
+
           <CustomerPicker
             customerId={customerId}
             customerName={customerName}
@@ -313,8 +424,20 @@ export function QueueFormDialog({
             />
           </div>
 
-          <Button type="submit" disabled={pending || !serviceId} className="h-12 w-full">
-            {pending ? "กำลังบันทึก..." : isEdit ? "บันทึกการแก้ไข" : "เพิ่มคิว"}
+          <Button
+            type="submit"
+            disabled={
+              pending || !serviceId || extraPeople.some((p) => !p.serviceId)
+            }
+            className="h-12 w-full"
+          >
+            {pending
+              ? "กำลังบันทึก..."
+              : isEdit
+                ? "บันทึกการแก้ไข"
+                : extraPeople.length > 0
+                  ? `เพิ่มคิวกลุ่ม ${extraPeople.length + 1} คน`
+                  : "เพิ่มคิว"}
           </Button>
         </form>
       </DialogContent>
