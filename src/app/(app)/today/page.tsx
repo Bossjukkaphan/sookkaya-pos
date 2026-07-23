@@ -15,6 +15,7 @@ import type {
 } from "./edit-sale-dialog"
 import { DateFilter } from "./date-filter"
 import { StatCard } from "@/components/stat-card"
+import { InfoDot } from "@/components/info-dot"
 import {
   PAY_COLOR,
   PAY_COLOR_DEFAULT,
@@ -182,6 +183,13 @@ export default async function TodayPage({
   const hrPct = totalNetRevenue > 0 ? (totalCommission / totalNetRevenue) * 100 : null
   const marginPct = totalNetRevenue > 0 ? (grossProfit / totalNetRevenue) * 100 : null
 
+  // สมการรายรับเดียวกับหน้ารายงาน แต่ถอดจากยอด view รายวันล้วนๆ (นิยามใน sale-math):
+  //   net_revenue = volume − bonus_used  →  bonus_used = volume − net_revenue
+  //   cash_in = (volume − credit_used) + topup  →  credit_used = volume + topup − cash_in
+  // จึงแม่นเสมอแม้รายการด้านล่างโดนตัดที่ ROW_CAP
+  const bonusUsedTotal = totalVolume - totalNetRevenue
+  const creditUsedTotal = totalVolume + totalTopup - totalCashIn
+
   // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
   // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
   const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
@@ -232,34 +240,122 @@ export default async function TodayPage({
         </Card>
       )}
 
-      {/* ทุกการ์ดผูกกับช่วงวันที่เลือก · ยอดสรุปมาจาก view รายวัน ไม่ใช่รายการที่ถูกตัด */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <StatCard
-          label="เงินเข้าจริง"
-          value={`${formatBaht(totalCashIn)} ฿`}
-          hint={
-            totalTopup > 0
-              ? `รวมเติมสมาชิก ${formatBaht(totalTopup)} ฿`
-              : "เงินสด+QR+บัตร"
-          }
-          info={MONEY_INFO.cashIn}
-        />
-        <StatCard
-          label="รายได้ที่รับรู้"
-          value={`${formatBaht(totalNetRevenue)} ฿`}
-          hint="รับรู้รายได้ (P&L)"
-          info={MONEY_INFO.netRevenue}
-        />
-        <StatCard
-          label="ยอดรับจริง"
-          value={`${formatBaht(totalVolume)} ฿`}
-          hint="ลูกค้าจ่ายจริง รวมเครดิต"
-          info={MONEY_INFO.volume}
-        />
+      {/* คู่การ์ดหลักสไตล์เดียวกับหน้ารายงาน: รายรับ (เขียว) · เงินเข้าจริง (ม่วง)
+          ทุกตัวเลขมาจาก view รายวัน ไม่ใช่รายการด้านล่างที่อาจถูกตัดเพดาน */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border-2 border-emerald-500 bg-white">
+          <div className="flex items-baseline justify-between rounded-t-[10px] bg-emerald-600 px-4 py-2.5 text-white">
+            <span className="flex items-center gap-1 text-sm font-semibold">
+              รายรับ{isSingleDay ? "วันนี้" : "ทั้งหมด"}{" "}
+              <InfoDot text={MONEY_INFO.netRevenue} light />
+            </span>
+            <span className="text-2xl font-extrabold">
+              {formatBaht(totalNetRevenue)}
+            </span>
+          </div>
+          <div className="space-y-1.5 px-4 py-3 text-sm">
+            {/* สมการที่มาของตัวเลข: ยอดรับจริง − เครดิตแถมที่ใช้ = รายรับที่รับรู้ */}
+            <div className="flex justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                ยอดรับจริง (Volume) <InfoDot text={MONEY_INFO.volume} />
+              </span>
+              <span className="font-medium">{formatBaht(totalVolume)}</span>
+            </div>
+            <div className="flex justify-between pl-3 text-xs text-slate-500">
+              <span>ในนี้จ่ายด้วยเครดิตสมาชิก</span>
+              <span>{formatBaht(creditUsedTotal)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="flex items-center gap-1 text-slate-600">
+                − ส่วนลดจากเครดิตแถมสมาชิก{" "}
+                <InfoDot text="เครดิตแถมจากแพ็กเกจสมาชิกที่ถูกใช้จ่ายในช่วงนี้ — คือส่วนลดที่ร้านให้เพราะเป็นเมมเบอร์ ไม่ใช่เงินที่ใครจ่ายมา จึงหักออกจากรายได้" />
+              </span>
+              <span className="font-medium text-rose-600">
+                -{formatBaht(bonusUsedTotal)}
+              </span>
+            </div>
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="font-semibold">= รายรับที่รับรู้</span>
+              <span className="font-bold text-emerald-700">
+                {formatBaht(totalNetRevenue)}
+              </span>
+            </div>
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="text-slate-600">เติมเงินสมาชิก{isSingleDay ? "วันนี้" : "ในช่วงนี้"}</span>
+              <span className="font-medium">{formatBaht(totalTopup)}</span>
+            </div>
+            <p className="pl-3 text-xs text-slate-400">
+              ไม่นับเป็นรายได้ (เป็นภาระให้บริการ) — ไปโผล่ในเงินเข้าจริงแทน
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border-2 border-violet-500 bg-white">
+          <div className="flex items-baseline justify-between rounded-t-[10px] bg-violet-600 px-4 py-2.5 text-white">
+            <span className="flex items-center gap-1 text-sm font-semibold">
+              เงินเข้าจริง <InfoDot text={MONEY_INFO.cashIn} light />
+            </span>
+            <span className="text-2xl font-extrabold">{formatBaht(totalCashIn)}</span>
+          </div>
+          <div className="space-y-1.5 px-4 py-3 text-sm">
+            <p className="text-xs text-slate-500">
+              ยอดขายที่ไม่ใช่เครดิตสมาชิก + เงินเติมสมาชิก
+            </p>
+            {truncated ? (
+              <p className="py-2 text-xs text-slate-400">
+                ช่วงกว้างเกินไป แสดงแยกช่องทางไม่ได้ — ยอดรวมข้างบนยังถูกต้อง
+              </p>
+            ) : (
+              <>
+                {Object.entries(byPayment)
+                  .filter(([method]) => method !== "Member Credit")
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([method, amount]) => (
+                    <div key={method} className="flex justify-between">
+                      <span className="flex items-center gap-1.5 text-slate-600">
+                        <span
+                          className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
+                        />
+                        {method}
+                      </span>
+                      <span className="font-medium">{formatBaht(amount)}</span>
+                    </div>
+                  ))}
+                {totalTopup > 0 && (
+                  <div className="flex justify-between">
+                    <span className="flex items-center gap-1.5 text-slate-600">
+                      <span className="inline-block h-2 w-2 rounded-full bg-violet-500" />
+                      เติมเงินสมาชิก
+                    </span>
+                    <span className="font-medium">{formatBaht(totalTopup)}</span>
+                  </div>
+                )}
+                {Object.keys(byPayment).length === 0 && totalTopup === 0 && (
+                  <p className="py-2 text-center text-xs text-slate-400">
+                    ยังไม่มีเงินเข้า{isSingleDay ? "วันนี้" : "ในช่วงนี้"}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ตัวเลขปฏิบัติการ — กำไรเขียว/แดงตามสัญญาณเดียวกันทุกหน้า */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="เซสชัน"
           value={String(totalSessions)}
           hint={distinctCustomers !== null ? `${distinctCustomers} ลูกค้า` : undefined}
+        />
+        <StatCard
+          label="เฉลี่ย/บิล"
+          value={
+            totalSessions > 0
+              ? `${formatBaht(Math.round(totalVolume / totalSessions))} ฿`
+              : "—"
+          }
+          hint="ยอดรับจริง ÷ จำนวนบิล"
         />
         <StatCard
           label="ค่ามือรวม"
@@ -269,7 +365,11 @@ export default async function TodayPage({
         <StatCard
           label="กำไรขั้นต้น"
           value={`${formatBaht(grossProfit)} ฿`}
-          hint={marginPct === null ? "Margin —" : `Margin ${marginPct.toFixed(1)}%`}
+          hint={
+            marginPct === null
+              ? "รายรับ − ค่ามือ (ยังไม่หักรายจ่ายอื่น)"
+              : `Margin ${marginPct.toFixed(1)}% · ยังไม่หักรายจ่ายอื่น`
+          }
           tone={grossProfit < 0 ? "bad" : "good"}
         />
       </div>

@@ -27,6 +27,7 @@ import {
   PAY_SELECTED,
   PAY_SELECTED_DEFAULT,
 } from "@/lib/payment-colors"
+import { nowTimeInShopTz } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -51,6 +52,8 @@ export type PosInitial = {
   bedId: string
   bookingChannel: string
   notes: string
+  /** เวลาเริ่มนวดจริงจากคิว (HH:MM) — บิลมักถูกคีย์หลังนวดเสร็จ เวลากดบันทึกไม่ใช่เวลาใช้บริการ */
+  serviceTime: string
 }
 
 export function PosForm({
@@ -84,6 +87,12 @@ export function PosForm({
   )
   const [bedId, setBedId] = useState(initial?.bedId ?? "")
   const [notes, setNotes] = useState(initial?.notes ?? "")
+  // เวลาใช้บริการ ≠ เวลาบันทึก — บิลมักถูกคีย์หลังนวดเสร็จ จึงให้แก้ได้
+  // ค่าเริ่มต้น: มาจากคิวใช้เวลาเริ่มนวดจริง · ไม่ผ่านคิวใช้เวลาปัจจุบัน
+  // (เวลาบันทึกระบบประทับให้เองที่ created_at ไม่ต้องกรอก)
+  const [serviceTime, setServiceTime] = useState(
+    initial?.serviceTime || nowTimeInShopTz()
+  )
   const [couponPromo, setCouponPromo] = useState("")
   // Gowabi ต้องพิมพ์รหัสจองเป็นเลขเสมอ จึงบังคับเป็นช่องพิมพ์
   // กรณีอื่นเริ่มจาก dropdown แล้วเปิดช่องพิมพ์เฉพาะเมื่อเลือก "อื่นๆ"
@@ -119,6 +128,7 @@ export function PosForm({
     setBookingChannel("")
     setBedId("")
     setNotes("")
+    setServiceTime(nowTimeInShopTz())
     setCouponPromo("")
     setCustomPromo(false)
   }
@@ -187,6 +197,26 @@ export function PosForm({
             {formatBaht(service.commission)} บาท
           </p>
         )}
+      </div>
+
+      {/* เวลาใช้บริการ ≠ เวลาบันทึก — บิลมักถูกคีย์หลังนวดเสร็จ
+          เวลาบันทึกระบบประทับให้เองเสมอ ช่องนี้คือเวลาที่ลูกค้าเริ่มใช้บริการจริง */}
+      <div className="space-y-2">
+        <Label htmlFor="sale_time">เวลาที่ใช้บริการ</Label>
+        <Input
+          id="sale_time"
+          name="sale_time"
+          type="time"
+          value={serviceTime}
+          onChange={(e) => setServiceTime(e.target.value)}
+          className="h-12 w-40"
+          required
+        />
+        <p className="text-xs text-slate-500">
+          {initial
+            ? "ดึงเวลาเริ่มนวดจากคิวมาให้แล้ว แก้ได้ถ้าไม่ตรง"
+            : "ปรับย้อนได้ถ้าคีย์บิลช้ากว่าเวลานวดจริง — เวลาบันทึกระบบเก็บให้อัตโนมัติ"}
+        </p>
       </div>
 
       {/* ลูกค้า */}

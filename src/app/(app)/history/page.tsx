@@ -99,6 +99,7 @@ export default async function HistoryPage({
     bed_label: s.bed_id ? (bedLabel.get(s.bed_id) ?? null) : null,
     notes: s.notes,
     created_by: s.created_by,
+    created_at: s.created_at,
     edited_by: s.edited_by,
   }))
 

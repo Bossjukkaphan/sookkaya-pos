@@ -104,7 +104,11 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .from("sales")
     .insert({
       sale_date: todayInShopTz(),
-      sale_time: nowTimeInShopTz(),
+      // sale_time = เวลาที่ลูกค้าใช้บริการ (พนักงานแก้ได้ เพราะบิลมักคีย์หลังนวดเสร็จ)
+      // ส่วนเวลาที่บันทึกจริงอยู่ที่ created_at ซึ่งฐานข้อมูลประทับให้เองเสมอ
+      sale_time: /^\d{2}:\d{2}$/.test(String(formData.get("sale_time") ?? ""))
+        ? String(formData.get("sale_time"))
+        : nowTimeInShopTz(),
       customer_id: customerId,
       customer_name: String(formData.get("customer_name") ?? "").trim() || null,
       customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,

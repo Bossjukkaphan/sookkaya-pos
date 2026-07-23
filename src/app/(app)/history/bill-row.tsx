@@ -44,7 +44,26 @@ export type BillRecord = {
   bed_label: string | null
   notes: string | null
   created_by: string | null
+  /** เวลาที่กดบันทึกจริง (ISO) — คนละตัวกับ sale_time ซึ่งคือเวลาใช้บริการ */
+  created_at: string | null
   edited_by: string | null
+}
+
+/** timestamp → "23 ก.ค. 15:42 น." เวลาไทย — ใช้บอกว่าบิลถูกคีย์เข้าระบบเมื่อไหร่ */
+function formatRecordedAt(iso: string): string {
+  const d = new Date(iso)
+  const date = new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "numeric",
+    month: "short",
+  }).format(d)
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d)
+  return `${date} ${time} น.`
 }
 
 /** บรรทัดข้อมูลใน dialog — ค่าว่างไม่ต้องแสดงแถว ลดความรก */
@@ -112,8 +131,12 @@ export function BillRow({ bill }: { bill: BillRecord }) {
           </DialogHeader>
           <div className="space-y-1.5">
             <Row
-              label="วันเวลา"
+              label="เวลาใช้บริการ"
               value={`${formatThaiDate(bill.sale_date)} ${bill.sale_time?.slice(0, 5) ?? ""} น.`}
+            />
+            <Row
+              label="บันทึกเมื่อ"
+              value={bill.created_at ? formatRecordedAt(bill.created_at) : null}
             />
             <Row
               label="ลูกค้า"

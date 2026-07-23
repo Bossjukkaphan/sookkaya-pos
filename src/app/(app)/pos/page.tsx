@@ -82,6 +82,15 @@ export default async function PosPage({
                 bedId: queueEntry.bed_id ?? "",
                 bookingChannel: queueEntry.booking_channel ?? "",
                 notes: queueEntry.notes ?? "",
+                // เวลาใช้บริการ: เวลากด "เริ่มนวด" จริงแม่นสุด รองลงมาคือเวลาคิวที่วางไว้
+                serviceTime: queueEntry.started_at
+                  ? new Intl.DateTimeFormat("en-GB", {
+                      timeZone: "Asia/Bangkok",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    }).format(new Date(queueEntry.started_at))
+                  : (queueEntry.start_time?.slice(0, 5) ?? ""),
               }
             : undefined
         }
