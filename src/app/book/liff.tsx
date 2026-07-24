@@ -21,7 +21,18 @@ export function useLiff(): LiffState {
           return
         }
         const idToken = liff.getIDToken()
-        if (!idToken) throw new Error("no token")
+        if (!idToken) {
+          // auto-login แบบเงียบอาจไม่ได้ idToken (ยังไม่เคย consent openid กับ channel นี้)
+          // → บังคับ login ใหม่ 1 ครั้งให้หน้าขออนุญาตเด้ง · กัน loop ด้วย sessionStorage
+          if (!sessionStorage.getItem("liff_relogin")) {
+            sessionStorage.setItem("liff_relogin", "1")
+            liff.logout()
+            liff.login()
+            return
+          }
+          throw new Error("no token after relogin")
+        }
+        sessionStorage.removeItem("liff_relogin")
         if (!cancelled) setState({ phase: "ready", idToken })
       } catch (e) {
         console.error("liff init failed:", e)
