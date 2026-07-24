@@ -68,6 +68,7 @@ function RejectButton({
     startTransition(async () => {
       const r = await rejectBooking(entryId, reason)
       if (!r.ok) toast.error(r.error)
+      else if (r.warning) toast.warning(r.warning)
       onDone()
     })
 
@@ -307,6 +308,7 @@ export function QueueCard({
                     startTransition(async () => {
                       const r = await approveBooking(entry.id)
                       if (!r.ok) toast.error(r.error)
+                      else if (r.warning) toast.warning(r.warning)
                       setOpen(false)
                       onChanged()
                     })

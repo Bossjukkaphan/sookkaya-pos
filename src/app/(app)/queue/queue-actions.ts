@@ -9,7 +9,7 @@ import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { pushLineMessage } from "@/lib/line"
 import { msgConfirmed, msgRejected, type BookingInfo } from "@/lib/line-messages"
 
-type Result = { ok: true } | { ok: false; error: string }
+type Result = { ok: true; warning?: string } | { ok: false; error: string }
 
 // paid ตั้งได้ทาง createSale เท่านั้น — หน้าคิวห้ามยิงสถานะนี้ตรงๆ
 const STATUSES = ["waiting", "in_service", "cancelled"] as const
@@ -262,7 +262,10 @@ export async function moveQueueEntry(
   return { ok: true }
 }
 
-/** เปลี่ยนสถานะ รอ ⇄ กำลังนวด · ยกเลิก */
+/** เปลี่ยนสถานะ รอ ⇄ กำลังนวด · ยกเลิก
+ * กัน pending ด้วย (ไม่ใช่แค่ paid) — คิวที่ยังไม่อนุมัติต้องผ่าน approveBooking เท่านั้น
+ * ไม่งั้นลาก/เปลี่ยนสถานะตรงๆ จะข้ามขั้นตอนส่งไลน์ยืนยันลูกค้าไปได้
+ * (หน้าจอปัจจุบันไม่มีปุ่มไหนเรียกด้วยสถานะ pending อยู่แล้ว — กันไว้อีกชั้นเผื่ออนาคต) */
 export async function setQueueStatus(id: string, status: string): Promise<Result> {
   if (!STATUSES.includes(status as (typeof STATUSES)[number]))
     return { ok: false, error: "สถานะไม่ถูกต้อง" }
@@ -271,7 +274,7 @@ export async function setQueueStatus(id: string, status: string): Promise<Result
     .from("queue_entries")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", id)
-    .neq("status", "paid")
+    .not("status", "in", "(paid,pending)")
   if (error) return { ok: false, error: error.message }
 
   if (status === "in_service") {
@@ -313,22 +316,30 @@ const bookingInfoOf = (
   services: entries.map((e) => e.service_name),
 })
 
-/** รับคำขอจากไลน์ — ทั้งกลุ่มพร้อมกัน + push ยืนยัน (ส่งไม่ผ่านไม่ทำให้รับคิวล้มเหลว — ต่อท้ายหมายเหตุแทนการเขียนทับ) */
+/** รับคำขอจากไลน์ — ทั้งกลุ่มพร้อมกัน + push ยืนยัน (ส่งไม่ผ่านไม่ทำให้รับคิวล้มเหลว — ต่อท้ายหมายเหตุแทนการเขียนทับ)
+ * .select("id") ท้าย update เอาไว้เช็ค TOCTOU — ระหว่าง loadPendingSet เห็น pending กับตอน update จริง
+ * อาจมีคนอื่นกด approve/reject ไปก่อนแล้ว (เช่นสองแท็บ/สองเครื่อง) ถ้า 0 แถวโดนอัปเดตคือโดนแซงไปแล้ว
+ * ต้องหยุดตรงนี้ ห้าม push ไลน์ซ้ำหรือ push ข้อความขัดแย้งกับที่ระบบเพิ่งส่งไป */
 export async function approveBooking(id: string): Promise<Result> {
   const set = await loadPendingSet(id)
   if (!set) return { ok: false, error: "คำขอนี้ถูกจัดการไปแล้ว" }
   const supabase = await createClient()
   const ids = set.entries.map((e) => e.id)
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("queue_entries")
     .update({ status: "waiting", updated_at: new Date().toISOString() })
     .in("id", ids)
     .eq("status", "pending")
+    .select("id")
   if (error) return { ok: false, error: error.message }
+  if (!updated || updated.length === 0)
+    return { ok: false, error: "คำขอนี้ถูกจัดการไปแล้ว" }
   const to = set.entries[0].line_user_id
+  let warning: string | undefined
   if (to) {
     const sent = await pushLineMessage(to, msgConfirmed(bookingInfoOf(set.entries)))
     if (!sent) {
+      warning = "รับจองแล้ว แต่ส่งไลน์ไม่ผ่าน — โทรแจ้งลูกค้าด้วยนะ"
       // ต่อท้ายหมายเหตุเดิม — ห้ามเขียนทับ เผื่อลูกค้าฝากข้อความพิเศษไว้ตอนจอง
       for (const e of set.entries) {
         await supabase
@@ -343,7 +354,7 @@ export async function approveBooking(id: string): Promise<Result> {
     }
   }
   revalidatePath("/queue")
-  return { ok: true }
+  return { ok: true, warning }
 }
 
 /** ปฏิเสธ — เหตุผลแนบไปกับข้อความไลน์ · การ์ดหายจากบอร์ด */
@@ -352,7 +363,7 @@ export async function rejectBooking(id: string, reason: string): Promise<Result>
   if (!set) return { ok: false, error: "คำขอนี้ถูกจัดการไปแล้ว" }
   const cleanReason = reason.trim() || "คิวช่วงเวลานั้นเต็ม"
   const supabase = await createClient()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("queue_entries")
     .update({
       status: "rejected",
@@ -364,9 +375,16 @@ export async function rejectBooking(id: string, reason: string): Promise<Result>
       set.entries.map((e) => e.id)
     )
     .eq("status", "pending")
+    .select("id")
   if (error) return { ok: false, error: error.message }
+  if (!updated || updated.length === 0)
+    return { ok: false, error: "คำขอนี้ถูกจัดการไปแล้ว" }
   const to = set.entries[0].line_user_id
-  if (to) await pushLineMessage(to, msgRejected(bookingInfoOf(set.entries), cleanReason))
+  let warning: string | undefined
+  if (to) {
+    const sent = await pushLineMessage(to, msgRejected(bookingInfoOf(set.entries), cleanReason))
+    if (!sent) warning = "ปฏิเสธแล้ว แต่ส่งไลน์ไม่ผ่าน — โทรแจ้งลูกค้าด้วยนะ"
+  }
   revalidatePath("/queue")
-  return { ok: true }
+  return { ok: true, warning }
 }
