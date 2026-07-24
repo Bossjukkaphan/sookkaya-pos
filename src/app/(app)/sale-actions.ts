@@ -110,7 +110,18 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .eq("id", user.id)
     .maybeSingle()
 
-  const saleDate = todayInShopTz()
+  // วันที่ยอดขาย = วันที่ให้บริการ: บิลที่ผูกคิว (รวมจองล่วงหน้าจากไลน์) ใช้วันของคิว
+  // ไม่ใช่วันที่คีย์บิล — ยอดขาย/ค่ามือหมอ/ประกันรายวัน ต้องตกวันเดียวกับที่นวดจริง
+  const linkedQueueId = String(formData.get("queue_entry_id") ?? "")
+  let saleDate = todayInShopTz()
+  if (linkedQueueId) {
+    const { data: linkedQueue } = await supabase
+      .from("queue_entries")
+      .select("queue_date")
+      .eq("id", linkedQueueId)
+      .maybeSingle()
+    if (linkedQueue?.queue_date) saleDate = linkedQueue.queue_date
+  }
   // sale_time = เวลาที่ลูกค้าใช้บริการ (พนักงานแก้ได้ เพราะบิลมักคีย์หลังนวดเสร็จ)
   // ส่วนเวลาที่บันทึกจริงอยู่ที่ created_at ซึ่งฐานข้อมูลประทับให้เองเสมอ
   const saleTime = /^\d{2}:\d{2}$/.test(String(formData.get("sale_time") ?? ""))
@@ -171,7 +182,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   //  พนักงานกดเก็บเงินซ้ำไม่เกิดใบขายซ้ำ เพราะหน้า POS กรอง status=paid ออกแล้ว)
   // กัน pending/rejected ด้วย — คิวที่ยังไม่อนุมัติ/ถูกปฏิเสธจากไลน์ ห้ามถูกผูกบิลจนกว่าจะรับจองก่อน
   // (cancelled ยังปล่อยผ่านเหมือนเดิม — พนักงานเปิดบิลให้คิวที่เคยยกเลิกได้ตั้งใจ ถ้าลูกค้ากลับมา)
-  const queueEntryId = String(formData.get("queue_entry_id") ?? "")
+  const queueEntryId = linkedQueueId
   if (queueEntryId) {
     await supabase
       .from("queue_entries")
