@@ -93,22 +93,28 @@ export async function getBookingOptions(): Promise<
     }
   | Fail
 > {
-  const db = createServiceClient()
-  const [
-    { data: services, error: servicesError },
-    { data: therapists, error: therapistsError },
-  ] = await Promise.all([
-    db.from("services").select("id, name, price, duration_min").eq("is_active", true).order("name"),
-    db.from("therapists").select("id, name").eq("status", "active").order("name"),
-  ])
-  if (servicesError || therapistsError)
+  // createServiceClient() โยน exception แบบ sync ถ้ายังไม่ตั้งค่า env (เช่นก่อนร้านทำ Task 0)
+  // ต้องดักไว้ตรงนี้ ไม่งั้นหน้า /book (SSR) จะ 500 ทั้งหน้าแทนที่จะโชว์ข้อความนี้เฉยๆ
+  try {
+    const db = createServiceClient()
+    const [
+      { data: services, error: servicesError },
+      { data: therapists, error: therapistsError },
+    ] = await Promise.all([
+      db.from("services").select("id, name, price, duration_min").eq("is_active", true).order("name"),
+      db.from("therapists").select("id, name").eq("status", "active").order("name"),
+    ])
+    if (servicesError || therapistsError)
+      return { ok: false, error: "โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะคะ" }
+    return {
+      ok: true,
+      services: (services ?? []).map((s) => ({
+        id: s.id, name: s.name, price: Number(s.price), durationMin: s.duration_min ?? 60,
+      })),
+      therapists: therapists ?? [],
+    }
+  } catch {
     return { ok: false, error: "โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะคะ" }
-  return {
-    ok: true,
-    services: (services ?? []).map((s) => ({
-      id: s.id, name: s.name, price: Number(s.price), durationMin: s.duration_min ?? 60,
-    })),
-    therapists: therapists ?? [],
   }
 }
 
