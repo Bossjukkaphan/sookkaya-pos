@@ -1,7 +1,6 @@
 import { getMyProfile } from "@/lib/auth"
 import { signOut } from "@/app/actions"
 import { createClient } from "@/lib/supabase/server"
-import { todayInShopTz } from "@/lib/datetime"
 import { AppShell } from "@/components/app-shell"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -19,13 +18,15 @@ export default async function AppLayout({
 }) {
   const profile = await getMyProfile()
 
-  // ป้ายจำนวนคำขอจองจากไลน์ที่รอตัดสินใจ (วันนี้เป็นต้นไป) — เตือนบนเมนูให้เห็นทุกหน้า
+  // ป้ายจำนวนคำขอจองจากไลน์ที่รอตัดสินใจ — เตือนบนเมนูให้เห็นทุกหน้า
+  // ห้ามกรองวันที่ (ไม่มี .gte("queue_date", ...)): ถ้ากรองแค่วันนี้เป็นต้นไป
+  // รายการที่ค้างข้ามวันไปแล้ว (ร้านลืมตัดสินใจ) จะหายจากป้ายทั้งที่ลูกค้ายังเห็น
+  // "รอร้านยืนยัน" อยู่ฝั่งไลน์ตลอด — ต้องนับทุก pending จนกว่าพนักงานจะรับ/ปฏิเสธเอง
   const supabase = await createClient()
   const { count: pendingCount } = await supabase
     .from("queue_entries")
     .select("id", { count: "exact", head: true })
     .eq("status", "pending")
-    .gte("queue_date", todayInShopTz())
 
   return (
     <div className="flex min-h-full flex-1 flex-col sm:flex-row">

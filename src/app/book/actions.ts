@@ -38,11 +38,13 @@ export async function getLineStatus(idToken: string): Promise<
   return { ok: true, linked: false, displayName: who.displayName ?? null }
 }
 
-/** ผูกบัญชีครั้งแรกด้วยเบอร์โทร — เบอร์ช่วยจับคู่เท่านั้น ไม่ใช่ตัวให้สิทธิ์ */
+/** ผูกบัญชีครั้งแรกด้วยเบอร์โทร — เบอร์ช่วยจับคู่เท่านั้น ไม่ใช่ตัวให้สิทธิ์
+ *  ห้ามคืนชื่อลูกค้าจริงตรงนี้: ใครก็ตามที่ล็อกอินไลน์แล้วกรอกเบอร์คนอื่น (สุ่ม/เดา)
+ *  จะได้รู้ชื่อเจ้าของเบอร์นั้นทันที เป็นช่องโหว่สอดแนมข้อมูลลูกค้า — wizard ก็ไม่ได้ใช้ชื่อนี้อยู่แล้ว */
 export async function linkLineAccount(
   idToken: string,
   phone: string
-): Promise<{ ok: true; customerName: string } | Fail> {
+): Promise<{ ok: true } | Fail> {
   const who = await verifyLineIdToken(idToken)
   if (!who) return AUTH_FAIL
   const clean = phone.replace(/\D/g, "")
@@ -51,18 +53,15 @@ export async function linkLineAccount(
   const db = createServiceClient()
   const { data: matches } = await db.from("customers").select("id, name").eq("phone", clean)
   let customerId: string
-  let customerName: string
   if (!matches || matches.length === 0) {
     const { data: created, error } = await db
       .from("customers")
       .insert({ name: who.displayName ?? "ลูกค้า LINE", phone: clean })
-      .select("id, name").single()
+      .select("id").single()
     if (error) return { ok: false, error: "สร้างข้อมูลลูกค้าไม่สำเร็จ ลองใหม่นะคะ" }
     customerId = created.id
-    customerName = created.name
   } else if (matches.length === 1) {
     customerId = matches[0].id
-    customerName = matches[0].name
   } else {
     // เบอร์ซ้ำหลายคน → เลือกคนที่มีบิลล่าสุด (ตาม spec)
     const { data: latest } = await db
@@ -71,7 +70,6 @@ export async function linkLineAccount(
       .order("sale_date", { ascending: false }).limit(1).maybeSingle()
     const pick = matches.find((m) => m.id === latest?.customer_id) ?? matches[0]
     customerId = pick.id
-    customerName = pick.name
   }
   const { error } = await db.from("line_accounts").upsert({
     line_user_id: who.userId,
@@ -81,7 +79,7 @@ export async function linkLineAccount(
     phone: clean,
   })
   if (error) return { ok: false, error: "ผูกบัญชีไม่สำเร็จ ลองใหม่นะคะ" }
-  return { ok: true, customerName }
+  return { ok: true }
 }
 
 /** เมนู+หมอสำหรับ wizard (เปิดเผยเฉพาะ ชื่อ/ราคา/ระยะเวลา) */
@@ -113,7 +111,8 @@ export async function getBookingOptions(): Promise<
       })),
       therapists: therapists ?? [],
     }
-  } catch {
+  } catch (e) {
+    console.error("getBookingOptions failed:", e)
     return { ok: false, error: "โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะคะ" }
   }
 }
@@ -129,9 +128,13 @@ export async function createBookingRequest(
   const db = createServiceClient()
 
   const { data: account } = await db
-    .from("line_accounts").select("customer_id, phone, display_name")
+    .from("line_accounts").select("customer_id, phone, display_name, customers(name)")
     .eq("line_user_id", who.userId).maybeSingle()
   if (!account) return { ok: false, error: "กรุณายืนยันเบอร์โทรก่อนจองค่ะ" }
+  // ชื่อบนการ์ดคิว: ใช้ชื่อจริงในระบบลูกค้าก่อน (พนักงานคุ้นชื่อนี้) — ตกไปใช้ชื่อเล่นไลน์ถ้าไม่มี
+  const customerName =
+    (account as unknown as { customers: { name: string } | null }).customers?.name ??
+    account.display_name
 
   if (input.people.length < 1 || input.people.length > 4)
     return { ok: false, error: "จองได้ครั้งละ 1–4 ท่านค่ะ" }
@@ -147,6 +150,18 @@ export async function createBookingRequest(
   const serviceById = new Map((services ?? []).map((s) => [s.id, s]))
   if (input.people.some((p) => !serviceById.has(p.serviceId)))
     return { ok: false, error: "มีเมนูที่ไม่พร้อมให้จอง รีเฟรชแล้วลองใหม่นะคะ" }
+
+  // กันรีเควสหมอที่ลาออก/ปิดรับแล้ว (ข้อมูลฝั่งลูกค้าอาจ cache หมอเก่าไว้)
+  const therapistIds = [...new Set(
+    input.people.map((p) => p.therapistId).filter((id): id is string => id !== null))]
+  if (therapistIds.length > 0) {
+    const { data: activeTherapists } = await db
+      .from("therapists").select("id").eq("status", "active").in("id", therapistIds)
+    const activeIds = new Set((activeTherapists ?? []).map((t) => t.id))
+    if (therapistIds.some((id) => !activeIds.has(id)))
+      return { ok: false, error: "หมอที่เลือกไม่พร้อมให้จอง รีเฟรชแล้วลองใหม่นะคะ" }
+  }
+
   const maxDuration = Math.max(
     ...input.people.map((p) => serviceById.get(p.serviceId)!.duration_min ?? 60))
   const validSlots = computeSlots({ date: input.date, today, nowMin: nowMin(), durationMin: maxDuration })
@@ -178,7 +193,7 @@ export async function createBookingRequest(
       therapist_id: p.therapistId,
       is_request: p.therapistId !== null,   // เลือกหมอ = รีเควส (spec)
       customer_id: account.customer_id,
-      customer_name: account.display_name,
+      customer_name: customerName,
       customer_phone: account.phone,
       notes: note || null,
       status: "pending",
