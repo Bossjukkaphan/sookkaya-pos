@@ -170,8 +170,11 @@ export function BookingWizard({ services, therapists }: {
             <div key={i} className="mb-3">
               <p className="mb-1 text-sm text-slate-600">ท่านที่ {i + 1}</p>
               <select value={p.serviceId} className="w-full rounded-lg border px-2 py-3"
-                onChange={(e) => setPeople((arr) =>
-                  arr.map((x, j) => (j === i ? { ...x, serviceId: e.target.value } : x)))}>
+                onChange={(e) => {
+                  setPeople((arr) =>
+                    arr.map((x, j) => (j === i ? { ...x, serviceId: e.target.value } : x)))
+                  setTime("") // ระยะเวลาเปลี่ยน → ช่วงเวลาที่เคยเลือกอาจไม่ตรงกับ slot ที่คำนวณใหม่
+                }}>
                 <option value="">— เลือกเมนู —</option>
                 {services.map((s) => (
                   <option key={s.id} value={s.id}>{s.name} · {s.price}฿</option>
@@ -181,8 +184,10 @@ export function BookingWizard({ services, therapists }: {
           ))}
           {count > 1 && people[0].serviceId && (
             <button className="text-sm text-[#664343] underline"
-              onClick={() => setPeople((arr) =>
-                arr.map((x) => ({ ...x, serviceId: arr[0].serviceId })))}>
+              onClick={() => {
+                setPeople((arr) => arr.map((x) => ({ ...x, serviceId: arr[0].serviceId })))
+                setTime("")
+              }}>
               ใช้เมนูเดียวกับท่านที่ 1 ทุกคน
             </button>
           )}

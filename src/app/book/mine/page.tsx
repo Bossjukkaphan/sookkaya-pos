@@ -15,6 +15,50 @@ const STATUS_TH: Record<string, { label: string; cls: string }> = {
   rejected: { label: "ร้านรับไม่ได้", cls: "bg-orange-50 text-orange-600" },
 }
 
+/** การ์ดแต่ละใบ — module scope กัน remount ทั้ง DOM ทุกครั้งที่ MyBookingsPage re-render */
+function Card({
+  b, showCancel, confirmKey, cancelError, onRebook, onRequestCancel, onConfirmCancel,
+}: {
+  b: MyBooking
+  showCancel: boolean
+  confirmKey: string | null
+  cancelError: string
+  onRebook: (b: MyBooking) => void
+  onRequestCancel: (key: string) => void
+  onConfirmCancel: (b: MyBooking) => void
+}) {
+  const key = b.groupId ?? b.id
+  const st = STATUS_TH[b.status] ?? STATUS_TH.pending
+  return (
+    <div className="rounded-xl border bg-white p-4">
+      <div className="flex items-center justify-between">
+        <p className="font-semibold">{b.dateLabel} · {b.time}</p>
+        <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>{st.label}</span>
+      </div>
+      <p className="mt-1 text-sm text-slate-600">
+        {b.services.join(" / ")}{b.services.length > 1 && ` (${b.services.length} ท่าน)`}</p>
+      <div className="mt-2 flex items-center gap-4">
+        <button className="text-sm text-[#664343] underline" onClick={() => onRebook(b)}>
+          ↺ จองซ้ำ</button>
+        {showCancel && (b.canCancel ? (
+          <button className={`text-sm ${confirmKey === key ? "font-bold text-red-600" : "text-red-500"}`}
+            onClick={async () => {
+              if (confirmKey !== key) { onRequestCancel(key); return }
+              onConfirmCancel(b)
+            }}>
+            {confirmKey === key ? "แตะอีกครั้งเพื่อยืนยันยกเลิก" : "ยกเลิกการจอง"}
+          </button>
+        ) : (
+          <span className="text-xs text-slate-400">ใกล้เวลานัด — ยกเลิกโทรแจ้งร้านนะคะ</span>
+        ))}
+      </div>
+      {showCancel && confirmKey === key && cancelError && (
+        <p className="mt-1 text-xs text-red-600">{cancelError}</p>
+      )}
+    </div>
+  )
+}
+
 export default function MyBookingsPage() {
   const liffState = useLiff()
   const router = useRouter()
@@ -56,41 +100,18 @@ export default function MyBookingsPage() {
     router.push("/book")
   }
 
-  const Card = ({ b, showCancel }: { b: MyBooking; showCancel: boolean }) => {
-    const key = b.groupId ?? b.id
-    const st = STATUS_TH[b.status] ?? STATUS_TH.pending
-    return (
-      <div className="rounded-xl border bg-white p-4">
-        <div className="flex items-center justify-between">
-          <p className="font-semibold">{b.dateLabel} · {b.time}</p>
-          <span className={`rounded-full px-2 py-0.5 text-xs ${st.cls}`}>{st.label}</span>
-        </div>
-        <p className="mt-1 text-sm text-slate-600">
-          {b.services.join(" / ")}{b.services.length > 1 && ` (${b.services.length} ท่าน)`}</p>
-        <div className="mt-2 flex items-center gap-4">
-          <button className="text-sm text-[#664343] underline" onClick={() => rebook(b)}>
-            ↺ จองซ้ำ</button>
-          {showCancel && (b.canCancel ? (
-            <button className={`text-sm ${confirmKey === key ? "font-bold text-red-600" : "text-red-500"}`}
-              onClick={async () => {
-                if (confirmKey !== key) { setConfirmKey(key); return }
-                setCancelError("")
-                const r = await cancelBooking(idToken, { id: b.id, groupId: b.groupId })
-                if (r.ok) { setConfirmKey(null); load() }
-                else if (r.code === "auth") recoverAuth()
-                else setCancelError(r.error)
-              }}>
-              {confirmKey === key ? "แตะอีกครั้งเพื่อยืนยันยกเลิก" : "ยกเลิกการจอง"}
-            </button>
-          ) : (
-            <span className="text-xs text-slate-400">ใกล้เวลานัด — ยกเลิกโทรแจ้งร้านนะคะ</span>
-          ))}
-        </div>
-        {showCancel && confirmKey === key && cancelError && (
-          <p className="mt-1 text-xs text-red-600">{cancelError}</p>
-        )}
-      </div>
-    )
+  // แตะครั้งแรก = ขอยืนยัน, ล้าง error ของการ์ดก่อนหน้าไปด้วย (กันข้อความเก่าเปื้อนการ์ดใหม่)
+  const requestCancel = (key: string) => {
+    setConfirmKey(key)
+    setCancelError("")
+  }
+
+  const confirmCancel = async (b: MyBooking) => {
+    setCancelError("")
+    const r = await cancelBooking(idToken, { id: b.id, groupId: b.groupId })
+    if (r.ok) { setConfirmKey(null); load() }
+    else if (r.code === "auth") recoverAuth()
+    else setCancelError(r.error)
   }
 
   return (
@@ -99,11 +120,17 @@ export default function MyBookingsPage() {
       {upcoming.length === 0 && (
         <p className="py-6 text-center text-sm text-slate-500">ยังไม่มีคิวข้างหน้าค่ะ</p>
       )}
-      {upcoming.map((b) => <Card key={b.groupId ?? b.id} b={b} showCancel />)}
+      {upcoming.map((b) => (
+        <Card key={b.groupId ?? b.id} b={b} showCancel confirmKey={confirmKey} cancelError={cancelError}
+          onRebook={rebook} onRequestCancel={requestCancel} onConfirmCancel={confirmCancel} />
+      ))}
       {past.length > 0 && (
         <>
           <h3 className="pt-2 text-sm font-semibold text-slate-500">ที่ผ่านมา</h3>
-          {past.map((b) => <Card key={b.groupId ?? b.id} b={b} showCancel={false} />)}
+          {past.map((b) => (
+            <Card key={b.groupId ?? b.id} b={b} showCancel={false} confirmKey={confirmKey} cancelError={cancelError}
+              onRebook={rebook} onRequestCancel={requestCancel} onConfirmCancel={confirmCancel} />
+          ))}
         </>
       )}
       <Link href="/book" className="block text-center text-sm text-[#664343] underline">← จองคิวใหม่</Link>
