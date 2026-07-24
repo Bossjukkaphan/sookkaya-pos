@@ -28,6 +28,12 @@ export const MEMBER_TIERS = [
 /** ประกันมือขั้นต่ำต่อวัน (ค่า default — ค่าจริงอ่านจาก settings) */
 export const DEFAULT_MIN_COMMISSION = 500
 
+/**
+ * ค่ารีเควสหมอ — ราคาเดียวตายตัว ติ๊กแล้วระบบคิดให้เลย ไม่ให้พิมพ์เอง
+ * (ตรวจบิลจริงทั้ง 200 ใบที่มีรีเควส = 40 บาททุกใบ · พนักงานขอให้ล็อกกันคีย์ผิด)
+ */
+export const REQUEST_FEE = 40
+
 export function formatBaht(amount: number): string {
   return new Intl.NumberFormat("th-TH", {
     minimumFractionDigits: 0,

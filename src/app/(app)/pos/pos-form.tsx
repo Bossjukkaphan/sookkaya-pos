@@ -9,6 +9,7 @@ import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
   PAYMENT_METHODS,
+  REQUEST_FEE,
   formatBaht,
 } from "@/lib/constants"
 import {
@@ -54,6 +55,8 @@ export type PosInitial = {
   notes: string
   /** เวลาเริ่มนวดจริงจากคิว (HH:MM) — บิลมักถูกคีย์หลังนวดเสร็จ เวลากดบันทึกไม่ใช่เวลาใช้บริการ */
   serviceTime: string
+  /** รีเควสหมอที่ติ๊กไว้ตั้งแต่ตอนจองคิว — ติ๊กให้เลย +40 อัตโนมัติ */
+  isRequest: boolean
 }
 
 export function PosForm({
@@ -74,8 +77,8 @@ export function PosForm({
   const [paymentMethod, setPaymentMethod] = useState("")
   const [discount, setDiscount] = useState("")
   const [gowabiNet, setGowabiNet] = useState("")
-  const [isRequest, setIsRequest] = useState(false)
-  const [requestFee, setRequestFee] = useState("")
+  // มาจากคิวที่ติ๊กรีเควสไว้ → ติ๊กให้เลย ไม่ต้องจำมากรอกซ้ำ
+  const [isRequest, setIsRequest] = useState(initial?.isRequest ?? false)
   const [customerId, setCustomerId] = useState(initial?.customerId ?? "")
   const [customerName, setCustomerName] = useState(initial?.customerName ?? "")
   const [customerPhone, setCustomerPhone] = useState(initial?.customerPhone ?? "")
@@ -120,7 +123,6 @@ export function PosForm({
     setDiscount("")
     setGowabiNet("")
     setIsRequest(false)
-    setRequestFee("")
     setCustomerId("")
     setCustomerName("")
     setCustomerPhone("")
@@ -424,7 +426,7 @@ export function PosForm({
         )}
       </div>
 
-      {/* รีเควส */}
+      {/* รีเควส — ค่าตายตัว ติ๊กแล้วระบบคิดให้เลย ไม่ให้พิมพ์เอง (กันคีย์ผิด) */}
       <div className="flex items-center gap-3 rounded-lg border p-3">
         <Checkbox
           id="is_request"
@@ -433,20 +435,14 @@ export function PosForm({
           onCheckedChange={(v) => setIsRequest(v === true)}
         />
         <Label htmlFor="is_request" className="flex-1 cursor-pointer">
-          ลูกค้ารีเควสหมอ
+          ลูกค้ารีเควสหมอ{" "}
+          <span className="font-normal text-slate-500">(+{REQUEST_FEE} ฿)</span>
         </Label>
         {isRequest && (
-          <Input
-            name="request_fee"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            className="h-10 w-28"
-            value={requestFee}
-            onChange={(e) => setRequestFee(e.target.value)}
-            placeholder="ค่ารีเควส"
-            aria-label="ค่ารีเควส (บาท)"
-          />
+          <>
+            <input type="hidden" name="request_fee" value={REQUEST_FEE} />
+            <span className="font-semibold text-emerald-700">+{REQUEST_FEE} ฿</span>
+          </>
         )}
       </div>
 

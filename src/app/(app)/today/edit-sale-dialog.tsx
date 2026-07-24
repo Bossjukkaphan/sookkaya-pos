@@ -12,6 +12,7 @@ import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
   PAYMENT_METHODS,
+  REQUEST_FEE,
   formatBaht,
 } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
@@ -153,9 +154,6 @@ function EditSaleForm({
     sale.payment_method === GOWABI_METHOD ? String(sale.net_amount) : ""
   )
   const [isRequest, setIsRequest] = useState(sale.is_request)
-  const [requestFee, setRequestFee] = useState(
-    sale.request_fee > 0 ? String(sale.request_fee) : ""
-  )
   const [customerId, setCustomerId] = useState(sale.customer_id ?? "")
   const [customerName, setCustomerName] = useState(sale.customer_name ?? "")
   const [customerPhone, setCustomerPhone] = useState(sale.customer_phone ?? "")
@@ -202,7 +200,7 @@ function EditSaleForm({
         paymentMethod,
         gowabiNet: isGowabi ? Math.max(0, Number(gowabiNet) || 0) : null,
         isRequest,
-        requestFee: Number(requestFee) || 0,
+        requestFee: REQUEST_FEE,
         serviceCommission: service?.commission ?? 0,
         memberRatio: isMemberCredit ? ratio : null,
       }),
@@ -213,7 +211,6 @@ function EditSaleForm({
       gowabiNet,
       isGowabi,
       isRequest,
-      requestFee,
       isMemberCredit,
       ratio,
     ]
@@ -437,20 +434,14 @@ function EditSaleForm({
           onCheckedChange={(v) => setIsRequest(v === true)}
         />
         <Label htmlFor={uid("is_request")} className="flex-1 cursor-pointer">
-          ลูกค้ารีเควสหมอ
+          ลูกค้ารีเควสหมอ{" "}
+          <span className="font-normal text-slate-500">(+{REQUEST_FEE} ฿)</span>
         </Label>
         {isRequest && (
-          <Input
-            name="request_fee"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            className="h-10 w-28"
-            value={requestFee}
-            onChange={(e) => setRequestFee(e.target.value)}
-            placeholder="ค่ารีเควส"
-            aria-label="ค่ารีเควส (บาท)"
-          />
+          <>
+            <input type="hidden" name="request_fee" value={REQUEST_FEE} />
+            <span className="font-semibold text-emerald-700">+{REQUEST_FEE} ฿</span>
+          </>
         )}
       </div>
 

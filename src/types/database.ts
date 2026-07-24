@@ -287,6 +287,8 @@ export type Database = {
           customer_id: string | null
           customer_name: string | null
           group_id: string | null
+          customer_phone: string | null
+          is_request: boolean
           duration_min: number
           id: string
           notes: string | null
@@ -308,6 +310,8 @@ export type Database = {
           customer_id?: string | null
           customer_name?: string | null
           group_id?: string | null
+          customer_phone?: string | null
+          is_request?: boolean
           duration_min: number
           id?: string
           notes?: string | null
@@ -329,6 +333,8 @@ export type Database = {
           customer_id?: string | null
           customer_name?: string | null
           group_id?: string | null
+          customer_phone?: string | null
+          is_request?: boolean
           duration_min?: number
           id?: string
           notes?: string | null

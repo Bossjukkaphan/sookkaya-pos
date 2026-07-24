@@ -27,8 +27,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { REQUEST_FEE } from "@/lib/constants"
 
 const DURATIONS = [30, 45, 60, 90, 120]
 
@@ -102,7 +104,9 @@ export function QueueFormDialog({
   const [notes, setNotes] = useState(entry?.notes ?? "")
   const [customerId, setCustomerId] = useState(entry?.customer_id ?? "")
   const [customerName, setCustomerName] = useState(entry?.customer_name ?? "")
-  const [customerPhone, setCustomerPhone] = useState("")
+  const [customerPhone, setCustomerPhone] = useState(entry?.customer_phone ?? "")
+  // รีเควสหมอบันทึกตั้งแต่ตอนจอง — ตอนกดเก็บเงินระบบจะติ๊ก +40 ให้เอง ไม่ตกหล่น
+  const [isRequest, setIsRequest] = useState(entry?.is_request ?? false)
   // ลูกค้ามาเป็นครอบครัว/กลุ่ม: คนแรกใช้ช่องหลักด้านบน คนต่อไปเพิ่มเป็นแถวย่อย
   // (เวลา·ลูกค้าผู้ติดต่อ·ที่มา·หมายเหตุ ใช้ร่วมกันทั้งกลุ่ม)
   const [extraPeople, setExtraPeople] = useState<GroupPerson[]>([])
@@ -116,7 +120,12 @@ export function QueueFormDialog({
         ? await updateQueueEntry(entry.id, fd)
         : extraPeople.length > 0
           ? await createQueueGroup(fd, [
-              { therapistId: therapistId || null, serviceId, bedId: bedId || null },
+              {
+                therapistId: therapistId || null,
+                serviceId,
+                bedId: bedId || null,
+                isRequest,
+              },
               ...extraPeople,
             ])
           : await createQueueEntry(fd)
@@ -303,6 +312,22 @@ export function QueueFormDialog({
             })()}
           </fieldset>
 
+          {/* รีเควสหมอ — เก็บตั้งแต่ตอนจอง ระบบคิดค่ารีเควสตายตัวตอนเก็บเงิน */}
+          <div className="flex items-center gap-3 rounded-lg border p-3">
+            <Checkbox
+              id="q_is_request"
+              name="is_request"
+              checked={isRequest}
+              onCheckedChange={(v) => setIsRequest(v === true)}
+            />
+            <Label htmlFor="q_is_request" className="flex-1 cursor-pointer">
+              ลูกค้ารีเควสหมอ{" "}
+              <span className="font-normal text-slate-500">
+                (+{REQUEST_FEE} ฿ คิดตอนเก็บเงิน)
+              </span>
+            </Label>
+          </div>
+
           {/* จองเป็นกลุ่ม: คนแรกคือช่องหลักด้านบน คนต่อไปเพิ่มแถวตรงนี้
               ทั้งกลุ่มเริ่มเวลาเดียวกัน ใช้ลูกค้าผู้ติดต่อ/ที่มา/หมายเหตุร่วมกัน */}
           {!isEdit && (
@@ -314,7 +339,7 @@ export function QueueFormDialog({
                 </span>
               </legend>
               {extraPeople.map((p, i) => (
-                <div key={i} className="flex items-center gap-1.5">
+                <div key={i} className="flex flex-wrap items-center gap-1.5">
                   <span className="w-10 shrink-0 text-xs text-slate-500">
                     คนที่ {i + 2}
                   </span>
@@ -356,6 +381,20 @@ export function QueueFormDialog({
                       </option>
                     ))}
                   </select>
+                  <label className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-slate-600">
+                    <Checkbox
+                      checked={p.isRequest ?? false}
+                      onCheckedChange={(v) =>
+                        setExtraPeople((arr) =>
+                          arr.map((x, j) =>
+                            j === i ? { ...x, isRequest: v === true } : x
+                          )
+                        )
+                      }
+                      aria-label={`รีเควสหมอคนที่ ${i + 2}`}
+                    />
+                    รีเควส
+                  </label>
                   <Button
                     type="button"
                     variant="ghost"

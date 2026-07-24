@@ -101,7 +101,8 @@ export default async function PosPage({
         serviceId: e.service_id ?? "",
         customerId: customer?.id ?? "",
         customerName: customer?.name ?? e.customer_name ?? "",
-        customerPhone: customer?.phone ?? "",
+        customerPhone: customer?.phone ?? e.customer_phone ?? "",
+        isRequest: e.is_request,
         serviceTime: e.started_at
           ? toShopTime(e.started_at)
           : (e.start_time?.slice(0, 5) ?? ""),
@@ -149,15 +150,31 @@ export default async function PosPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-bold">บันทึกขาย</h1>
-        <Link
-          href="/pos?multi=1"
-          className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-800 hover:bg-sky-100"
-        >
-          👨‍👩‍👧 มาหลายคน
-        </Link>
+        <div className="flex gap-2">
+          {/* ลูกค้าจองล่วงหน้า/ยังไม่ชำระ → ไปลงเป็นคิว (ยังไม่นับยอดขายจนกดเก็บเงิน) */}
+          <Link
+            href="/queue?add=1"
+            className="rounded-md border border-[#664343]/30 bg-[#FFF0D1]/60 px-3 py-1.5 text-sm font-medium text-[#664343] hover:bg-[#FFF0D1]"
+          >
+            📅 จองล่วงหน้า
+          </Link>
+          <Link
+            href="/pos?multi=1"
+            className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-800 hover:bg-sky-100"
+          >
+            👨‍👩‍👧 มาหลายคน
+          </Link>
+        </div>
       </div>
+      <p className="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
+        หน้านี้ = ลูกค้า<span className="font-semibold">ชำระเงินแล้ว</span>เท่านั้น ·
+        ถ้าลูกค้าจองไว้ยังไม่มา/ยังไม่จ่าย กด{" "}
+        <span className="font-semibold text-[#664343]">📅 จองล่วงหน้า</span>{" "}
+        ระบบจะเก็บชื่อ เบอร์ เมนู เวลา หมอ และรีเควสไว้ก่อน
+        แล้วค่อยกดเก็บเงินจากการ์ดคิวเมื่อลูกค้ามาถึง
+      </p>
       {queueEntry && (
         <p className="rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-800">
           เก็บเงินจากคิว: {queueEntry.service_name}
@@ -177,7 +194,8 @@ export default async function PosPage({
                 serviceId: queueEntry.service_id ?? "",
                 customerId: queueCustomer?.id ?? "",
                 customerName: queueCustomer?.name ?? queueEntry.customer_name ?? "",
-                customerPhone: queueCustomer?.phone ?? "",
+                customerPhone: queueCustomer?.phone ?? queueEntry.customer_phone ?? "",
+                isRequest: queueEntry.is_request,
                 source: queueEntry.source,
                 bedId: queueEntry.bed_id ?? "",
                 bookingChannel: queueEntry.booking_channel ?? "",

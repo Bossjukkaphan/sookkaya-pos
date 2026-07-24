@@ -192,6 +192,8 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       duration_min: service.duration_min ?? 60,
       customer_id: customerId,
       customer_name: String(formData.get("customer_name") ?? "").trim() || null,
+      customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
+      is_request: isRequest,
       start_time: saleTime,
       status: "paid",
       sale_id: inserted.id,

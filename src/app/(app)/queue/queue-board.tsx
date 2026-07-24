@@ -61,6 +61,7 @@ export function QueueBoard({
   boardDate,
   isToday,
   turnAwayCount,
+  autoOpenAdd = false,
 }: {
   therapists: Therapist[]
   services: ServiceOption[]
@@ -69,16 +70,19 @@ export function QueueBoard({
   boardDate: string
   isToday: boolean
   turnAwayCount: number
+  /** มาจากปุ่ม "จองล่วงหน้า" หน้าบันทึกขาย — เปิดฟอร์มเพิ่มคิวให้เลย */
+  autoOpenAdd?: boolean
 }) {
   const [entries, setEntries] = useState(initialEntries)
   const [nowMin, setNowMin] = useState(nowMinInShopTz)
   const [drag, setDrag] = useState<DragState | null>(null)
   // ฟอร์มเพิ่ม/แก้คิว — mount เมื่อเปิดเท่านั้น state ในฟอร์มจะสดเสมอ
+  // autoOpenAdd: มาจากปุ่ม "จองล่วงหน้า" หน้าบันทึกขาย → เปิดฟอร์มรอเลย
   const [form, setForm] = useState<null | {
     entry?: QueueEntry
     therapistId?: string | null
     startTime?: string
-  }>(null)
+  }>(autoOpenAdd ? {} : null)
   const scrollRef = useRef<HTMLDivElement>(null)
   // ref คือแหล่งความจริงของการลาก อัปเดตทันทีใน handler — ถ้า sync ผ่าน effect
   // จะช้ากว่า event ถัดไปหนึ่งจังหวะ แล้วการขยับหลังครบ 300ms พอดีจะโดนตัดทิ้ง

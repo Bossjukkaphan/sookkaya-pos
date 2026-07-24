@@ -129,6 +129,11 @@ export function QueueCard({
           )}
           {entry.customer_name || "ไม่ระบุลูกค้า"} · {STATUS_LABEL[entry.status]}
           {bed && ` · ${shortBedName(bed)}`}
+          {entry.is_request && (
+            <span className="ml-1 rounded border border-amber-200 bg-amber-50 px-1 text-[10px] font-medium text-amber-700">
+              รีเควส
+            </span>
+          )}
         </p>
       </button>
 
@@ -161,6 +166,10 @@ export function QueueCard({
                 เตียง: {bed.room} {bed.name}
               </p>
             )}
+            {entry.customer_phone && <p>เบอร์โทร: {entry.customer_phone}</p>}
+            {entry.is_request && (
+              <p className="text-amber-700">รีเควสหมอ (+40 ฿ คิดตอนเก็บเงิน)</p>
+            )}
             {entry.notes && <p>หมายเหตุ: {entry.notes}</p>}
             <p>สถานะ: {STATUS_LABEL[entry.status]}</p>
             {hasOverlap && (
@@ -170,12 +179,9 @@ export function QueueCard({
             )}
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
-            {entry.status === "waiting" && (
-              <Button disabled={pending} onClick={() => changeStatus("in_service")}>
-                ▶ เริ่มนวด
-              </Button>
-            )}
-            {entry.status === "in_service" && (
+            {/* หน้างานจริงบางร้านเก็บเงินก่อนเริ่มนวด บางทีเริ่มก่อนค่อยเก็บ —
+                จึงให้กดได้ทั้งสองปุ่มตั้งแต่สถานะ "รอคิว" ไม่บังคับลำดับ */}
+            {(entry.status === "waiting" || entry.status === "in_service") && (
               <>
                 <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
                   <Link href={`/pos?queue=${entry.id}`}>💰 เก็บเงิน</Link>
@@ -191,14 +197,21 @@ export function QueueCard({
                     </Link>
                   </Button>
                 )}
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  onClick={() => changeStatus("waiting")}
-                >
-                  ย้อนเป็นรอ
-                </Button>
               </>
+            )}
+            {entry.status === "waiting" && (
+              <Button disabled={pending} onClick={() => changeStatus("in_service")}>
+                ▶ เริ่มนวด
+              </Button>
+            )}
+            {entry.status === "in_service" && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => changeStatus("waiting")}
+              >
+                ย้อนเป็นรอ
+              </Button>
             )}
             {entry.status !== "paid" && (
               <>

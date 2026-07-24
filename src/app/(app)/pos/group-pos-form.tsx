@@ -6,7 +6,8 @@ import { toast } from "sonner"
 
 import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
-import { formatBaht } from "@/lib/constants"
+import { REQUEST_FEE, formatBaht } from "@/lib/constants"
+import { Checkbox } from "@/components/ui/checkbox"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,6 +31,8 @@ export type GroupPerson = {
   source: string
   bookingChannel: string
   notes: string
+  /** รีเควสหมอจากคิว — คิดค่าตายตัวตอนบันทึก */
+  isRequest: boolean
 }
 
 /**
@@ -56,6 +59,7 @@ function blankPerson(groupId: string): GroupPerson {
     source: "walk_in",
     bookingChannel: "",
     notes: "",
+    isRequest: false,
   }
 }
 
@@ -128,6 +132,10 @@ export function GroupPosForm({
       fd.set("sale_time", p.serviceTime)
       fd.set("queue_entry_id", p.queueEntryId)
       fd.set("group_id", p.groupId)
+      if (p.isRequest) {
+        fd.set("is_request", "on")
+        fd.set("request_fee", String(REQUEST_FEE))
+      }
 
       const r = await createSale(fd)
       if (!r.ok) {
@@ -263,9 +271,20 @@ export function GroupPosForm({
                     </select>
                   </div>
 
+                  <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <Checkbox
+                      checked={p.isRequest}
+                      onCheckedChange={(v) => setPerson(i, { isRequest: v === true })}
+                      aria-label={`รีเควสหมอคนที่ ${i + 1}`}
+                    />
+                    รีเควสหมอ{" "}
+                    <span className="text-slate-500">(+{REQUEST_FEE} ฿)</span>
+                  </label>
+
                   {service && (
                     <p className="text-xs text-slate-500">
                       ราคาปกติ {formatBaht(service.price)} ฿
+                      {p.isRequest ? ` · รีเควส +${REQUEST_FEE} ฿` : ""}
                       {p.serviceTime ? ` · เวลาใช้บริการ ${p.serviceTime}` : ""}
                     </p>
                   )}

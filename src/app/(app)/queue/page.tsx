@@ -16,7 +16,7 @@ function shiftDate(isoDate: string, days: number): string {
 export default async function QueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>
+  searchParams: Promise<{ date?: string; add?: string }>
 }) {
   const supabase = await createClient()
   const today = todayInShopTz()
@@ -97,6 +97,7 @@ export default async function QueuePage({
         boardDate={boardDate}
         isToday={isToday}
         turnAwayCount={turnAwayCount ?? 0}
+        autoOpenAdd={params.add === "1"}
       />
     </div>
   )

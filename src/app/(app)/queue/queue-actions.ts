@@ -21,6 +21,12 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   const therapistId = String(form.get("therapist_id") ?? "") || null
   const customerId = String(form.get("customer_id") ?? "") || null
   const customerName = String(form.get("customer_name") ?? "").trim() || null
+  // เบอร์มาได้สองช่อง: ลูกค้าเก่าจาก picker (customer_phone) หรือพิมพ์ใหม่ (customer_phone_new)
+  const customerPhone =
+    String(form.get("customer_phone") ?? "").trim() ||
+    String(form.get("customer_phone_new") ?? "").trim() ||
+    null
+  const isRequest = form.get("is_request") === "on"
   const queueDateInput = String(form.get("queue_date") ?? "")
   const queueDate = /^\d{4}-\d{2}-\d{2}$/.test(queueDateInput)
     ? queueDateInput
@@ -56,6 +62,8 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     duration_min: durationMin,
     customer_id: customerId,
     customer_name: customerName,
+    customer_phone: customerPhone,
+    is_request: isRequest,
     start_time: startTime,
     source,
     bed_id: bedId,
@@ -67,11 +75,12 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   return { ok: true }
 }
 
-/** คนหนึ่งในกลุ่ม — หมอ/เมนู/เตียงแยกรายคน ส่วนเวลา·ลูกค้าติดต่อ·ที่มา ใช้ร่วมกัน */
+/** คนหนึ่งในกลุ่ม — หมอ/เมนู/เตียง/รีเควสแยกรายคน ส่วนเวลา·ลูกค้าติดต่อ·ที่มา ใช้ร่วมกัน */
 export type GroupPerson = {
   therapistId: string | null
   serviceId: string
   bedId: string | null
+  isRequest?: boolean
 }
 
 /**
@@ -95,6 +104,10 @@ export async function createQueueGroup(
     : todayInShopTz()
   const customerId = String(shared.get("customer_id") ?? "") || null
   const customerName = String(shared.get("customer_name") ?? "").trim() || null
+  const customerPhone =
+    String(shared.get("customer_phone") ?? "").trim() ||
+    String(shared.get("customer_phone_new") ?? "").trim() ||
+    null
   const source = String(shared.get("source") ?? "walk_in")
   const notes = String(shared.get("notes") ?? "").trim() || null
   const channelInput = String(shared.get("booking_channel") ?? "")
@@ -128,6 +141,8 @@ export async function createQueueGroup(
         duration_min: service.duration_min ?? 60,
         customer_id: customerId,
         customer_name: customerName,
+        customer_phone: customerPhone,
+        is_request: p.isRequest ?? false,
         start_time: startTime,
         source,
         bed_id: p.bedId || null,
@@ -170,6 +185,11 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
   const therapistId = String(form.get("therapist_id") ?? "") || null
   const customerId = String(form.get("customer_id") ?? "") || null
   const customerName = String(form.get("customer_name") ?? "").trim() || null
+  const customerPhone =
+    String(form.get("customer_phone") ?? "").trim() ||
+    String(form.get("customer_phone_new") ?? "").trim() ||
+    null
+  const isRequest = form.get("is_request") === "on"
   const bedId = String(form.get("bed_id") ?? "") || null
   const notes = String(form.get("notes") ?? "").trim() || null
   const source = String(form.get("source") ?? "walk_in")
@@ -201,6 +221,8 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
       duration_min: durationMin,
       customer_id: customerId,
       customer_name: customerName,
+      customer_phone: customerPhone,
+      is_request: isRequest,
       start_time: startTime,
       source,
       bed_id: bedId,
