@@ -103,6 +103,8 @@ npm run dev
 - [x] **เฟส 2 Analytics** — P&L รายเดือน · กระแสเงินสด · จุดคุ้มทุน · จัดกลุ่มต้นทุน
 - [x] **เฟส 3 Analytics** — Heatmap · ROI ส่วนลด · LTV ลูกค้า · ลูกค้าที่หายไป
 - [x] **รอบ 1 หน้าตาใหม่** — เมนู sidebar · การ์ด KPI · กราฟ SVG · หน้า `/overview`
+- [x] **จองคิวผ่านไลน์** — โซนลูกค้า `/book` (LIFF) · การ์ดรออนุมัติบนคิวบอร์ด · แจ้งเตือนไลน์
+      (ยังไม่ทำงานจนกว่าเจ้าของร้านตั้งค่า LINE console + env vars — ดูหัวข้อ "จองคิวผ่านไลน์" ด้านล่าง)
 
 ## หน้าที่มีแล้ว
 
@@ -126,6 +128,8 @@ npm run dev
 | `/insights/customers` | LTV ลูกค้าและคนที่หายไป — ยอดสะสม, คนที่ควรตามกลับ    |
 | `/settings`      | หมอนวด · เมนู · ผู้ใช้ · **ต้นทุน** · **โปรฯ** · ค่าประกันมือ |
 | `/api/export`    | ดาวน์โหลด CSV (`?type=sales\|expenses&month=YYYY-MM`)      |
+| `/book`          | **โซนลูกค้า (LINE LIFF)** — wizard จองคิว 5 ขั้น ไม่ใช่หน้าในสิทธิ์พนักงาน |
+| `/book/mine`      | **โซนลูกค้า (LINE LIFF)** — การจองของฉัน ดู/ยกเลิก/จองซ้ำ  |
 
 **กราฟทั้งหมดวาดเป็น SVG เองฝั่ง server** — พิกัดคำนวณจาก `src/lib/chart.ts`
 (มีเทสครบ) แล้ว render ผ่าน `src/components/charts/` **ตั้งใจไม่ใช้ chart library**
@@ -207,10 +211,46 @@ Silver จ่าย 5,000 → ใช้ได้ **6,000** (ในนั้น�
    — allowlist กันไว้อีกชั้นแล้ว แต่ปิดด้วยจะดีที่สุด
 3. เพิ่ม ดา / นก / เค้ก ลง `allowed_users` แล้วสร้าง user (ดูวิธีด้านบน)
 4. ~~Deploy ขึ้น Vercel~~ ✅ เสร็จแล้ว
+5. **เปิดใช้จองคิวผ่านไลน์** — ตั้งค่า LINE Developers Console + ใส่ env vars ใหม่ 4 ตัว
+   ใน Vercel (ยังไม่ได้ทำ — ดูหัวข้อ "จองคิวผ่านไลน์" ด้านล่าง) ไม่ทำก็ไม่กระทบแอปพนักงาน
+
+## จองคิวผ่านไลน์ (LINE Booking)
+
+ลูกค้าจองคิวเองผ่านเมนูในไลน์ของร้าน — เปิดเป็นหน้าเว็บ LIFF (LINE Front-end Framework)
+ไม่ใช่ bot แชท
+
+- **`/book`** — wizard 5 ขั้น (เลือกเมนู → หมอ → วัน/เวลา → คนเพิ่ม → ยืนยัน)
+  รองรับจองพร้อมกันได้ถึง 4 ท่าน, จองซ้ำจากประวัติ, consent สุขภาพก่อนจอง
+- **`/book/mine`** — ดูการจองของฉัน (ที่จะถึง/ผ่านมาแล้ว), ยกเลิกได้ถ้ายังไม่ใกล้เวลานัด
+- **ตาราง `line_accounts`** — ผูก LINE user id กับลูกค้าใน `customers` ด้วยเบอร์โทร
+  (เบอร์ใช้จับคู่ครั้งแรกเท่านั้น ไม่ใช่ตัวให้สิทธิ์ทุกครั้ง)
+- **สถานะ `pending` / `rejected`** บน `queue_entries` — การจองจากไลน์เข้าคิวเป็น `pending`
+  ก่อนเสมอ **ยังไม่ผูกกับบิลได้จนกว่าร้านจะอนุมัติ**
+- **คิวบอร์ด อนุมัติ/ปฏิเสธ** — พนักงานเห็นการ์ดรออนุมัติแยกจากคิวปกติที่หน้า `/queue`
+  พร้อมป้าย/เสียงแจ้งเตือนเมื่อมีคำขอใหม่ กด รับ ก็ขยับเป็น `waiting` ปกติ กด ปฏิเสธ ก็แจ้งเหตุผลได้
+- **แจ้งเตือนไลน์ 4 จังหวะ** (`src/lib/line-messages.ts`) — ส่งคำขอแล้ว (`msgRequested`),
+  ร้านยืนยัน (`msgConfirmed`), ร้านปฏิเสธ (`msgRejected`), ลูกค้ายกเลิกเอง (`msgCancelled`)
+  ส่งไม่ผ่านก็ไม่บล็อกการทำงาน แค่เตือนพนักงานในแอป
+
+**สถานะตอนนี้: ฟีเจอร์ deploy แล้วแต่ยัง "หลับ" อยู่** — โค้ดทั้งหมดอยู่ใน production
+แต่ยังไม่ทำงานจนกว่าเจ้าของร้านจะตั้งค่า LINE Developers Console (สร้าง LINE Login channel +
+Messaging API channel + LIFF app ชี้มาที่ `https://sookkaya-pos.vercel.app/book`)
+แล้วใส่ env vars ด้านล่างใน Vercel + redeploy หนึ่งครั้ง ระหว่างนี้ `/book` จะโหลดได้ปกติ (200)
+แต่โชว์ข้อความ "โหลดข้อมูลไม่สำเร็จ" แทน — หน้าแอปพนักงานไม่ได้รับผลกระทบใดๆ
+
+### Env vars ใหม่ (ต้องตั้งใน Vercel ก่อนฟีเจอร์นี้จะทำงาน)
+
+| ตัวแปร | ใช้ทำอะไร |
+| ------ | --------- |
+| `LINE_CHANNEL_ACCESS_TOKEN` | โทเคน push ข้อความแจ้งเตือนหาลูกค้า (Messaging API channel) |
+| `LINE_LOGIN_CHANNEL_ID` | ยืนยัน idToken ของ LIFF ว่าเป็นลูกค้าไลน์จริง (LINE Login channel) |
+| `NEXT_PUBLIC_LIFF_ID` | ID ของ LIFF app ที่ผูกกับหน้า `/book` — ฝั่ง client ใช้เปิด LIFF |
+| `SUPABASE_SERVICE_ROLE_KEY` | ให้ server action โซน `/book` เขียนข้อมูลแทนลูกค้าไลน์ (ไม่ผ่าน RLS แบบพนักงาน เพราะไม่ใช่ Supabase Auth user) |
 
 ## Deploy
 
-Vercel project: `jukkaphans-projects/sookkaya-pos` · env vars ตั้งครบทั้ง 3 environment แล้ว
+Vercel project: `jukkaphans-projects/sookkaya-pos` · env vars เดิม (Supabase) ตั้งครบทั้ง 3 environment แล้ว
+(env vars ของฟีเจอร์จองไลน์ยังไม่ได้ตั้ง — ดูหัวข้อด้านบน)
 
 Deploy เวอร์ชันใหม่:
 
