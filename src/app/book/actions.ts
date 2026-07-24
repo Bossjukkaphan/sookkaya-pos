@@ -5,7 +5,6 @@ import { pushLineMessage, verifyLineIdToken } from "@/lib/line"
 import { msgCancelled, msgRequested, type BookingInfo } from "@/lib/line-messages"
 import { canCancelAt, computeSlots, isBookableDate } from "@/lib/booking-slots"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
-import { REQUEST_FEE } from "@/lib/constants"
 
 type Fail = { ok: false; error: string; code?: "auth" }
 
@@ -209,7 +208,7 @@ export async function createBookingRequest(
     time: input.time,
     services: input.people.map((p) => serviceById.get(p.serviceId)!.name),
     therapistNote: input.people.some((p) => p.therapistId)
-      ? `มีรีเควสหมอ (+${REQUEST_FEE}฿/ท่านที่เลือก)` : undefined,
+      ? "รีเควสหมอตามที่เลือกไว้ค่ะ" : undefined,
   }
   await pushLineMessage(who.userId, msgRequested(info)) // ส่งไม่ผ่านก็ไม่เป็นไร
   return { ok: true }

@@ -10,7 +10,6 @@ import {
 } from "./actions"
 import { computeSlots, isBookableDate, MAX_ADVANCE_DAYS } from "@/lib/booking-slots"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
-import { REQUEST_FEE } from "@/lib/constants"
 
 type Service = { id: string; name: string; price: number; durationMin: number }
 type Therapist = { id: string; name: string }
@@ -220,7 +219,7 @@ export function BookingWizard({ services, therapists }: {
         <div className={CARD}>
           <h2 className="mb-1 font-bold">เลือกหมอนวด (ไม่บังคับ)</h2>
           <p className="mb-3 text-xs text-slate-500">
-            เลือกหมอ = รีเควส +{REQUEST_FEE}฿/ท่าน · ไม่เลือก ร้านจัดให้ค่ะ</p>
+            เลือกหมอที่ถูกใจได้เลย ไม่มีค่าใช้จ่ายเพิ่ม · ไม่เลือก ร้านจัดให้ค่ะ</p>
           {people.map((p, i) => (
             <div key={i} className="mb-3">
               <p className="mb-1 text-sm text-slate-600">ท่านที่ {i + 1}</p>
@@ -229,7 +228,7 @@ export function BookingWizard({ services, therapists }: {
                   arr.map((x, j) => (j === i ? { ...x, therapistId: e.target.value || null } : x)))}>
                 <option value="">ให้ร้านจัดให้</option>
                 {therapists.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name} (รีเควส +{REQUEST_FEE}฿)</option>
+                  <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
             </div>
@@ -246,7 +245,7 @@ export function BookingWizard({ services, therapists }: {
               <li key={i}>
                 {serviceById.get(p.serviceId)?.name}
                 {p.therapistId &&
-                  ` · หมอ${therapists.find((t) => t.id === p.therapistId)?.name} (รีเควส +${REQUEST_FEE}฿)`}
+                  ` · หมอ${therapists.find((t) => t.id === p.therapistId)?.name}`}
               </li>
             ))}
           </ul>
