@@ -20,6 +20,9 @@ describe("computeSlots", () => {
   it("วันนี้แต่สายจนไม่เหลือช่อง → ว่างเปล่า", () => {
     expect(computeSlots({ date: "2026-07-24", today: "2026-07-24", nowMin: 21 * 60, durationMin: 60 })).toEqual([])
   })
+  it("วันที่ผ่านไปแล้ว → ว่างเปล่า", () => {
+    expect(computeSlots({ date: "2026-07-23", today: "2026-07-24", nowMin: 0, durationMin: 60 })).toEqual([])
+  })
 })
 
 describe("isBookableDate", () => {

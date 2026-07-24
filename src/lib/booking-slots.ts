@@ -18,6 +18,7 @@ export function computeSlots(opts: {
   nowMin: number
   durationMin: number
 }): string[] {
+  if (opts.date < opts.today) return []
   let earliest = OPEN_MIN
   if (opts.date === opts.today) {
     const lead = opts.nowMin + MIN_LEAD_MIN
@@ -42,6 +43,7 @@ export function canCancelAt(
   today: string,
   nowMin: number
 ): boolean {
+  // ถูกต้องตราบใดที่ OPEN_MIN > CANCEL_CUTOFF_MIN (จองพรุ่งนี้เช้าสุด 10:00 ยกเลิกคืนนี้ก็ยังเหลือ >2 ชม.)
   if (queueDate > today) return true
   if (queueDate < today) return false
   const [h, m] = startTime.split(":").map(Number)
