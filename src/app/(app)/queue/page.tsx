@@ -42,7 +42,7 @@ export default async function QueuePage({
         .from("queue_entries")
         .select("*")
         .eq("queue_date", boardDate)
-        .neq("status", "cancelled")
+        .not("status", "in", "(cancelled,rejected)")
         .order("start_time"),
       supabase
         .from("beds")

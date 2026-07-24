@@ -77,7 +77,7 @@ export default async function PosPage({
         .from("queue_entries")
         .select("*")
         .eq("group_id", group)
-        .not("status", "in", "(paid,cancelled)")
+        .not("status", "in", "(paid,cancelled,pending,rejected)")
         .order("start_time")
     : { data: null }
 
@@ -130,13 +130,15 @@ export default async function PosPage({
     )
   }
 
-  // มาจากการ์ดคิว → กรอกหมอ/เมนู/ลูกค้าให้ล่วงหน้า (คิวที่จ่ายแล้วไม่รับซ้ำ)
+  // มาจากการ์ดคิว → กรอกหมอ/เมนู/ลูกค้าให้ล่วงหน้า
+  // (คิวที่จ่ายแล้วไม่รับซ้ำ · คิวที่ยังไม่อนุมัติ/ถูกปฏิเสธจากไลน์ห้ามเก็บเงินจนกว่าจะรับจองก่อน —
+  // ปกติปุ่ม "เก็บเงิน" ไม่โผล่ให้กดตั้งแต่แรกอยู่แล้ว แต่กันไว้เผื่อเข้าลิงก์ตรง/บุ๊กมาร์กเก่า)
   const { data: queueEntry } = queue
     ? await supabase
         .from("queue_entries")
         .select("*")
         .eq("id", queue)
-        .neq("status", "paid")
+        .not("status", "in", "(paid,pending,rejected)")
         .maybeSingle()
     : { data: null }
 

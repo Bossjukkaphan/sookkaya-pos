@@ -105,7 +105,7 @@ export function QueueBoard({
       .from("queue_entries")
       .select("*")
       .eq("queue_date", boardDate)
-      .neq("status", "cancelled")
+      .not("status", "in", "(cancelled,rejected)")
       .order("start_time")
     if (data) setEntries(data)
   }, [boardDate])
@@ -248,6 +248,27 @@ export function QueueBoard({
     nowMin
   )
   const waitingCount = entries.filter((e) => e.status === "waiting").length
+  const pendingCount = entries.filter((e) => e.status === "pending").length
+
+  // เสียงเตือนเมื่อมีคำขอจากไลน์เข้าใหม่ — เทียบจำนวน pending กับรอบก่อนหน้า (realtime อัปเดต entries ให้อยู่แล้ว)
+  const prevPending = useRef(pendingCount)
+  useEffect(() => {
+    if (pendingCount > prevPending.current) {
+      try {
+        const ctx = new AudioContext()
+        const osc = ctx.createOscillator()
+        const gain = ctx.createGain()
+        osc.frequency.value = 880
+        gain.gain.value = 0.05
+        osc.connect(gain).connect(ctx.destination)
+        osc.start()
+        osc.stop(ctx.currentTime + 0.15)
+      } catch {
+        // autoplay policy — ไม่เป็นไร แค่ไม่มีเสียง
+      }
+    }
+    prevPending.current = pendingCount
+  }, [pendingCount])
 
   const hours = Array.from(
     { length: (BOARD_END_MIN - BOARD_START_MIN) / 60 },
@@ -269,7 +290,12 @@ export function QueueBoard({
           คิวรอ <span className="font-semibold">{waitingCount}</span>
           {" · "}ทั้งหมด <span className="font-semibold">{entries.length}</span>
         </p>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {pendingCount > 0 && (
+            <span className="rounded-full bg-sky-100 px-2 py-1 text-sm text-sky-800">
+              ⏳ รออนุมัติ {pendingCount}
+            </span>
+          )}
           <TurnAwayButton boardDate={boardDate} initialCount={turnAwayCount} />
           <Button className="h-11" onClick={() => setForm({})}>
             + เพิ่มคิว
@@ -364,6 +390,8 @@ export function QueueBoard({
                           ? entries.filter((s) => s.group_id === e.group_id).length
                           : 1
                       }
+                      nowMin={nowMin}
+                      isToday={isToday}
                       dragging={drag?.lifted === true && drag.id === e.id}
                       dragOffset={
                         drag?.lifted === true && drag.id === e.id

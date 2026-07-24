@@ -12,7 +12,7 @@ import {
   isCustomerSource,
 } from "@/lib/customer-source"
 import { PX_PER_MIN, minToX, overlaps, timeToMin } from "@/lib/queue"
-import { setQueueStatus } from "./queue-actions"
+import { approveBooking, rejectBooking, setQueueStatus } from "./queue-actions"
 import { shortBedName, type Bed } from "@/lib/beds"
 import { type QueueEntry } from "./queue-board"
 import {
@@ -22,6 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 /** สีการ์ดตามสถานะ — รอ ขาว · กำลังนวด ม่วง · จ่ายแล้ว เขียว
  * แยกขอบกับพื้น เพราะขอบถูกแทนด้วยสีส้มเมื่อเวลาซ้อน (ผสม class ขอบสองสีแล้ว
@@ -30,16 +31,85 @@ const STATUS_BORDER: Record<string, string> = {
   waiting: "border-slate-300",
   in_service: "border-violet-300",
   paid: "border-emerald-300",
+  pending: "border-dashed border-sky-400",
 }
 const STATUS_BG: Record<string, string> = {
   waiting: "bg-white",
   in_service: "bg-violet-50",
   paid: "bg-emerald-50",
+  pending: "bg-sky-50",
 }
 const STATUS_LABEL: Record<string, string> = {
   waiting: "รอ",
   in_service: "กำลังนวด",
   paid: "ชำระแล้ว",
+  pending: "รออนุมัติ",
+}
+
+/** เหตุผลปฏิเสธที่พิมพ์บ่อย — เลือกไวได้ พิมพ์เองก็ได้ */
+const REJECT_REASONS = ["คิวช่วงเวลานั้นเต็ม", "หมอที่เลือกไม่อยู่ในวันนั้น"] as const
+
+/** ปุ่มปฏิเสธคำขอจากไลน์ — กดแล้วค่อยเลือกเหตุผล (กันกดพลาด + เหตุผลแนบไปกับข้อความหาลูกค้า) */
+function RejectButton({
+  entryId,
+  pending,
+  startTransition,
+  onDone,
+}: {
+  entryId: string
+  pending: boolean
+  startTransition: (callback: () => void | Promise<void>) => void
+  onDone: () => void
+}) {
+  const [picking, setPicking] = useState(false)
+  const [custom, setCustom] = useState("")
+
+  const send = (reason: string) =>
+    startTransition(async () => {
+      const r = await rejectBooking(entryId, reason)
+      if (!r.ok) toast.error(r.error)
+      onDone()
+    })
+
+  if (!picking)
+    return (
+      <Button
+        variant="outline"
+        className="border-red-300 text-red-600"
+        disabled={pending}
+        onClick={() => setPicking(true)}
+      >
+        ✕ ปฏิเสธ…
+      </Button>
+    )
+
+  return (
+    <div className="w-full space-y-1.5 rounded-lg border border-red-200 p-2">
+      {REJECT_REASONS.map((r) => (
+        <Button
+          key={r}
+          variant="outline"
+          size="sm"
+          className="w-full justify-start"
+          disabled={pending}
+          onClick={() => send(r)}
+        >
+          {r}
+        </Button>
+      ))}
+      <div className="flex gap-1.5">
+        <Input
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="เหตุผลอื่น…"
+          className="h-9"
+        />
+        <Button size="sm" disabled={pending || !custom.trim()} onClick={() => send(custom)}>
+          ส่ง
+        </Button>
+      </div>
+    </div>
+  )
 }
 
 export function QueueCard({
@@ -47,6 +117,8 @@ export function QueueCard({
   bed,
   siblings,
   groupSize = 1,
+  nowMin,
+  isToday,
   dragging,
   dragOffset,
   movedRef,
@@ -59,6 +131,9 @@ export function QueueCard({
   siblings: QueueEntry[]
   /** จำนวนคนทั้งกลุ่มของการ์ดนี้ (นับตัวเองด้วย) — 1 = มาคนเดียว */
   groupSize?: number
+  /** นาทีปัจจุบัน (เวลาไทย) — ใช้เช็คคำขอค้าง (pending) ที่เลยเวลานัดแล้ว */
+  nowMin: number
+  isToday: boolean
   dragging: boolean
   dragOffset: { dx: number; dy: number } | null
   movedRef: React.RefObject<boolean>
@@ -76,6 +151,8 @@ export function QueueCard({
       s.status !== "cancelled" &&
       overlaps(startMin, entry.duration_min, timeToMin(s.start_time), s.duration_min)
   )
+  // คำขอจากไลน์ที่ยังไม่อนุมัติ แต่เลยเวลานัดของวันนี้ไปแล้ว → เตือนสีส้ม (รีบตัดสินใจ)
+  const isOverduePending = entry.status === "pending" && isToday && startMin < nowMin
 
   function changeStatus(status: string) {
     startTransition(async () => {
@@ -98,7 +175,9 @@ export function QueueCard({
         className={`absolute top-1.5 bottom-1.5 overflow-hidden rounded-lg border-2 px-2 py-1 text-left text-xs shadow-sm select-none touch-none ${
           hasOverlap
             ? "border-orange-400"
-            : (STATUS_BORDER[entry.status] ?? "border-slate-300")
+            : isOverduePending
+              ? "border-dashed border-orange-400"
+              : (STATUS_BORDER[entry.status] ?? "border-slate-300")
         } ${STATUS_BG[entry.status] ?? "bg-white"} ${
           dragging ? "z-30 opacity-80 ring-2 ring-violet-400" : "z-[5]"
         }`}
@@ -111,6 +190,12 @@ export function QueueCard({
         }}
       >
         <p className="truncate font-semibold">
+          {/* คำขอจากไลน์ที่ยังไม่อนุมัติ — เด่นสุดในบรรดาป้าย เพราะต้องรีบตัดสินใจ */}
+          {entry.status === "pending" && (
+            <span className="mr-1 rounded bg-sky-500 px-1 text-[10px] text-white">
+              LINE·รออนุมัติ
+            </span>
+          )}
           {/* ป้ายเฉพาะจอง/agency — walk-in คือกรณีปกติไม่ติดป้าย */}
           {isCustomerSource(entry.source) && SOURCE_BADGE[entry.source] && (
             <span
@@ -213,6 +298,33 @@ export function QueueCard({
                 ย้อนเป็นรอ
               </Button>
             )}
+            {entry.status === "pending" && (
+              <>
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  disabled={pending}
+                  onClick={() =>
+                    startTransition(async () => {
+                      const r = await approveBooking(entry.id)
+                      if (!r.ok) toast.error(r.error)
+                      setOpen(false)
+                      onChanged()
+                    })
+                  }
+                >
+                  ✓ รับจอง{groupSize > 1 ? ` (${groupSize} คน)` : ""}
+                </Button>
+                <RejectButton
+                  entryId={entry.id}
+                  pending={pending}
+                  startTransition={startTransition}
+                  onDone={() => {
+                    setOpen(false)
+                    onChanged()
+                  }}
+                />
+              </>
+            )}
             {entry.status !== "paid" && (
               <>
                 <Button
@@ -226,14 +338,17 @@ export function QueueCard({
                 >
                   ✏️ แก้ไข
                 </Button>
-                <Button
-                  variant="outline"
-                  disabled={pending}
-                  className="text-red-600"
-                  onClick={() => changeStatus("cancelled")}
-                >
-                  ยกเลิกคิว
-                </Button>
+                {/* pending ใช้ "ปฏิเสธ" แทน — ต้องแนบเหตุผลและแจ้งลูกค้าทางไลน์ ไม่ให้ยกเลิกเงียบๆ */}
+                {entry.status !== "pending" && (
+                  <Button
+                    variant="outline"
+                    disabled={pending}
+                    className="text-red-600"
+                    onClick={() => changeStatus("cancelled")}
+                  >
+                    ยกเลิกคิว
+                  </Button>
+                )}
               </>
             )}
           </div>

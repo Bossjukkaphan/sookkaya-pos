@@ -98,7 +98,14 @@ function allowed(link: NavLink, role: string): boolean {
   return true
 }
 
-export function AppShell({ role }: { role: string }) {
+export function AppShell({
+  role,
+  pendingCount,
+}: {
+  role: string
+  /** จำนวนคำขอจองจากไลน์ที่รออนุมัติ — ขึ้นป้ายเตือนบนเมนู "คิว" */
+  pendingCount?: number
+}) {
   const pathname = usePathname()
 
   const primary = PRIMARY.filter((l) => allowed(l, role))
@@ -136,7 +143,14 @@ export function AppShell({ role }: { role: string }) {
               )}
             >
               <Icon className="size-5" aria-hidden />
-              {label}
+              <span className="flex items-center gap-1">
+                {label}
+                {href === "/queue" && pendingCount ? (
+                  <span className="rounded-full bg-sky-500 px-1.5 text-[10px] text-white">
+                    {pendingCount}
+                  </span>
+                ) : null}
+              </span>
             </Link>
           </li>
         ))}
@@ -180,6 +194,11 @@ export function AppShell({ role }: { role: string }) {
                 >
                   <Icon className="size-4" aria-hidden />
                   {label}
+                  {href === "/queue" && pendingCount ? (
+                    <span className="rounded-full bg-sky-500 px-1.5 text-[10px] text-white">
+                      {pendingCount}
+                    </span>
+                  ) : null}
                 </Link>
               </li>
             ))}

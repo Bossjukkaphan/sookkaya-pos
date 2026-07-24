@@ -5,7 +5,9 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
-import { todayInShopTz } from "@/lib/datetime"
+import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { pushLineMessage } from "@/lib/line"
+import { msgConfirmed, msgRejected, type BookingInfo } from "@/lib/line-messages"
 
 type Result = { ok: true } | { ok: false; error: string }
 
@@ -281,6 +283,90 @@ export async function setQueueStatus(id: string, status: string): Promise<Result
       .is("started_at", null)
   }
 
+  revalidatePath("/queue")
+  return { ok: true }
+}
+
+/** โหลดคำขอ pending ทั้งชุด (ทั้งกลุ่มถ้ามี) — ใช้ร่วม approve/reject */
+async function loadPendingSet(id: string) {
+  const supabase = await createClient()
+  const { data: one } = await supabase
+    .from("queue_entries")
+    .select("id, group_id, queue_date, start_time, service_name, line_user_id, status, notes")
+    .eq("id", id)
+    .maybeSingle()
+  if (!one || one.status !== "pending") return null
+  if (!one.group_id) return { entries: [one] }
+  const { data: all } = await supabase
+    .from("queue_entries")
+    .select("id, group_id, queue_date, start_time, service_name, line_user_id, status, notes")
+    .eq("group_id", one.group_id)
+    .eq("status", "pending")
+  return { entries: all && all.length > 0 ? all : [one] }
+}
+
+const bookingInfoOf = (
+  entries: { queue_date: string; start_time: string; service_name: string }[]
+): BookingInfo => ({
+  dateLabel: formatThaiDate(entries[0].queue_date),
+  time: entries[0].start_time.slice(0, 5),
+  services: entries.map((e) => e.service_name),
+})
+
+/** รับคำขอจากไลน์ — ทั้งกลุ่มพร้อมกัน + push ยืนยัน (ส่งไม่ผ่านไม่ทำให้รับคิวล้มเหลว — ต่อท้ายหมายเหตุแทนการเขียนทับ) */
+export async function approveBooking(id: string): Promise<Result> {
+  const set = await loadPendingSet(id)
+  if (!set) return { ok: false, error: "คำขอนี้ถูกจัดการไปแล้ว" }
+  const supabase = await createClient()
+  const ids = set.entries.map((e) => e.id)
+  const { error } = await supabase
+    .from("queue_entries")
+    .update({ status: "waiting", updated_at: new Date().toISOString() })
+    .in("id", ids)
+    .eq("status", "pending")
+  if (error) return { ok: false, error: error.message }
+  const to = set.entries[0].line_user_id
+  if (to) {
+    const sent = await pushLineMessage(to, msgConfirmed(bookingInfoOf(set.entries)))
+    if (!sent) {
+      // ต่อท้ายหมายเหตุเดิม — ห้ามเขียนทับ เผื่อลูกค้าฝากข้อความพิเศษไว้ตอนจอง
+      for (const e of set.entries) {
+        await supabase
+          .from("queue_entries")
+          .update({
+            notes: [e.notes, "⚠️ ส่งไลน์ไม่ผ่าน — โทรแจ้งลูกค้า"]
+              .filter(Boolean)
+              .join(" · "),
+          })
+          .eq("id", e.id)
+      }
+    }
+  }
+  revalidatePath("/queue")
+  return { ok: true }
+}
+
+/** ปฏิเสธ — เหตุผลแนบไปกับข้อความไลน์ · การ์ดหายจากบอร์ด */
+export async function rejectBooking(id: string, reason: string): Promise<Result> {
+  const set = await loadPendingSet(id)
+  if (!set) return { ok: false, error: "คำขอนี้ถูกจัดการไปแล้ว" }
+  const cleanReason = reason.trim() || "คิวช่วงเวลานั้นเต็ม"
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("queue_entries")
+    .update({
+      status: "rejected",
+      reject_reason: cleanReason,
+      updated_at: new Date().toISOString(),
+    })
+    .in(
+      "id",
+      set.entries.map((e) => e.id)
+    )
+    .eq("status", "pending")
+  if (error) return { ok: false, error: error.message }
+  const to = set.entries[0].line_user_id
+  if (to) await pushLineMessage(to, msgRejected(bookingInfoOf(set.entries), cleanReason))
   revalidatePath("/queue")
   return { ok: true }
 }
