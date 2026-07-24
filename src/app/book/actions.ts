@@ -7,7 +7,9 @@ import { canCancelAt, computeSlots, isBookableDate } from "@/lib/booking-slots"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import { REQUEST_FEE } from "@/lib/constants"
 
-type Fail = { ok: false; error: string }
+type Fail = { ok: false; error: string; code?: "auth" }
+
+const AUTH_FAIL: Fail = { ok: false, error: "เปิดหน้านี้จากไลน์อีกครั้งนะคะ", code: "auth" }
 
 const nowMin = () => {
   const [h, m] = nowTimeInShopTz().split(":").map(Number)
@@ -21,7 +23,7 @@ export async function getLineStatus(idToken: string): Promise<
   | Fail
 > {
   const who = await verifyLineIdToken(idToken)
-  if (!who) return { ok: false, error: "เปิดหน้านี้จากไลน์อีกครั้งนะคะ" }
+  if (!who) return AUTH_FAIL
   const db = createServiceClient()
   const { data } = await db
     .from("line_accounts")
@@ -42,7 +44,7 @@ export async function linkLineAccount(
   phone: string
 ): Promise<{ ok: true; customerName: string } | Fail> {
   const who = await verifyLineIdToken(idToken)
-  if (!who) return { ok: false, error: "เปิดหน้านี้จากไลน์อีกครั้งนะคะ" }
+  if (!who) return AUTH_FAIL
   const clean = phone.replace(/\D/g, "")
   if (!/^0\d{8,9}$/.test(clean)) return { ok: false, error: "เบอร์โทรไม่ถูกต้อง" }
 
@@ -83,16 +85,26 @@ export async function linkLineAccount(
 }
 
 /** เมนู+หมอสำหรับ wizard (เปิดเผยเฉพาะ ชื่อ/ราคา/ระยะเวลา) */
-export async function getBookingOptions(): Promise<{
-  services: { id: string; name: string; price: number; durationMin: number }[]
-  therapists: { id: string; name: string }[]
-}> {
+export async function getBookingOptions(): Promise<
+  | {
+      ok: true
+      services: { id: string; name: string; price: number; durationMin: number }[]
+      therapists: { id: string; name: string }[]
+    }
+  | Fail
+> {
   const db = createServiceClient()
-  const [{ data: services }, { data: therapists }] = await Promise.all([
+  const [
+    { data: services, error: servicesError },
+    { data: therapists, error: therapistsError },
+  ] = await Promise.all([
     db.from("services").select("id, name, price, duration_min").eq("is_active", true).order("name"),
     db.from("therapists").select("id, name").eq("status", "active").order("name"),
   ])
+  if (servicesError || therapistsError)
+    return { ok: false, error: "โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะคะ" }
   return {
+    ok: true,
     services: (services ?? []).map((s) => ({
       id: s.id, name: s.name, price: Number(s.price), durationMin: s.duration_min ?? 60,
     })),
@@ -107,7 +119,7 @@ export async function createBookingRequest(
   input: { date: string; time: string; people: BookingPersonInput[]; note: string }
 ): Promise<{ ok: true } | Fail> {
   const who = await verifyLineIdToken(idToken)
-  if (!who) return { ok: false, error: "เปิดหน้านี้จากไลน์อีกครั้งนะคะ" }
+  if (!who) return AUTH_FAIL
   const db = createServiceClient()
 
   const { data: account } = await db
@@ -135,6 +147,7 @@ export async function createBookingRequest(
   if (!validSlots.includes(input.time))
     return { ok: false, error: "ช่วงเวลานี้ไม่เปิดรับจองแล้ว เลือกเวลาอื่นนะคะ" }
 
+  // เช็คแล้วค่อย insert (ไม่มี transaction) — ยอมรับ race ได้: เคสแย่สุดคือการ์ด pending เกิน ร้านกดปฏิเสธเอง ไม่มีเงินเกี่ยว
   // ประตูแคบ: pending ค้าง ≤3 · กันกดซ้ำใน 1 นาที
   const { data: existing } = await db
     .from("queue_entries")
@@ -191,15 +204,17 @@ export async function getMyBookings(idToken: string): Promise<
   { ok: true; upcoming: MyBooking[]; past: MyBooking[] } | Fail
 > {
   const who = await verifyLineIdToken(idToken)
-  if (!who) return { ok: false, error: "เปิดหน้านี้จากไลน์อีกครั้งนะคะ" }
+  if (!who) return AUTH_FAIL
   const db = createServiceClient()
   const today = todayInShopTz()
+  const now = nowMin()
   const { data } = await db
     .from("queue_entries")
     .select("id, group_id, queue_date, start_time, service_id, service_name, status")
     .eq("line_user_id", who.userId)
     .order("queue_date", { ascending: false }).order("start_time", { ascending: false })
     .limit(60)
+  // สมมติฐาน: ทุกแถวในกลุ่มเดียวกันมี วันที่/เวลา/สถานะ เดียวกัน (สร้างและอนุมัติ/ปฏิเสธพร้อมกันทั้งกลุ่มเสมอ)
   const group = (rows: NonNullable<typeof data>): MyBooking[] => {
     const byKey = new Map<string, MyBooking>()
     for (const e of rows) {
@@ -216,7 +231,7 @@ export async function getMyBookings(idToken: string): Promise<
         dateLabel: formatThaiDate(e.queue_date), time,
         services: [e.service_name], serviceIds: [e.service_id ?? ""], status: e.status,
         canCancel: e.status !== "paid" && e.status !== "cancelled" && e.status !== "rejected" &&
-          canCancelAt(e.queue_date, time, today, nowMin()),
+          canCancelAt(e.queue_date, time, today, now),
       })
     }
     return [...byKey.values()]
@@ -236,7 +251,7 @@ export async function cancelBooking(
   target: { id: string; groupId: string | null }
 ): Promise<{ ok: true } | Fail> {
   const who = await verifyLineIdToken(idToken)
-  if (!who) return { ok: false, error: "เปิดหน้านี้จากไลน์อีกครั้งนะคะ" }
+  if (!who) return AUTH_FAIL
   const db = createServiceClient()
   // อ่านก่อน — ยืนยันว่าเป็นของตัวเอง + ยังยกเลิกทัน
   const q = db.from("queue_entries")
