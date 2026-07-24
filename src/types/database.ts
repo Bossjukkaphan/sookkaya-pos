@@ -160,6 +160,41 @@ export type Database = {
         }
         Relationships: []
       }
+      line_accounts: {
+        Row: {
+          created_at: string
+          customer_id: string
+          display_name: string | null
+          line_user_id: string
+          phone: string | null
+          picture_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          display_name?: string | null
+          line_user_id: string
+          phone?: string | null
+          picture_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          display_name?: string | null
+          line_user_id?: string
+          phone?: string | null
+          picture_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "line_accounts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       member_topups: {
         Row: {
           bonus_added: number
@@ -291,8 +326,10 @@ export type Database = {
           is_request: boolean
           duration_min: number
           id: string
+          line_user_id: string | null
           notes: string | null
           queue_date: string
+          reject_reason: string | null
           sale_id: string | null
           service_id: string | null
           service_name: string
@@ -314,8 +351,10 @@ export type Database = {
           is_request?: boolean
           duration_min: number
           id?: string
+          line_user_id?: string | null
           notes?: string | null
           queue_date: string
+          reject_reason?: string | null
           sale_id?: string | null
           service_id?: string | null
           service_name: string
@@ -337,8 +376,10 @@ export type Database = {
           is_request?: boolean
           duration_min?: number
           id?: string
+          line_user_id?: string | null
           notes?: string | null
           queue_date?: string
+          reject_reason?: string | null
           sale_id?: string | null
           service_id?: string | null
           service_name?: string
