@@ -169,6 +169,8 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   // มาจากบอร์ดคิว → ปิดคิวเป็นชำระแล้ว + ผูกใบขาย
   // (สองคำสั่งแยกกัน ถ้าอัปเดตคิวพลาด ใบขายยังถูกต้อง การ์ดค้างสถานะเดิม
   //  พนักงานกดเก็บเงินซ้ำไม่เกิดใบขายซ้ำ เพราะหน้า POS กรอง status=paid ออกแล้ว)
+  // กัน pending/rejected ด้วย — คิวที่ยังไม่อนุมัติ/ถูกปฏิเสธจากไลน์ ห้ามถูกผูกบิลจนกว่าจะรับจองก่อน
+  // (cancelled ยังปล่อยผ่านเหมือนเดิม — พนักงานเปิดบิลให้คิวที่เคยยกเลิกได้ตั้งใจ ถ้าลูกค้ากลับมา)
   const queueEntryId = String(formData.get("queue_entry_id") ?? "")
   if (queueEntryId) {
     await supabase
@@ -179,7 +181,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
         updated_at: new Date().toISOString(),
       })
       .eq("id", queueEntryId)
-      .neq("status", "paid")
+      .not("status", "in", "(paid,pending,rejected)")
   } else {
     // บิลที่คีย์ตรงไม่ผ่านคิว → สร้างการ์ดคิว "ชำระแล้ว" ให้อัตโนมัติ
     // บอร์ดคิวจะเห็นว่าหมอคนนี้มีงานช่วงเวลานั้นจริง จัดคิวไม่ทับซ้อน
