@@ -2,22 +2,26 @@ import "server-only"
 
 export type LineIdentity = { userId: string; displayName?: string; pictureUrl?: string }
 
-/** ตรวจ idToken กับ LINE โดยตรง — ทางเดียวที่เชื่อได้ว่าใครเป็นใคร */
+/** ตรวจ idToken กับ LINE โดยตรง — ทางเดียวที่เชื่อได้ว่าใครเป็นใคร (ห้าม throw: server action ต้องเชื่อ contract นี้ได้เสมอ) */
 export async function verifyLineIdToken(idToken: string): Promise<LineIdentity | null> {
   if (!idToken) return null
-  const res = await fetch("https://api.line.me/oauth2/v2.1/verify", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      id_token: idToken,
-      client_id: process.env.LINE_LOGIN_CHANNEL_ID!,
-    }),
-    cache: "no-store",
-  })
-  if (!res.ok) return null
-  const d = (await res.json()) as { sub?: string; name?: string; picture?: string }
-  if (!d.sub) return null
-  return { userId: d.sub, displayName: d.name, pictureUrl: d.picture }
+  try {
+    const res = await fetch("https://api.line.me/oauth2/v2.1/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        id_token: idToken,
+        client_id: process.env.LINE_LOGIN_CHANNEL_ID!,
+      }),
+      cache: "no-store",
+    })
+    if (!res.ok) return null
+    const d = (await res.json()) as { sub?: string; name?: string; picture?: string }
+    if (!d.sub) return null
+    return { userId: d.sub, displayName: d.name, pictureUrl: d.picture }
+  } catch {
+    return null
+  }
 }
 
 /** push ข้อความ text — คืน false เมื่อส่งไม่สำเร็จ (ห้าม throw: การจองต้องเดินต่อ) */
