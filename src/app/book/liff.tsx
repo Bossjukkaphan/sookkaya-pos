@@ -23,7 +23,8 @@ export function useLiff(): LiffState {
         const idToken = liff.getIDToken()
         if (!idToken) throw new Error("no token")
         if (!cancelled) setState({ phase: "ready", idToken })
-      } catch {
+      } catch (e) {
+        console.error("liff init failed:", e)
         if (!cancelled)
           setState({ phase: "error", message: "เปิดหน้านี้จากเมนูในไลน์ของร้านนะคะ" })
       }
