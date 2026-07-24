@@ -25,8 +25,13 @@ export function useLiff(): LiffState {
         if (!cancelled) setState({ phase: "ready", idToken })
       } catch (e) {
         console.error("liff init failed:", e)
+        // แนบสาเหตุจริงไว้ท้ายข้อความ ช่วยวินิจฉัยตอนซัพพอร์ตลูกค้า/ตั้งค่า LIFF
+        const detail = e instanceof Error ? e.message : String(e)
         if (!cancelled)
-          setState({ phase: "error", message: "เปิดหน้านี้จากเมนูในไลน์ของร้านนะคะ" })
+          setState({
+            phase: "error",
+            message: `เปิดหน้านี้จากเมนูในไลน์ของร้านนะคะ (${detail})`,
+          })
       }
     })()
     return () => {
