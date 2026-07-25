@@ -833,6 +833,13 @@ export function PosForm({
               })}
             </>
           )}
+          {/* นโยบายร้าน: ทุกคนสะสมแต้ม — เตือนก่อนบันทึกถ้าบิลนี้จะไม่ได้แต้ม */}
+          {!customerId && !customerPhone.trim() && (
+            <p className="text-xs font-medium text-amber-700">
+              ⚠️ ยังไม่ได้ผูกลูกค้า — บิลนี้จะไม่สะสมแต้ม (เลือกลูกค้า หรือกรอกชื่อ+เบอร์
+              ระบบจะผูก/สร้างสมาชิกให้เอง)
+            </p>
+          )}
           <div className="flex items-baseline justify-between">
             <span className="font-medium">
               {extras.length > 0

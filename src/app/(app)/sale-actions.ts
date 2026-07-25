@@ -86,7 +86,31 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount")))) // กันเศษสตางค์หลุดเข้าบิล
 
   const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
-  const customerId = rawCustomerId === "" ? null : rawCustomerId
+  let customerId = rawCustomerId === "" ? null : rawCustomerId
+
+  // นโยบายร้าน: ทุกคนเป็นสมาชิกสะสมแต้ม — บิลที่พิมพ์ชื่อ+เบอร์ใหม่ (ไม่ได้เลือกจากระบบ)
+  // ให้จับคู่ลูกค้าด้วยเบอร์: เจอ = ผูกคนเดิม (แต้มสะสมต่อเนื่อง) · ไม่เจอ = สร้างลูกค้าใหม่ให้
+  // ไม่มีเบอร์ = ผูกไม่ได้ (เบอร์คือกุญแจกันสร้างคนซ้ำ) — บิลยังบันทึกได้ แค่ไม่ได้แต้ม
+  const typedName = String(formData.get("customer_name") ?? "").trim()
+  const typedPhone = String(formData.get("customer_phone") ?? "").trim()
+  if (!customerId && typedPhone) {
+    const { data: byPhone } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("phone", typedPhone)
+      .limit(1)
+      .maybeSingle()
+    if (byPhone) {
+      customerId = byPhone.id
+    } else if (typedName) {
+      const { data: created } = await supabase
+        .from("customers")
+        .insert({ name: typedName, phone: typedPhone })
+        .select("id")
+        .maybeSingle()
+      customerId = created?.id ?? null
+    }
+  }
 
   // สัดส่วนรับรู้รายได้ของสมาชิก — อ่านก่อนคำนวณ เพราะสูตรต้องใช้
   let memberRatio: number | null = null
