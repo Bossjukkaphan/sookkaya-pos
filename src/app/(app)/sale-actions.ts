@@ -318,9 +318,10 @@ export async function updateSale(
   }
 
   // อ่านราคา/ค่ามือจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาจากฟอร์ม
+  // (duration_min ใช้ sync การ์ดคิวถ้าบิลนี้ผูกคิวอยู่ — เหมือน createSale)
   const { data: service } = await supabase
     .from("services")
-    .select("name, price, commission")
+    .select("name, price, commission, duration_min")
     .eq("id", serviceId)
     .single()
 
@@ -421,9 +422,28 @@ export async function updateSale(
     }
   }
 
+  // บิลนี้อาจมีการ์ดคิวผูกอยู่ (คิววันนี้) — sync ฟิลด์ที่การ์ดคิว "มิเรอร์" มาจากบิลตอนสร้าง
+  // (ดู createSale) ไม่งั้นแก้โปรแกรมนวดในบิลแล้วการ์ดคิวยังค้างค่าเก่า — เคสจริงที่พนักงานเจอ:
+  // ลูกค้าเปลี่ยนโปรแกรม 60→90 นาที บิลถูกแล้วแต่การ์ดคิวยังโชว์ 60 นาที ต้องลบบิลทิ้งแล้วสร้างคิวใหม่
+  // .eq("sale_id", id) ทำหน้าที่กรอง "มีคิวผูกอยู่จริงไหม" ในตัวเอง — ไม่มีคิวผูกก็ไม่มีแถวไหนถูกแก้
+  // (คิวเป็นผังงานไม่ใช่สมุดเงิน — พลาดก็ไม่กระทบบิล จึงไม่เช็ค error เหมือน createSale)
+  await supabase
+    .from("queue_entries")
+    .update({
+      service_id: serviceId,
+      service_name: service.name,
+      duration_min: service.duration_min ?? 60,
+      therapist_id: therapistId,
+      customer_name: String(formData.get("customer_name") ?? "").trim() || null,
+      customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("sale_id", id)
+
   revalidatePath("/today")
   revalidatePath("/")
   revalidatePath("/commission")
   revalidatePath("/overview")
+  revalidatePath("/queue")
   return { ok: true }
 }
