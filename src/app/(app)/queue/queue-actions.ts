@@ -56,6 +56,29 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     .single()
   if (!service) return { ok: false, error: "ไม่พบเมนูนี้" }
 
+  // กันบันทึกซ้ำฝั่ง server (กดรัว/เน็ตหน่วงแล้ว retry): ลูกค้า+วัน+เวลา+เมนูเดิม
+  // ที่เพิ่งถูกสร้างภายใน 10 วิ = คำขอเดียวกัน → ตอบสำเร็จเงียบๆ ไม่สร้างแถวใหม่
+  // (แนวเดียวกับ dup guard ของการจองผ่านไลน์ใน book/actions.ts)
+  // เทียบหมอด้วย + ข้ามแถวที่ยกเลิก/ปฏิเสธ — วอล์กอินไม่ระบุชื่อสองคนติดกัน (คนละหมอ)
+  // หรือสร้าง→ยกเลิก→สร้างใหม่ทันที ต้องยังทำได้ตามปกติ
+  let dupQ = supabase
+    .from("queue_entries")
+    .select("id")
+    .eq("queue_date", queueDate)
+    .eq("start_time", startTime)
+    .eq("service_id", serviceId)
+    .not("status", "in", "(cancelled,rejected)")
+    .gte("created_at", new Date(Date.now() - 10_000).toISOString())
+    .limit(1)
+  dupQ = customerName
+    ? dupQ.eq("customer_name", customerName)
+    : dupQ.is("customer_name", null)
+  dupQ = therapistId
+    ? dupQ.eq("therapist_id", therapistId)
+    : dupQ.is("therapist_id", null)
+  const { data: dup } = await dupQ
+  if (dup && dup.length > 0) return { ok: true }
+
   const { error } = await supabase.from("queue_entries").insert({
     queue_date: queueDate,
     therapist_id: therapistId,

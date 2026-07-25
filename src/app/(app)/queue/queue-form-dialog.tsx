@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { CustomerPicker } from "@/app/(app)/pos/customer-picker"
@@ -111,9 +111,14 @@ export function QueueFormDialog({
   // (เวลา·ลูกค้าผู้ติดต่อ·ที่มา·หมายเหตุ ใช้ร่วมกันทั้งกลุ่ม)
   const [extraPeople, setExtraPeople] = useState<GroupPerson[]>([])
   const [pending, startTransition] = useTransition()
+  // กันยิงซ้ำแบบ synchronous — ปุ่ม disabled={pending} ไม่ทันเคสกดรัว/Enter+คลิก
+  // เพราะ pending เพิ่งจะเปลี่ยนหลัง re-render (คลิกที่สองแทรกก่อนได้)
+  const submittingRef = useRef(false)
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (submittingRef.current) return
+    submittingRef.current = true
     const fd = new FormData(e.currentTarget)
     startTransition(async () => {
       const r = entry
@@ -141,6 +146,7 @@ export function QueueFormDialog({
         onDone()
       } else {
         toast.error(r.error)
+        submittingRef.current = false // แก้ข้อมูลแล้วส่งใหม่ได้
       }
     })
   }
