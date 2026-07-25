@@ -366,6 +366,10 @@ export function QueueBoard({
                 className="relative"
                 style={{ width: BOARD_W, height: ROW_H }}
                 onClick={(e) => {
+                  // dialog ของการ์ดถูก portal ไปที่ body แต่ React ยัง bubble คลิกกลับมาตาม
+                  // component tree ถึงแถวนี้ — เช็ค DOM จริง: target ไม่อยู่ในแถว = คลิกใน dialog
+                  // (เคยทำช่อง "เหตุผลอื่น" ตอนปฏิเสธคิวไลน์ เผลอเปิดฟอร์มเพิ่มคิวซ้อนขึ้นมา)
+                  if (!e.currentTarget.contains(e.target as Node)) return
                   // แตะช่องว่าง = เพิ่มคิวให้หมอแถวนี้ที่เวลานั้น (การ์ดเป็น button — ไม่เข้าเงื่อนไขนี้)
                   if ((e.target as HTMLElement).closest("button")) return
                   if (movedRef.current) return // เพิ่งลากเสร็จ ไม่ใช่ตั้งใจแตะ

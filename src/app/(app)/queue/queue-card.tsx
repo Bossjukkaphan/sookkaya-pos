@@ -85,7 +85,13 @@ function RejectButton({
     )
 
   return (
-    <div className="w-full space-y-1.5 rounded-lg border border-red-200 p-2">
+    // กันคลิก/แตะรั่วขึ้นไปหา handler ของบอร์ด (React bubble ข้าม portal ได้) —
+    // เคยทำให้แตะช่องพิมพ์เหตุผลแล้วฟอร์มเพิ่มคิวเปิดซ้อนแทนที่จะได้พิมพ์
+    <div
+      className="w-full space-y-1.5 rounded-lg border border-red-200 p-2"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       {REJECT_REASONS.map((r) => (
         <Button
           key={r}
@@ -104,6 +110,8 @@ function RejectButton({
           onChange={(e) => setCustom(e.target.value)}
           placeholder="เหตุผลอื่น…"
           className="h-9"
+          // เปิด picker แล้วพร้อมพิมพ์เลย — ไม่ต้องแตะช่องซ้ำ (ลดโอกาสแตะพลาดบนมือถือ)
+          autoFocus
         />
         <Button size="sm" disabled={pending || !custom.trim()} onClick={() => send(custom)}>
           ส่ง
