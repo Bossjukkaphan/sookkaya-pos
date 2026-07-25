@@ -29,7 +29,12 @@ import {
   PAY_SELECTED_DEFAULT,
 } from "@/lib/payment-colors"
 import { nowTimeInShopTz } from "@/lib/datetime"
-import { promoDiscountBaht } from "@/lib/promo"
+import {
+  HAPPY_HOUR_KEY,
+  happyHourDiscountBaht,
+  promoDiscountBaht,
+  promoKey,
+} from "@/lib/promo"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -118,7 +123,19 @@ export function PosForm({
     if (customPromo) return
     const svc = services.find((s) => s.id === svcId)
     const promo = promotions.find((p) => p.name === promoName)
-    if (svc && promo?.discount_pct) {
+    if (!svc || !promo) return
+    // Happy Hour: เมนูนวด 90 นาที จ่ายราคา 60 — ส่วนลดคือส่วนต่างของสองราคา
+    if (promoKey(promo.name) === HAPPY_HOUR_KEY) {
+      const hh = happyHourDiscountBaht(svc, services)
+      if (hh != null) {
+        setDiscount(String(hh))
+        toast.info(`Happy Hour: จ่ายราคา 60 นาที (ลด ${hh} ฿) · ใช้ จ–ศ ก่อน 12:00`)
+      } else {
+        toast.warning("เมนูนี้ไม่เข้าเงื่อนไข Happy Hour — ต้องเป็นเมนูนวด 90 นาที (ทรีตเมนต์/คอบ่าไหล่ไม่ร่วม)")
+      }
+      return
+    }
+    if (promo.discount_pct) {
       setDiscount(String(promoDiscountBaht(svc.price, promo.discount_pct)))
     }
   }

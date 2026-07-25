@@ -7,7 +7,12 @@ import { toast } from "sonner"
 import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { REQUEST_FEE, formatBaht } from "@/lib/constants"
-import { promoDiscountBaht } from "@/lib/promo"
+import {
+  HAPPY_HOUR_KEY,
+  happyHourDiscountBaht,
+  promoDiscountBaht,
+  promoKey,
+} from "@/lib/promo"
 import { Checkbox } from "@/components/ui/checkbox"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
@@ -116,7 +121,18 @@ export function GroupPosForm({
   ) {
     const svc = services.find((s) => s.id === (patch.serviceId ?? p.serviceId))
     const promo = promotions.find((x) => x.name === (patch.couponPromo ?? p.couponPromo))
-    if (svc && promo?.discount_pct) {
+    if (!svc || !promo) return patch
+    // Happy Hour: เมนูนวด 90 นาที จ่ายราคา 60 — ส่วนลดคือส่วนต่างของสองราคา
+    if (promoKey(promo.name) === HAPPY_HOUR_KEY) {
+      const hh = happyHourDiscountBaht(svc, services)
+      if (hh != null) {
+        toast.info(`Happy Hour: จ่ายราคา 60 นาที (ลด ${hh} ฿) · ใช้ จ–ศ ก่อน 12:00`)
+        return { ...patch, discount: String(hh) }
+      }
+      toast.warning("เมนูนี้ไม่เข้าเงื่อนไข Happy Hour — ต้องเป็นเมนูนวด 90 นาที (ทรีตเมนต์/คอบ่าไหล่ไม่ร่วม)")
+      return patch
+    }
+    if (promo.discount_pct) {
       return { ...patch, discount: String(promoDiscountBaht(svc.price, promo.discount_pct)) }
     }
     return patch

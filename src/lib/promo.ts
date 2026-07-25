@@ -21,3 +21,26 @@ export function promoDiscountBaht(price: number, pct: number): number {
   if (price <= 0 || pct <= 0) return 0
   return Math.min(Math.round((price * pct) / 100), Math.round(price))
 }
+
+/** คีย์มาตรฐานของโปร Happy Hours (เทียบด้วย promoKey ของชื่อโปรที่เลือก) */
+export const HAPPY_HOUR_KEY = "happyhours"
+
+/**
+ * โปร Happy Hour: เลือกเมนูนวด 90 นาที จ่ายราคา 60 นาทีของเมนูเดียวกัน
+ * คืนส่วนลดเป็นบาทเต็ม หรือ null ถ้าไม่เข้าเงื่อนไข
+ * (ทรีตเมนต์กับนวดคอบ่าไหล่ไม่ร่วมรายการ · เงื่อนไขวัน-เวลาให้พนักงานตัดสิน)
+ */
+export function happyHourDiscountBaht(
+  service: { name: string; price: number },
+  services: { name: string; price: number }[]
+): number | null {
+  const m = service.name.match(/^(.+) 90 นาที$/)
+  if (!m) return null
+  const base = m[1]
+  if (!base.includes("นวด") || base.includes("ทรีตเมนต์")) return null
+  if (base.replace(/\s+/g, "") === "นวดคอบ่าไหล่") return null
+  const sixty = services.find((s) => s.name === `${base} 60 นาที`)
+  if (!sixty) return null
+  const discount = Math.round(service.price - sixty.price)
+  return discount > 0 ? discount : null
+}

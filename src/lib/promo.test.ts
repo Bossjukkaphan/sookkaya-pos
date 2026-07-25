@@ -101,3 +101,38 @@ describe("promoDiscountBaht", () => {
     expect(promoDiscountBaht(500, NaN)).toBe(0)
   })
 })
+
+import { happyHourDiscountBaht } from "./promo"
+
+const HH_SERVICES = [
+  { name: "นวดแผนไทย 60 นาที", price: 390 },
+  { name: "นวดแผนไทย 90 นาที", price: 550 },
+  { name: "นวดคลายเท้า & คอบ่าไหล่ 60 นาที", price: 490 },
+  { name: "นวดคลายเท้า & คอบ่าไหล่ 90 นาที", price: 690 },
+  { name: "ทรีตเมนต์ขัดผิว + นวดน้ำมัน 60 นาที", price: 690 },
+  { name: "ทรีตเมนต์ขัดผิว + นวดน้ำมัน 90 นาที", price: 990 },
+  { name: "นวดคอ บ่า ไหล่ 60 นาที", price: 590 },
+  { name: "นวดศีรษะดั้งเดิม 90 นาที", price: 990 }, // ไม่มีตัว 60 ในลิสต์นี้
+]
+
+describe("happyHourDiscountBaht (นวด 90 จ่ายราคา 60)", () => {
+  it("เมนูนวด 90 นาที → ส่วนลด = ราคา 90 − ราคา 60 ของเมนูเดียวกัน", () => {
+    expect(happyHourDiscountBaht({ name: "นวดแผนไทย 90 นาที", price: 550 }, HH_SERVICES)).toBe(160)
+    expect(
+      happyHourDiscountBaht({ name: "นวดคลายเท้า & คอบ่าไหล่ 90 นาที", price: 690 }, HH_SERVICES)
+    ).toBe(200)
+  })
+
+  it("เมนูที่ไม่เข้าร่วม → null (ทรีตเมนต์ / คอบ่าไหล่)", () => {
+    expect(
+      happyHourDiscountBaht({ name: "ทรีตเมนต์ขัดผิว + นวดน้ำมัน 90 นาที", price: 990 }, HH_SERVICES)
+    ).toBeNull()
+    expect(happyHourDiscountBaht({ name: "นวดคอ บ่า ไหล่ 60 นาที", price: 590 }, HH_SERVICES)).toBeNull()
+  })
+
+  it("ไม่ใช่เมนู 90 นาที หรือไม่มีคู่ 60 นาที → null", () => {
+    expect(happyHourDiscountBaht({ name: "นวดแผนไทย 60 นาที", price: 390 }, HH_SERVICES)).toBeNull()
+    expect(happyHourDiscountBaht({ name: "นวดแผนไทย 120 นาที", price: 650 }, HH_SERVICES)).toBeNull()
+    expect(happyHourDiscountBaht({ name: "นวดศีรษะดั้งเดิม 90 นาที", price: 990 }, HH_SERVICES)).toBeNull()
+  })
+})
