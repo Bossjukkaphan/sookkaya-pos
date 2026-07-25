@@ -34,6 +34,8 @@ export type PointsHome =
       ok: true
       linked: true
       customerName: string
+      /** โปรไฟล์สมาชิกครบหรือยัง (วันเกิด+เพศ) — ยังไม่ครบให้กรอกก่อนเห็นแต้ม */
+      profileComplete: boolean
       balance: number
       /** แต้มก้อนแรกสุดหมดอายุวันไหน (แสดงเตือน) */
       earliestExpiry: string | null
@@ -52,7 +54,7 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
 
   const { data: account } = await db
     .from("line_accounts")
-    .select("customer_id, customers(name)")
+    .select("customer_id, customers(name, birthday, gender)")
     .eq("line_user_id", who.userId)
     .maybeSingle()
 
@@ -60,6 +62,12 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
     return { ok: true, linked: false, displayName: cleanLineDisplayName(who.displayName) }
   }
   const customerId = account.customer_id
+  const profile = (
+    account as unknown as {
+      customers: { name: string; birthday: string | null; gender: string | null } | null
+    }
+  ).customers
+  const profileComplete = Boolean(profile?.birthday && profile?.gender)
 
   // ชื่อไลน์เปลี่ยนได้ — เก็บชื่อล่าสุดไว้ให้ฝั่งร้านเห็น (แยกจากชื่อจริงในระบบ)
   const freshName = cleanLineDisplayName(who.displayName)
@@ -134,6 +142,7 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
     ok: true,
     linked: true,
     customerName: cleanLineDisplayName(customerName) ?? customerName,
+    profileComplete,
     balance: balanceRow?.balance ?? 0,
     earliestExpiry: earliest?.expires_at ?? null,
     coupons: (coupons ?? []).map((c) => ({
@@ -241,4 +250,63 @@ export async function redeemReward(
       expiresAt,
     },
   }
+}
+
+const GENDERS = ["หญิง", "ชาย", "ไม่ระบุ"] as const
+const SOURCES = [
+  "Instagram",
+  "TikTok",
+  "Facebook",
+  "Google Maps",
+  "เพื่อนแนะนำ",
+  "เดินผ่านหน้าร้าน",
+  "อื่นๆ",
+] as const
+
+/** ฟอร์มสมาชิกครั้งแรกก่อนเข้าหน้าแต้ม — เก็บเข้าโปรไฟล์ลูกค้าเพื่อการดูแล/การตลาด */
+export async function savePointsProfile(
+  idToken: string,
+  input: {
+    fullName: string
+    nickname: string
+    birthday: string
+    gender: string
+    source: string
+  }
+): Promise<{ ok: true } | Fail> {
+  const who = await verifyLineIdToken(idToken)
+  if (!who) return AUTH_FAIL
+  const db = createServiceClient()
+
+  const fullName = input.fullName.trim()
+  const birthday = input.birthday.trim()
+  if (!fullName) return { ok: false, error: "กรุณากรอกชื่อ-นามสกุลค่ะ" }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
+    return { ok: false, error: "กรุณาเลือกวันเกิดค่ะ" }
+  }
+  if (!GENDERS.includes(input.gender as (typeof GENDERS)[number])) {
+    return { ok: false, error: "กรุณาเลือกเพศค่ะ" }
+  }
+
+  const { data: account } = await db
+    .from("line_accounts")
+    .select("customer_id")
+    .eq("line_user_id", who.userId)
+    .maybeSingle()
+  if (!account) return AUTH_FAIL
+
+  const { error } = await db
+    .from("customers")
+    .update({
+      name: fullName,
+      nickname: input.nickname.trim() || null,
+      birthday,
+      gender: input.gender,
+      ...(SOURCES.includes(input.source as (typeof SOURCES)[number])
+        ? { acquisition_source: input.source }
+        : {}),
+    })
+    .eq("id", account.customer_id)
+  if (error) return { ok: false, error: "บันทึกไม่สำเร็จ ลองใหม่อีกครั้งนะคะ" }
+  return { ok: true }
 }

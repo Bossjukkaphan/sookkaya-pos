@@ -1,7 +1,11 @@
 import type { Metadata } from "next"
 
+// ชื่อกลางของโซนลูกค้า — แต่ละหน้าตั้งคำนำหน้าเอง (จองคิว/แต้มสะสม/การจองของฉัน)
 export const metadata: Metadata = {
-  title: "จองคิว · SOOK KAYA",
+  title: {
+    default: "SOOKKAYA Thai Massage",
+    template: "%s · SOOKKAYA",
+  },
 }
 
 export default function BookLayout({

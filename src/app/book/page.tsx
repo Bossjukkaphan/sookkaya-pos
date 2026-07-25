@@ -1,6 +1,8 @@
 import { getBookingOptions } from "./actions"
 import { BookingWizard } from "./wizard"
 
+export const metadata = { title: "จองคิว" }
+
 export const dynamic = "force-dynamic"
 
 export default async function BookPage() {

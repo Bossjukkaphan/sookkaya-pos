@@ -7,10 +7,133 @@ import { useLiff } from "../liff"
 import {
   getPointsHome,
   redeemReward,
+  savePointsProfile,
   type PointCoupon,
   type PointsHome,
 } from "../points-actions"
 import { formatThaiDate } from "@/lib/datetime"
+
+/** ฟอร์มสมาชิกครั้งแรก — กรอกสั้นๆ ก่อนเข้าหน้าแต้ม (ใช้ดูแลลูกค้า/อวยพรวันเกิด) */
+function ProfileForm({
+  idToken,
+  currentName,
+  onDone,
+}: {
+  idToken: string
+  currentName: string
+  onDone: () => void
+}) {
+  const [fullName, setFullName] = useState(currentName)
+  const [nickname, setNickname] = useState("")
+  const [birthday, setBirthday] = useState("")
+  const [gender, setGender] = useState("")
+  const [source, setSource] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError("")
+    const r = await savePointsProfile(idToken, {
+      fullName,
+      nickname,
+      birthday,
+      gender,
+      source,
+    })
+    if (r.ok) onDone()
+    else setError(r.error)
+    setSaving(false)
+  }
+
+  const field = "w-full rounded-xl border bg-white px-3 py-3 text-base"
+  return (
+    <form onSubmit={submit} className="space-y-4 p-4">
+      <div className="text-center">
+        <p className="text-lg font-semibold">สมัครสมาชิกสะสมแต้ม 🌿</p>
+        <p className="mt-1 text-sm text-slate-600">
+          กรอกสั้นๆ ครั้งเดียว เพื่อรับสิทธิ์สะสมแต้มและของขวัญวันเกิดค่ะ
+        </p>
+      </div>
+      <div className="space-y-1">
+        <label className="text-sm font-medium">ชื่อ-นามสกุล *</label>
+        <input
+          className={field}
+          value={fullName}
+          onChange={(e) => setFullName(e.target.value)}
+          placeholder="เช่น สมหญิง ใจดี"
+          required
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-sm font-medium">
+          ชื่อเล่น <span className="font-normal text-slate-400">(ไม่บังคับ)</span>
+        </label>
+        <input
+          className={field}
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          placeholder="ให้ร้านเรียกว่าอะไรดีคะ"
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-sm font-medium">วันเกิด *</label>
+        <input
+          type="date"
+          className={field}
+          value={birthday}
+          onChange={(e) => setBirthday(e.target.value)}
+          required
+        />
+      </div>
+      <div className="space-y-1">
+        <label className="text-sm font-medium">เพศ *</label>
+        <div className="grid grid-cols-3 gap-2">
+          {["หญิง", "ชาย", "ไม่ระบุ"].map((g) => (
+            <button
+              key={g}
+              type="button"
+              onClick={() => setGender(g)}
+              className={`rounded-xl border py-3 text-sm ${
+                gender === g ? "border-emerald-600 bg-emerald-600 text-white" : "bg-white"
+              }`}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="space-y-1">
+        <label className="text-sm font-medium">
+          รู้จัก SOOKKAYA จากช่องทางไหนคะ{" "}
+          <span className="font-normal text-slate-400">(ไม่บังคับ)</span>
+        </label>
+        <select className={field} value={source} onChange={(e) => setSource(e.target.value)}>
+          <option value="">— เลือก —</option>
+          {["Instagram", "TikTok", "Facebook", "Google Maps", "เพื่อนแนะนำ", "เดินผ่านหน้าร้าน", "อื่นๆ"].map(
+            (s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            )
+          )}
+        </select>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button
+        type="submit"
+        disabled={saving || !fullName.trim() || !birthday || !gender}
+        className="w-full rounded-full bg-emerald-600 py-3 font-medium text-white disabled:opacity-40"
+      >
+        {saving ? "กำลังบันทึก..." : "เริ่มสะสมแต้ม 🌿"}
+      </button>
+      <p className="text-center text-xs text-slate-400">
+        ข้อมูลใช้เพื่อดูแลสมาชิกและสิทธิพิเศษของร้านเท่านั้น
+      </p>
+    </form>
+  )
+}
 
 /** หน้าแต้มสะสม — เปิดจาก Rich Menu: https://liff.line.me/<LIFF_ID>/points */
 export default function PointsPage() {
@@ -68,6 +191,17 @@ export default function PointsPage() {
           ไปหน้าจองคิว / ยืนยันเบอร์
         </Link>
       </div>
+    )
+  }
+
+  // สมาชิกใหม่: กรอกโปรไฟล์สั้นๆ ก่อนเข้าหน้าแต้ม (ครั้งเดียว)
+  if (!home.profileComplete && liffState.phase === "ready") {
+    return (
+      <ProfileForm
+        idToken={liffState.idToken}
+        currentName={home.customerName}
+        onDone={reload}
+      />
     )
   }
 

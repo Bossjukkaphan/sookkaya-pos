@@ -94,6 +94,7 @@ export type Database = {
       customers: {
         Row: {
           birthday: string | null
+          acquisition_source: string | null
           created_at: string
           customer_type: string
           gender: string | null
@@ -108,6 +109,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          acquisition_source?: string | null
           birthday?: string | null
           created_at?: string
           customer_type?: string
@@ -123,6 +125,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          acquisition_source?: string | null
           birthday?: string | null
           created_at?: string
           customer_type?: string
