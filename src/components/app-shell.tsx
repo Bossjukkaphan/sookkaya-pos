@@ -23,6 +23,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { usePendingQueue } from "@/components/queue-notifications"
 
 type NavLink = {
   href: string
@@ -100,13 +101,17 @@ function allowed(link: NavLink, role: string): boolean {
 
 export function AppShell({
   role,
-  pendingCount,
+  pendingCount: initialPendingCount,
 }: {
   role: string
-  /** จำนวนคำขอจองจากไลน์ที่รออนุมัติ — ขึ้นป้ายเตือนบนเมนู "คิว" */
+  /** ค่าจาก server ตอนโหลดหน้า — ใช้จนกว่าตัวแจ้งเตือนสด (realtime) จะพร้อม */
   pendingCount?: number
 }) {
   const pathname = usePathname()
+  // ป้ายเมนู "คิว" อ่านจาก store สด — คำขอใหม่/ถูกอนุมัติจากเครื่องอื่นเห็นทันที
+  // ไม่ต้องรอเปลี่ยนหน้า (นอก provider เช่นหน้า preview → ใช้ค่า server แทน)
+  const live = usePendingQueue()
+  const pendingCount = live ? live.pendingCount : initialPendingCount
 
   const primary = PRIMARY.filter((l) => allowed(l, role))
   const sections = SECTIONS.map((s) => ({

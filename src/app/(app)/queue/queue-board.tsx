@@ -248,42 +248,9 @@ export function QueueBoard({
     nowMin
   )
   const waitingCount = entries.filter((e) => e.status === "waiting").length
+  // เสียง "ติ๊ง" ตอนมีคำขอใหม่ย้ายไปตัวแจ้งเตือนรวม (components/queue-notifications
+  // — mount ใน (app)/layout อยู่ทุกหน้ารวมหน้านี้) ถ้าดังเองที่นี่ด้วยจะซ้อนสองรอบ
   const pendingCount = entries.filter((e) => e.status === "pending").length
-
-  // เสียงเตือนเมื่อมีคำขอจากไลน์เข้าใหม่ — เทียบจำนวน pending กับรอบก่อนหน้า (realtime อัปเดต entries ให้อยู่แล้ว)
-  const prevPending = useRef(pendingCount)
-  // กดลูกศรเปลี่ยนวัน → pendingCount กระโดดเพราะข้อมูลคนละวัน ไม่ใช่คำขอใหม่จริง
-  // ต้อง sync ค่าเงียบๆ ไม่ต้องดัง ไม่งั้นเลื่อนไปวันที่มี pending ค้างอยู่จะดังหลอกทุกครั้ง
-  const prevBoardDate = useRef(boardDate)
-  useEffect(() => {
-    const dateChanged = prevBoardDate.current !== boardDate
-    prevBoardDate.current = boardDate
-    if (dateChanged) {
-      prevPending.current = pendingCount
-      return
-    }
-    if (pendingCount > prevPending.current) {
-      try {
-        const ctx = new AudioContext()
-        const osc = ctx.createOscillator()
-        const gain = ctx.createGain()
-        osc.frequency.value = 880
-        gain.gain.value = 0.05
-        osc.connect(gain).connect(ctx.destination)
-        // ปิด context เองหลังเสียงจบ — จอนี้เปิดค้างทั้งวัน ถ้าไม่ปิดคอนเท็กซ์จะค้างสะสม
-        // จนชนเพดานจำนวน AudioContext ที่เบราว์เซอร์อนุญาต แล้วเสียงจะเงียบไปดื้อๆ กลางวัน
-        osc.onended = () => {
-          void ctx.close()
-        }
-        osc.start()
-        osc.stop(ctx.currentTime + 0.15)
-      } catch {
-        // เคสเงียบจริงๆ ไม่ใช่ throw — บราวเซอร์ล็อก AudioContext ไว้ "suspended" จนกว่าจะมี
-        // user gesture (คลิก/แตะ) ก่อน ถ้าเปิดหน้านี้ทิ้งไว้ยังไม่มีใครแตะจอเลยจะไม่มีเสียง
-      }
-    }
-    prevPending.current = pendingCount
-  }, [pendingCount, boardDate])
 
   const hours = Array.from(
     { length: (BOARD_END_MIN - BOARD_START_MIN) / 60 },
