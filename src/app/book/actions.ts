@@ -78,6 +78,24 @@ export async function linkLineAccount(
     const pick = matches.find((m) => m.id === latest?.customer_id) ?? matches[0]
     customerId = pick.id
   }
+  // กันสวมสิทธิ์: ลูกค้าคนนี้ผูกไลน์ (ตัวอื่น) ไว้แล้ว → ห้ามผูกซ้อน
+  // ตั้งแต่มีระบบแต้ม การผูกเบอร์ = เห็นประวัติ+แลกแต้มได้ ใครรู้เบอร์ก็สวมได้ถ้าไม่กัน
+  // เคสจริงที่ต้องผ่านร้าน: ลูกค้าเปลี่ยนบัญชีไลน์ → แอดมินย้ายลิงก์ให้จากโปรไฟล์ลูกค้า
+  const { data: existingLink } = await db
+    .from("line_accounts")
+    .select("line_user_id")
+    .eq("customer_id", customerId)
+    .neq("line_user_id", who.userId)
+    .limit(1)
+    .maybeSingle()
+  if (existingLink) {
+    return {
+      ok: false,
+      error:
+        "เบอร์นี้ผูกกับบัญชีไลน์อื่นอยู่แล้วค่ะ ถ้าเป็นเบอร์ของคุณ (เช่น เปลี่ยนไลน์ใหม่) แจ้งพนักงานที่ร้านให้ย้ายบัญชีได้เลยนะคะ",
+    }
+  }
+
   const { error } = await db.from("line_accounts").upsert({
     line_user_id: who.userId,
     customer_id: customerId,
