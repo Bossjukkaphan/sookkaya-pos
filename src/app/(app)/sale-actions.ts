@@ -436,6 +436,7 @@ export async function updateSale(
       therapist_id: therapistId,
       customer_name: String(formData.get("customer_name") ?? "").trim() || null,
       customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
+      is_request: formData.get("is_request") === "on",
       updated_at: new Date().toISOString(),
     })
     .eq("sale_id", id)
