@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { REQUEST_FEE, formatBaht } from "@/lib/constants"
+import { promoDiscountBaht } from "@/lib/promo"
 import { Checkbox } from "@/components/ui/checkbox"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
@@ -16,7 +17,7 @@ import { ServiceCombobox } from "@/components/service-combobox"
 
 type Therapist = { id: string; name: string }
 type Service = { id: string; name: string; price: number; commission: number }
-type Promotion = { id: string; name: string }
+type Promotion = { id: string; name: string; discount_pct: number | null }
 
 /** ข้อมูลหนึ่งคนในกลุ่ม เตรียมมาจากการ์ดคิวฝั่ง server */
 export type GroupPerson = {
@@ -106,6 +107,19 @@ export function GroupPosForm({
 
   function setPerson(i: number, patch: Partial<(typeof people)[number]>) {
     setPeople((arr) => arr.map((p, j) => (j === i ? { ...p, ...patch } : p)))
+  }
+
+  // เลือกโปรที่ตั้ง % ไว้ → เติมส่วนลดเป็นบาทเต็มให้คนนั้นเอง เปลี่ยนเมนูก็คิดใหม่
+  function withPromoDiscount(
+    p: (typeof people)[number],
+    patch: { serviceId?: string; couponPromo?: string }
+  ) {
+    const svc = services.find((s) => s.id === (patch.serviceId ?? p.serviceId))
+    const promo = promotions.find((x) => x.name === (patch.couponPromo ?? p.couponPromo))
+    if (svc && promo?.discount_pct) {
+      return { ...patch, discount: String(promoDiscountBaht(svc.price, promo.discount_pct)) }
+    }
+    return patch
   }
 
   async function submitAll() {
@@ -234,7 +248,9 @@ export function GroupPosForm({
                     <ServiceCombobox
                       services={services}
                       value={p.serviceId}
-                      onChange={(serviceId) => setPerson(i, { serviceId })}
+                      onChange={(serviceId) =>
+                        setPerson(i, withPromoDiscount(p, { serviceId }))
+                      }
                       aria-label={`เมนูคนที่ ${i + 1}`}
                       triggerClassName="h-11 text-sm"
                     />
@@ -248,12 +264,21 @@ export function GroupPosForm({
                       placeholder="ส่วนลด (฿)"
                       value={p.discount}
                       onChange={(e) => setPerson(i, { discount: e.target.value })}
+                      onBlur={() => {
+                        // เศษสตางค์ทำให้เบราว์เซอร์บล็อกปุ่มชำระ — ปัดเป็นบาทเต็ม
+                        const n = Number(p.discount)
+                        if (p.discount !== "" && Number.isFinite(n) && !Number.isInteger(n)) {
+                          setPerson(i, { discount: String(Math.round(n)) })
+                        }
+                      }}
                       className="h-11"
                       aria-label={`ส่วนลดคนที่ ${i + 1}`}
                     />
                     <select
                       value={p.couponPromo}
-                      onChange={(e) => setPerson(i, { couponPromo: e.target.value })}
+                      onChange={(e) =>
+                        setPerson(i, withPromoDiscount(p, { couponPromo: e.target.value }))
+                      }
                       className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
                       aria-label={`โปรโมชั่นคนที่ ${i + 1}`}
                     >

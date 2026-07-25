@@ -74,3 +74,30 @@ describe("promoKey ตรงกับฟังก์ชัน SQL", () => {
     expect(promoKey(raw)).toBe(expected)
   })
 })
+
+import { promoDiscountBaht } from "./promo"
+
+describe("promoDiscountBaht", () => {
+  it("คำนวณส่วนลดจาก % ตรงตัวเมื่อหารลงตัว", () => {
+    expect(promoDiscountBaht(500, 15)).toBe(75)
+    expect(promoDiscountBaht(500, 20)).toBe(100)
+    expect(promoDiscountBaht(1000, 15)).toBe(150)
+  })
+
+  it("ปัดเศษเป็นบาทเต็ม (เศษสตางค์ทำให้กดชำระไม่ได้)", () => {
+    expect(promoDiscountBaht(550, 15)).toBe(83) // 82.5 → 83
+    expect(promoDiscountBaht(590, 15)).toBe(89) // 88.5 → 89
+    expect(promoDiscountBaht(333, 20)).toBe(67) // 66.6 → 67
+  })
+
+  it("ไม่เกินราคาขาย และกันค่าประหลาด", () => {
+    expect(promoDiscountBaht(100, 100)).toBe(100)
+    expect(promoDiscountBaht(100, 150)).toBe(100)
+    expect(promoDiscountBaht(0, 15)).toBe(0)
+    expect(promoDiscountBaht(-50, 15)).toBe(0)
+    expect(promoDiscountBaht(500, 0)).toBe(0)
+    expect(promoDiscountBaht(500, -5)).toBe(0)
+    expect(promoDiscountBaht(NaN, 15)).toBe(0)
+    expect(promoDiscountBaht(500, NaN)).toBe(0)
+  })
+})

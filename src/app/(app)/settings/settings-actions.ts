@@ -221,8 +221,14 @@ export async function savePromotion(formData: FormData): Promise<ActionResult> {
   const name = String(formData.get("name") ?? "").trim()
   const kind = String(formData.get("kind") ?? "promotion")
   const isActive = formData.get("is_active") === "on"
+  // % ว่าง = โปรนี้ไม่คิดส่วนลดอัตโนมัติ (เช่น ช่องทางขาย/ให้ฟรี)
+  const pctRaw = String(formData.get("discount_pct") ?? "").trim()
+  const discountPct = pctRaw === "" ? null : Math.round(Number(pctRaw))
 
   if (!name) return { ok: false, error: "กรุณากรอกชื่อโปรโมชั่น" }
+  if (discountPct !== null && (!Number.isFinite(discountPct) || discountPct < 1 || discountPct > 100)) {
+    return { ok: false, error: "ส่วนลด % ต้องเป็นตัวเลข 1-100" }
+  }
   if (!PROMO_KINDS.includes(kind as (typeof PROMO_KINDS)[number])) {
     return { ok: false, error: "ประเภทโปรโมชั่นไม่ถูกต้อง" }
   }
@@ -252,13 +258,13 @@ export async function savePromotion(formData: FormData): Promise<ActionResult> {
   const { data: saved, error } = id
     ? await supabase
         .from("promotions")
-        .update({ name, kind, is_active: isActive })
+        .update({ name, kind, is_active: isActive, discount_pct: discountPct })
         .eq("id", id)
         .select("id")
         .single()
     : await supabase
         .from("promotions")
-        .insert({ name, kind, is_active: isActive })
+        .insert({ name, kind, is_active: isActive, discount_pct: discountPct })
         .select("id")
         .single()
 

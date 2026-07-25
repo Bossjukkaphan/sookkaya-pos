@@ -29,6 +29,7 @@ import {
   PAY_SELECTED_DEFAULT,
 } from "@/lib/payment-colors"
 import { nowTimeInShopTz } from "@/lib/datetime"
+import { promoDiscountBaht } from "@/lib/promo"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,7 +40,7 @@ import { ServiceCombobox } from "@/components/service-combobox"
 
 type Therapist = { id: string; name: string }
 type Service = { id: string; name: string; price: number; commission: number }
-type Promotion = { id: string; name: string }
+type Promotion = { id: string; name: string; discount_pct: number | null }
 type Bed = { id: string; room: string; name: string }
 
 /** ค่ากรอกล่วงหน้าจากการ์ดคิว — เก็บเงินจากบอร์ดคิวไม่ต้องกรอกซ้ำ */
@@ -110,6 +111,17 @@ export function PosForm({
 
   const isGowabi = paymentMethod === GOWABI_METHOD
   const isMemberCredit = paymentMethod === MEMBER_CREDIT_METHOD
+
+  // เลือกโปรที่ตั้ง % ไว้ → เติมส่วนลดเป็นบาทเต็มให้เอง และคิดใหม่เมื่อเปลี่ยนเมนู
+  // (พนักงานยังพิมพ์ทับเองได้ — ค่าจะถูกทับกลับเฉพาะตอนเปลี่ยนโปร/เมนู)
+  function applyPromoDiscount(promoName: string, svcId: string) {
+    if (customPromo) return
+    const svc = services.find((s) => s.id === svcId)
+    const promo = promotions.find((p) => p.name === promoName)
+    if (svc && promo?.discount_pct) {
+      setDiscount(String(promoDiscountBaht(svc.price, promo.discount_pct)))
+    }
+  }
 
   const netAmount = useMemo(() => {
     if (!service) return 0
@@ -192,7 +204,10 @@ export function PosForm({
           name="service_id"
           services={services}
           value={serviceId}
-          onChange={setServiceId}
+          onChange={(id) => {
+            setServiceId(id)
+            applyPromoDiscount(couponPromo, id)
+          }}
         />
         {service && (
           <p className="text-sm text-slate-600">
@@ -373,6 +388,7 @@ export function PosForm({
                   return
                 }
                 setCouponPromo(e.target.value)
+                applyPromoDiscount(e.target.value, serviceId)
               }}
               className="h-12 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
@@ -414,6 +430,13 @@ export function PosForm({
               className="h-12"
               value={discount}
               onChange={(e) => setDiscount(e.target.value)}
+              onBlur={() => {
+                // เศษสตางค์ทำให้เบราว์เซอร์บล็อกปุ่มชำระ (step=1) — ปัดเป็นบาทเต็มให้เลย
+                const n = Number(discount)
+                if (discount !== "" && Number.isFinite(n) && !Number.isInteger(n)) {
+                  setDiscount(String(Math.round(n)))
+                }
+              }}
               placeholder="0"
             />
           </div>

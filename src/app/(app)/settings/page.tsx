@@ -44,7 +44,7 @@ export default async function SettingsPage() {
       .limit(60),
     supabase
       .from("promotions")
-      .select("id, name, kind, is_active")
+      .select("id, name, kind, is_active, discount_pct")
       .order("name"),
     supabase
       .from("v_promo_unmatched")

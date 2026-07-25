@@ -51,7 +51,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
   const priceNormal = service.price
   const isRequest = formData.get("is_request") === "on"
-  const discountInput = Math.max(0, toNumber(formData.get("discount")))
+  const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount")))) // กันเศษสตางค์หลุดเข้าบิล
 
   const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
   const customerId = rawCustomerId === "" ? null : rawCustomerId
@@ -329,7 +329,7 @@ export async function updateSale(
 
   const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
   const customerId = rawCustomerId === "" ? null : rawCustomerId
-  const discountInput = Math.max(0, toNumber(formData.get("discount")))
+  const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount")))) // กันเศษสตางค์หลุดเข้าบิล
 
   let memberRatio: number | null = null
   if (paymentMethod === MEMBER_CREDIT_METHOD) {

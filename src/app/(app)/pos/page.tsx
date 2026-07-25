@@ -39,7 +39,7 @@ export default async function PosPage({
       // ใช้ภายใน (Member / ถ่ายคอนเทนต์) ไม่ต้องขึ้นเป็นตัวเลือกให้พนักงานเลือกผิด
       supabase
         .from("promotions")
-        .select("id, name")
+        .select("id, name, discount_pct")
         .eq("is_active", true)
         .neq("kind", "internal")
         .order("name"),

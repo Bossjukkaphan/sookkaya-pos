@@ -17,7 +17,13 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-type Promotion = { id: string; name: string; kind: string; is_active: boolean }
+type Promotion = {
+  id: string
+  name: string
+  kind: string
+  is_active: boolean
+  discount_pct: number | null
+}
 type Unmatched = { raw_key: string; sample_text: string; uses: number }
 type Alias = { raw_key: string; sample_text: string; promotion_id: string | null }
 
@@ -54,6 +60,26 @@ export function PromotionsTab({
       if (result.ok) {
         toast.success("เพิ่มโปรโมชั่นแล้ว")
         setNewName("")
+        router.refresh()
+      } else {
+        toast.error(result.error)
+      }
+      setSavingKey(null)
+    })
+  }
+
+  function handlePct(p: Promotion, pct: string) {
+    const fd = new FormData()
+    fd.set("id", p.id)
+    fd.set("name", p.name)
+    fd.set("kind", p.kind)
+    if (p.is_active) fd.set("is_active", "on")
+    fd.set("discount_pct", pct)
+    setSavingKey(p.id)
+    startTransition(async () => {
+      const result = await savePromotion(fd)
+      if (result.ok) {
+        toast.success(pct ? `ตั้งส่วนลดอัตโนมัติ ${pct}% แล้ว` : "ปิดส่วนลดอัตโนมัติแล้ว")
         router.refresh()
       } else {
         toast.error(result.error)
@@ -100,9 +126,16 @@ export function PromotionsTab({
                     <p className="font-medium">{p.name}</p>
                     <p className="text-xs text-slate-500">
                       {KIND_LABELS[p.kind] ?? p.kind}
+                      {p.discount_pct != null &&
+                        ` · ลดอัตโนมัติ ${p.discount_pct}%`}
                       {!p.is_active && " · ปิดใช้แล้ว"}
                     </p>
                   </div>
+                  <PctEditor
+                    promo={p}
+                    saving={savingKey === p.id}
+                    onSave={(pct) => handlePct(p, pct)}
+                  />
                 </CardContent>
               </Card>
             </li>
@@ -119,6 +152,23 @@ export function PromotionsTab({
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               placeholder="เช่น ลด 20% วันเกิด"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="promo-pct">
+              ส่วนลดอัตโนมัติ (%){" "}
+              <span className="font-normal text-slate-500">
+                — เว้นว่างถ้าไม่ให้ระบบคิดส่วนลดให้เอง
+              </span>
+            </Label>
+            <Input
+              id="promo-pct"
+              name="discount_pct"
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={100}
+              placeholder="เช่น 15"
             />
           </div>
           <div className="space-y-1">
@@ -217,6 +267,43 @@ export function PromotionsTab({
           ))}
         </ul>
       </section>
+    </div>
+  )
+}
+
+/** ช่องตั้ง % ส่วนลดอัตโนมัติต่อโปร — ว่าง = ไม่คิดให้เอง กดบันทึกเมื่อค่าเปลี่ยน */
+function PctEditor({
+  promo,
+  saving,
+  onSave,
+}: {
+  promo: Promotion
+  saving: boolean
+  onSave: (pct: string) => void
+}) {
+  const [pct, setPct] = useState(
+    promo.discount_pct != null ? String(promo.discount_pct) : ""
+  )
+  const dirty = pct !== (promo.discount_pct != null ? String(promo.discount_pct) : "")
+  return (
+    <div className="flex shrink-0 items-center gap-1">
+      <Input
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={100}
+        value={pct}
+        onChange={(e) => setPct(e.target.value)}
+        placeholder="%"
+        className="h-9 w-16 text-right"
+        aria-label={`ส่วนลด % ของ ${promo.name}`}
+      />
+      <span className="text-sm text-slate-500">%</span>
+      {dirty && (
+        <Button size="sm" variant="outline" disabled={saving} onClick={() => onSave(pct)}>
+          บันทึก
+        </Button>
+      )}
     </div>
   )
 }

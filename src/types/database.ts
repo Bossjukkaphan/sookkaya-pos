@@ -290,6 +290,7 @@ export type Database = {
       promotions: {
         Row: {
           created_at: string
+          discount_pct: number | null
           id: string
           is_active: boolean
           kind: string
@@ -297,6 +298,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          discount_pct?: number | null
           id?: string
           is_active?: boolean
           kind?: string
@@ -304,6 +306,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          discount_pct?: number | null
           id?: string
           is_active?: boolean
           kind?: string
