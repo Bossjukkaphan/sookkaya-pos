@@ -17,6 +17,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { ServiceCombobox } from "@/components/service-combobox"
 
@@ -96,6 +97,8 @@ export function GroupPosForm({
     ).map((p) => ({ ...p, discount: "", couponPromo: "" }))
   )
   const [paymentMethod, setPaymentMethod] = useState("")
+  // ลูกค้าคนเดียวทำหลายคอร์ส (จองแบบ "ต่อเวลา") → รวมทุกรายการเป็นบิลชุดใบเดียว
+  const [mergeBill, setMergeBill] = useState(false)
   // บันทึกทีละใบตามลำดับ — ใบที่สำเร็จแล้วปิดคิวไปเลย ใบที่เหลือยังอยู่ให้ลองใหม่
   const [savingIndex, setSavingIndex] = useState<number | null>(null)
 
@@ -143,11 +146,9 @@ export function GroupPosForm({
       toast.error("เลือกช่องทางชำระเงินก่อน")
       return
     }
-    // บิลชุด: ถ้าทุกรายการเป็นลูกค้าคนเดียวกัน (เช่น คนเดียวนวด 2 คอร์สต่อกัน)
-    // ให้ผูก bill_id เดียว — แสดงรวมเป็นใบเดียวในยอดวันนี้/ประวัติ
-    const names = new Set(people.map((p) => `${p.customerId}|${p.customerName.trim()}`))
-    const sameCustomer = people.length > 1 && names.size === 1
-    const billId = sameCustomer ? crypto.randomUUID() : ""
+    // บิลชุด: พนักงานติ๊กเองว่าเป็นลูกค้าคนเดียวทำหลายคอร์ส — เดาจากข้อมูลไม่ได้
+    // เพราะคิวกลุ่ม (ครอบครัว) ก็เก็บชื่อผู้ติดต่อคนเดียวลงทุกการ์ดเหมือนกัน
+    const billId = mergeBill && people.length > 1 ? crypto.randomUUID() : ""
     const receipts: string[] = []
     for (let i = 0; i < people.length; i++) {
       const p = people[i]
@@ -352,6 +353,22 @@ export function GroupPosForm({
           + เพิ่มคนในกลุ่ม
         </Button>
       )}
+
+      {/* บิลชุด: ระบบเดาไม่ได้ว่า "กลุ่มครอบครัว" หรือ "คนเดียวหลายคอร์ส"
+          เพราะคิวกลุ่มเก็บชื่อผู้ติดต่อคนเดียวลงทุกการ์ด — ให้พนักงานติ๊กเอง */}
+      <div className="flex items-center gap-3 rounded-lg border border-emerald-200 p-3">
+        <Checkbox
+          id="merge_bill"
+          checked={mergeBill}
+          onCheckedChange={(v) => setMergeBill(v === true)}
+        />
+        <Label htmlFor="merge_bill" className="flex-1 cursor-pointer text-sm">
+          🧾 รวมทุกรายการเป็นบิลชุดใบเดียว{" "}
+          <span className="font-normal text-slate-500">
+            (ลูกค้าคนเดียวกันทำหลายคอร์ส — ไม่ใช่กลุ่มหลายคน)
+          </span>
+        </Label>
+      </div>
 
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">
