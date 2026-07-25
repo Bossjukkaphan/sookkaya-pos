@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import {
   BadgePercent,
   BarChart3,
+  HeartHandshake,
   CalendarClock,
   Clock4,
   CreditCard,
@@ -67,6 +68,7 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
     links: [
       { href: "/history", label: "ประวัติบิล", icon: ScrollText },
       { href: "/customers", label: "ลูกค้า", icon: Users },
+      { href: "/crm", label: "ดูแลลูกค้า", icon: HeartHandshake },
       { href: "/expenses", label: "รายจ่าย", icon: Wallet },
     ],
   },

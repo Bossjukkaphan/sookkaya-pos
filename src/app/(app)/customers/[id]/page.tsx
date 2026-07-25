@@ -24,6 +24,7 @@ export default async function CustomerDetailPage({
     { data: pointBalance },
     { data: pointHistory },
     { data: lineAccount },
+    { data: crmContacts },
   ] = await Promise.all([
     supabase.from("customers").select("*").eq("id", id).single(),
     supabase
@@ -53,6 +54,12 @@ export default async function CustomerDetailPage({
       .select("display_name, picture_url")
       .eq("customer_id", id)
       .maybeSingle(),
+    supabase
+      .from("crm_contacts")
+      .select("list_type, result, created_by, created_at")
+      .eq("customer_id", id)
+      .order("created_at", { ascending: false })
+      .limit(10),
   ])
 
   if (!customer) notFound()
@@ -175,6 +182,41 @@ export default async function CustomerDetailPage({
           )}
         </CardContent>
       </Card>
+
+      {/* ประวัติการติดต่อจากหน้า ดูแลลูกค้า */}
+      {(crmContacts ?? []).length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">ประวัติการติดต่อ 💚</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0">
+            <ul className="divide-y">
+              {(crmContacts ?? []).map((c, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between gap-3 px-4 py-2 text-sm sm:px-6"
+                >
+                  <div>
+                    <p>
+                      {{ birthday: "🎂 อวยพรวันเกิด", winback: "💤 ชวนกลับมา", new_follow: "🌱 ตามผลลูกค้าใหม่" }[
+                        c.list_type
+                      ] ?? c.list_type}
+                      {" · "}
+                      {{ contacted: "ติดต่อแล้ว รอตอบ", booked: "จองแล้ว 🎉", declined: "ไม่สะดวก", wrong_number: "เบอร์ผิด" }[
+                        c.result
+                      ] ?? c.result}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {formatThaiDate(c.created_at.slice(0, 10))}
+                      {c.created_by && ` · โดย ${c.created_by}`}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {customer.notes && (
         <Card>

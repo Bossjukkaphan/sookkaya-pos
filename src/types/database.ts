@@ -61,6 +61,36 @@ export type Database = {
         }
         Relationships: []
       }
+      crm_contacts: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          id: string
+          list_type: string
+          note: string | null
+          result: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          id?: string
+          list_type: string
+          note?: string | null
+          result: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          id?: string
+          list_type?: string
+          note?: string | null
+          result?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           birthday: string | null
