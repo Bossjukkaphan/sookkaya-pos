@@ -14,6 +14,7 @@ import { Bell } from "lucide-react"
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
+import { setRealtimeAuth } from "@/lib/supabase/realtime-auth"
 import { playNotifySound } from "@/lib/notify-sound"
 import { formatThaiDate } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
@@ -194,7 +195,9 @@ export function QueueNotificationsProvider({
           if (old.id) removePending(old.id)
         }
       )
-      .subscribe()
+    setRealtimeAuth(supabase).then(() => {
+      if (!cancelled) channel.subscribe()
+    })
 
     return () => {
       cancelled = true

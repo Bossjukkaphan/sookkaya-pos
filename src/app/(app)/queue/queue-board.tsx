@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
+import { setRealtimeAuth } from "@/lib/supabase/realtime-auth"
 import {
   BOARD_END_MIN,
   BOARD_START_MIN,
@@ -121,6 +122,7 @@ export function QueueBoard({
   // เครื่องอื่นแก้คิว → ดึงใหม่ทั้งวัน (ข้อมูลวันละไม่กี่สิบแถว เอาถูกไว้ก่อน)
   useEffect(() => {
     const supabase = createClient()
+    let cancelled = false
     const channel = supabase
       .channel("queue-board")
       .on(
@@ -128,8 +130,11 @@ export function QueueBoard({
         { event: "*", schema: "public", table: "queue_entries" },
         refetch
       )
-      .subscribe()
+    setRealtimeAuth(supabase).then(() => {
+      if (!cancelled) channel.subscribe()
+    })
     return () => {
+      cancelled = true
       supabase.removeChannel(channel)
     }
   }, [refetch])
