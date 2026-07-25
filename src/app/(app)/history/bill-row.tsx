@@ -21,6 +21,7 @@ import {
 /** ข้อมูลบิลเท่าที่หน้าประวัติต้องแสดง — แปลง numeric เป็น number มาแล้วจาก server */
 export type BillRecord = {
   id: string
+  bill_id: string | null
   receipt_no: string | null
   sale_date: string
   sale_time: string | null

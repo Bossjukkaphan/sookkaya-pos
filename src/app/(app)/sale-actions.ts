@@ -159,6 +159,12 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       )
         ? String(formData.get("group_id"))
         : null,
+      // บิลชุด (ลูกค้าคนเดียวหลายรายการจ่ายรวม) — ไม่กระทบสูตรเงินเช่นกัน
+      bill_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        String(formData.get("bill_id") ?? "")
+      )
+        ? String(formData.get("bill_id"))
+        : null,
       // metadata ของบิล (ที่มา/ช่องทางย่อย/เตียง/หมายเหตุ) — ไม่กระทบสูตรเงิน
       // ค่าเพี้ยนจาก client เก่า → null (ไม่ทราบ) ดีกว่าเดาผิด
       source: (() => {

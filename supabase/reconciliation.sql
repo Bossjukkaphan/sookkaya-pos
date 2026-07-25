@@ -43,7 +43,9 @@ with expected(check_name, expected_value) as (values
   -- `create or replace view` ล้าง reloptions ทิ้ง ทำให้ security_invoker หลุด
   -- view กลับเป็น SECURITY DEFINER แล้วพนักงาน staff ยิง REST API อ่านกำไรทั้งร้านได้
   -- ต้องเป็น 0 เสมอ = ทุก view ใน public บังคับ RLS ตามสิทธิ์ผู้เรียก
-  ('views_without_security_invoker', 0)
+  ('views_without_security_invoker', 0),
+  -- บิลชุด: ทุกแถวใน bill_id เดียวกันต้องเป็นลูกค้า/วันที่/วิธีจ่ายเดียวกัน
+  ('bill_id_inconsistent_bills', 0)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -117,6 +119,18 @@ actual(check_name, actual_value) as (
   union all
   select 'ytd_profit_cash_2026_06', round(ytd_profit_cash)
   from public.v_monthly_pl where month = '2026-06'
+
+  union all
+  select 'bill_id_inconsistent_bills', count(*)
+  from (
+    select bill_id
+    from public.sales
+    where bill_id is not null
+    group by bill_id
+    having count(distinct sale_date) > 1
+        or count(distinct payment_method) > 1
+        or count(distinct coalesce(customer_id::text, customer_name, '')) > 1
+  ) bad_bills
 
   union all
   select 'views_without_security_invoker', count(*)

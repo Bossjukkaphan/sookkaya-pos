@@ -48,6 +48,23 @@ type Service = { id: string; name: string; price: number; commission: number }
 type Promotion = { id: string; name: string; discount_pct: number | null }
 type Bed = { id: string; room: string; name: string }
 
+/** รายการเพิ่มเติมในบิลชุด — ลูกค้า/เวลา/วิธีจ่ายใช้ร่วมกับรายการหลัก */
+type ExtraItem = {
+  serviceId: string
+  therapistId: string
+  couponPromo: string
+  discount: string
+  isRequest: boolean
+}
+
+const BLANK_EXTRA: ExtraItem = {
+  serviceId: "",
+  therapistId: "",
+  couponPromo: "",
+  discount: "",
+  isRequest: false,
+}
+
 /** ค่ากรอกล่วงหน้าจากการ์ดคิว — เก็บเงินจากบอร์ดคิวไม่ต้องกรอกซ้ำ */
 export type PosInitial = {
   queueEntryId: string
@@ -107,6 +124,8 @@ export function PosForm({
   // Gowabi ต้องพิมพ์รหัสจองเป็นเลขเสมอ จึงบังคับเป็นช่องพิมพ์
   // กรณีอื่นเริ่มจาก dropdown แล้วเปิดช่องพิมพ์เฉพาะเมื่อเลือก "อื่นๆ"
   const [customPromo, setCustomPromo] = useState(false)
+  // บิลชุด: รายการที่ 2 เป็นต้นไปของลูกค้าคนเดียวกัน (จ่ายรวมครั้งเดียว)
+  const [extras, setExtras] = useState<ExtraItem[]>([])
   const [pending, startTransition] = useTransition()
 
   const service = useMemo(
@@ -117,27 +136,40 @@ export function PosForm({
   const isGowabi = paymentMethod === GOWABI_METHOD
   const isMemberCredit = paymentMethod === MEMBER_CREDIT_METHOD
 
-  // เลือกโปรที่ตั้ง % ไว้ → เติมส่วนลดเป็นบาทเต็มให้เอง และคิดใหม่เมื่อเปลี่ยนเมนู
-  // (พนักงานยังพิมพ์ทับเองได้ — ค่าจะถูกทับกลับเฉพาะตอนเปลี่ยนโปร/เมนู)
-  function applyPromoDiscount(promoName: string, svcId: string) {
-    if (customPromo) return
+  // เลือกโปรที่ตั้ง % หรือ Happy Hour → คืนส่วนลดเป็นบาทเต็ม (null = ไม่ต้องแตะช่อง)
+  // ใช้ร่วมกันทั้งรายการหลักและรายการเพิ่มเติม
+  function computedPromoDiscount(promoName: string, svcId: string): string | null {
     const svc = services.find((s) => s.id === svcId)
     const promo = promotions.find((p) => p.name === promoName)
-    if (!svc || !promo) return
+    if (!svc || !promo) return null
     // Happy Hour: เมนูนวด 90 นาที จ่ายราคา 60 — ส่วนลดคือส่วนต่างของสองราคา
     if (promoKey(promo.name) === HAPPY_HOUR_KEY) {
       const hh = happyHourDiscountBaht(svc, services)
       if (hh != null) {
-        setDiscount(String(hh))
         toast.info(`Happy Hour: จ่ายราคา 60 นาที (ลด ${hh} ฿) · ใช้ จ–ศ ก่อน 12:00`)
-      } else {
-        toast.warning("เมนูนี้ไม่เข้าเงื่อนไข Happy Hour — ต้องเป็นเมนูนวด 90 นาที (ทรีตเมนต์/คอบ่าไหล่ไม่ร่วม)")
+        return String(hh)
       }
-      return
+      toast.warning("เมนูนี้ไม่เข้าเงื่อนไข Happy Hour — ต้องเป็นเมนูนวด 90 นาที (ทรีตเมนต์/คอบ่าไหล่ไม่ร่วม)")
+      return null
     }
-    if (promo.discount_pct) {
-      setDiscount(String(promoDiscountBaht(svc.price, promo.discount_pct)))
-    }
+    if (promo.discount_pct) return String(promoDiscountBaht(svc.price, promo.discount_pct))
+    return null
+  }
+
+  function applyPromoDiscount(promoName: string, svcId: string) {
+    if (customPromo) return
+    const d = computedPromoDiscount(promoName, svcId)
+    if (d != null) setDiscount(d)
+  }
+
+  function setExtra(i: number, patch: Partial<ExtraItem>) {
+    setExtras((arr) => arr.map((x, j) => (j === i ? { ...x, ...patch } : x)))
+  }
+
+  function extraNet(x: ExtraItem): number {
+    const svc = services.find((s) => s.id === x.serviceId)
+    if (!svc) return 0
+    return Math.max(0, svc.price - (Number(x.discount) || 0))
   }
 
   const netAmount = useMemo(() => {
@@ -163,27 +195,96 @@ export function PosForm({
     setServiceTime(nowTimeInShopTz())
     setCouponPromo("")
     setCustomPromo(false)
+    setExtras([])
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
 
+    if (isGowabi && extras.length > 0) {
+      toast.error("บิล Gowabi เพิ่มหลายรายการไม่ได้ — ลบรายการเพิ่มเติมก่อน")
+      return
+    }
+    for (const [i, x] of extras.entries()) {
+      if (!x.serviceId || !x.therapistId) {
+        toast.error(
+          `รายการที่ ${i + 2} ยังไม่ได้เลือก${!x.serviceId ? "เมนูบริการ" : "หมอนวด"}`
+        )
+        return
+      }
+    }
+
     startTransition(async () => {
+      // บิลชุด: ทุกรายการแชร์ bill_id เดียว — สร้างฝั่ง client เพราะต้องใส่ตั้งแต่แถวแรก
+      if (extras.length > 0) formData.set("bill_id", crypto.randomUUID())
       const result = await createSale(formData)
-      if (result.ok) {
-        toast.success(
-          `บันทึกแล้ว — ใบเสร็จ ${result.receiptNo}` +
-            (result.creditAfter !== null
-              ? ` · เครดิตคงเหลือ ${formatBaht(result.creditAfter)} ฿`
-              : ""),
-          // มีเลขเครดิตให้พนักงานอ่านแจ้งลูกค้า — ค้างไว้นานกว่าปกติ
-          result.creditAfter !== null ? { duration: 8000 } : undefined
+      if (!result.ok) {
+        toast.error(result.error)
+        return
+      }
+
+      let okCount = 1
+      let creditAfter = result.creditAfter
+      const failedItems: number[] = []
+      for (const [i, x] of extras.entries()) {
+        const fd = new FormData()
+        // ข้อมูลร่วมของบิล (ลูกค้า/เวลา/วิธีจ่าย/ที่มา) ใช้ค่าเดียวกับรายการหลัก
+        for (const key of [
+          "bill_id",
+          "sale_time",
+          "customer_id",
+          "customer_name",
+          "customer_phone",
+          "payment_method",
+          "source",
+          "booking_channel",
+          "bed_id",
+          "notes",
+        ]) {
+          const v = formData.get(key)
+          if (v != null) fd.set(key, v)
+        }
+        fd.set("therapist_id", x.therapistId)
+        fd.set("service_id", x.serviceId)
+        fd.set("discount", x.discount || "0")
+        fd.set("coupon_promo", x.couponPromo)
+        if (x.isRequest) {
+          fd.set("is_request", "on")
+          fd.set("request_fee", String(REQUEST_FEE))
+        }
+        const r = await createSale(fd)
+        if (r.ok) {
+          okCount++
+          if (r.creditAfter !== null) creditAfter = r.creditAfter
+        } else {
+          failedItems.push(i + 2)
+          toast.error(`รายการที่ ${i + 2}: ${r.error}`)
+        }
+      }
+
+      if (failedItems.length > 0) {
+        // รายการหลักบันทึกไปแล้ว — ห้ามให้กดซ้ำทั้งฟอร์ม (จะได้บิลซ้อน)
+        // แจ้งชัดว่าตัวไหนตกหล่น ให้คีย์เพิ่มเป็นบิลแยก
+        toast.warning(
+          `บันทึกได้ ${okCount} รายการ (ใบเสร็จ ${result.receiptNo}) · รายการที่ ${failedItems.join(", ")} ไม่สำเร็จ — กรุณาคีย์รายการนั้นใหม่แยกบิล`,
+          { duration: 15000 }
         )
         resetForm()
-      } else {
-        toast.error(result.error)
+        return
       }
+
+      toast.success(
+        (extras.length > 0
+          ? `บันทึกบิลชุดแล้ว — ใบเสร็จ ${result.receiptNo} (${okCount} รายการ)`
+          : `บันทึกแล้ว — ใบเสร็จ ${result.receiptNo}`) +
+          (creditAfter !== null
+            ? ` · เครดิตคงเหลือ ${formatBaht(creditAfter)} ฿`
+            : ""),
+        // มีเลขเครดิตให้พนักงานอ่านแจ้งลูกค้า — ค้างไว้นานกว่าปกติ
+        creditAfter !== null ? { duration: 8000 } : undefined
+      )
+      resetForm()
     })
   }
 
@@ -480,6 +581,110 @@ export function PosForm({
         )}
       </div>
 
+      {/* บิลชุด: รายการที่ 2+ ของลูกค้าคนเดิม จ่ายรวมครั้งเดียว (Gowabi ไม่รองรับ) */}
+      {!isGowabi && (
+        <fieldset className="space-y-3">
+          {extras.map((x, i) => (
+            <div key={i} className="space-y-2 rounded-lg border border-emerald-200 p-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-medium">รายการที่ {i + 2}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-600"
+                  onClick={() => setExtras((arr) => arr.filter((_, j) => j !== i))}
+                >
+                  ลบรายการ
+                </Button>
+              </div>
+              <ServiceCombobox
+                services={services}
+                value={x.serviceId}
+                onChange={(id) => {
+                  const d = computedPromoDiscount(x.couponPromo, id)
+                  setExtra(i, { serviceId: id, ...(d != null ? { discount: d } : {}) })
+                }}
+                aria-label={`เมนูรายการที่ ${i + 2}`}
+                triggerClassName="h-11 text-sm"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={x.therapistId}
+                  onChange={(e) => setExtra(i, { therapistId: e.target.value })}
+                  className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                  aria-label={`หมอนวดรายการที่ ${i + 2}`}
+                >
+                  <option value="">— เลือกหมอ —</option>
+                  {therapists.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={x.couponPromo}
+                  onChange={(e) => {
+                    const d = computedPromoDiscount(e.target.value, x.serviceId)
+                    setExtra(i, {
+                      couponPromo: e.target.value,
+                      ...(d != null ? { discount: d } : {}),
+                    })
+                  }}
+                  className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                  aria-label={`โปรโมชั่นรายการที่ ${i + 2}`}
+                >
+                  <option value="">ไม่ใช้โปรฯ</option>
+                  {promotions.map((pr) => (
+                    <option key={pr.id} value={pr.name}>
+                      {pr.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  placeholder="ส่วนลด (฿)"
+                  value={x.discount}
+                  onChange={(e) => setExtra(i, { discount: e.target.value })}
+                  onBlur={() => {
+                    const n = Number(x.discount)
+                    if (x.discount !== "" && Number.isFinite(n) && !Number.isInteger(n)) {
+                      setExtra(i, { discount: String(Math.round(n)) })
+                    }
+                  }}
+                  className="h-11 w-32"
+                  aria-label={`ส่วนลดรายการที่ ${i + 2}`}
+                />
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={x.isRequest}
+                    onCheckedChange={(v) => setExtra(i, { isRequest: v === true })}
+                  />
+                  รีเควส (+{REQUEST_FEE} ฿)
+                </label>
+                {x.serviceId && (
+                  <span className="ml-auto text-sm font-medium text-slate-700">
+                    {formatBaht(extraNet(x))} บาท
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => setExtras((arr) => [...arr, { ...BLANK_EXTRA, therapistId }])}
+          >
+            + เพิ่มรายการ (ลูกค้าคนเดิม จ่ายรวมบิลเดียว)
+          </Button>
+        </fieldset>
+      )}
+
       {/* หมายเหตุ (ไม่บังคับ) */}
       <div className="space-y-2">
         <Label htmlFor="pos_notes">
@@ -516,10 +721,37 @@ export function PosForm({
               <span>{formatBaht(service.price)} บาท</span>
             </div>
           )}
+          {extras.length > 0 && (
+            <>
+              <div className="flex items-baseline justify-between text-sm text-slate-600">
+                <span>รายการที่ 1{service ? ` · ${service.name}` : ""}</span>
+                <span>{formatBaht(netAmount)} บาท</span>
+              </div>
+              {extras.map((x, i) => {
+                const svc = services.find((s) => s.id === x.serviceId)
+                return (
+                  <div
+                    key={i}
+                    className="flex items-baseline justify-between text-sm text-slate-600"
+                  >
+                    <span>
+                      รายการที่ {i + 2}
+                      {svc ? ` · ${svc.name}` : " · ยังไม่เลือกเมนู"}
+                    </span>
+                    <span>{formatBaht(extraNet(x))} บาท</span>
+                  </div>
+                )
+              })}
+            </>
+          )}
           <div className="flex items-baseline justify-between">
-            <span className="font-medium">ยอดรับจริง</span>
+            <span className="font-medium">
+              {extras.length > 0
+                ? `ยอดรวมทั้งบิล (${extras.length + 1} รายการ)`
+                : "ยอดรับจริง"}
+            </span>
             <span className="text-3xl font-bold text-emerald-800">
-              {formatBaht(netAmount)}{" "}
+              {formatBaht(netAmount + extras.reduce((s, x) => s + extraNet(x), 0))}{" "}
               <span className="text-base font-normal">บาท</span>
             </span>
           </div>

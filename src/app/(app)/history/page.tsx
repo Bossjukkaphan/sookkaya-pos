@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
-import { PAYMENT_METHODS } from "@/lib/constants"
+import { PAYMENT_METHODS, formatBaht } from "@/lib/constants"
+import { billTotal, groupSalesByBill } from "@/lib/bill"
 import { todayInShopTz } from "@/lib/datetime"
 import { shortBedName } from "@/lib/beds"
 import { Card, CardContent } from "@/components/ui/card"
@@ -76,6 +77,7 @@ export default async function HistoryPage({
 
   const bills: BillRecord[] = rows.map((s) => ({
     id: s.id,
+    bill_id: s.bill_id,
     receipt_no: s.receipt_no,
     sale_date: s.sale_date,
     sale_time: s.sale_time,
@@ -200,11 +202,31 @@ export default async function HistoryPage({
             </p>
           ) : (
             <ul className="divide-y">
-              {bills.map((b) => (
-                <li key={b.id}>
-                  <BillRow bill={b} />
-                </li>
-              ))}
+              {groupSalesByBill(bills).map((g) =>
+                g.items.length === 1 ? (
+                  <li key={g.key}>
+                    <BillRow bill={g.items[0]} />
+                  </li>
+                ) : (
+                  // บิลชุด: ลูกค้าคนเดียวหลายรายการจ่ายรวม
+                  <li key={g.key} className="bg-emerald-50/50">
+                    <div className="flex items-baseline justify-between px-4 pt-2 text-xs font-semibold text-emerald-800 sm:px-6">
+                      <span>
+                        🧾 บิลชุด {g.items.length} รายการ ·{" "}
+                        {g.items[0].customer_name ?? "ลูกค้า"}
+                      </span>
+                      <span>รวม {formatBaht(billTotal(g.items))} ฿</span>
+                    </div>
+                    <ul className="divide-y">
+                      {g.items.map((b) => (
+                        <li key={b.id}>
+                          <BillRow bill={b} />
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                )
+              )}
             </ul>
           )}
         </CardContent>

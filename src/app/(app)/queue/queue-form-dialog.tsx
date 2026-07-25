@@ -341,8 +341,8 @@ export function QueueFormDialog({
               </legend>
               {extraPeople.map((p, i) => (
                 <div key={i} className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-10 shrink-0 text-xs text-slate-500">
-                    คนที่ {i + 2}
+                  <span className="w-14 shrink-0 text-xs text-slate-500">
+                    {p.sequential ? `ต่อเวลา ${i + 2}` : `คนที่ ${i + 2}`}
                   </span>
                   <select
                     value={p.therapistId ?? ""}
@@ -403,24 +403,46 @@ export function QueueFormDialog({
                   </Button>
                 </div>
               ))}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() =>
-                  setExtraPeople((arr) => [
-                    ...arr,
-                    { therapistId: null, serviceId: "", bedId: null },
-                  ])
-                }
-              >
-                + เพิ่มคนในกลุ่ม
-              </Button>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setExtraPeople((arr) => [
+                      ...arr,
+                      { therapistId: null, serviceId: "", bedId: null },
+                    ])
+                  }
+                >
+                  + เพิ่มคนในกลุ่ม
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setExtraPeople((arr) => [
+                      ...arr,
+                      {
+                        // ลูกค้าคนเดิมทำต่ออีกคอร์ส — หมอคนเดิมเป็นค่าตั้งต้น แก้ได้
+                        therapistId: therapistId || null,
+                        serviceId: "",
+                        bedId: null,
+                        sequential: true,
+                      },
+                    ])
+                  }
+                >
+                  + ต่อเวลา (คนเดิม)
+                </Button>
+              </div>
               {extraPeople.length > 0 && (
                 <p className="text-xs text-slate-500">
-                  รวม {extraPeople.length + 1} คน เริ่ม {startTime} พร้อมกัน ·
-                  เตียงของคนที่ 2 ขึ้นไปค่อยเลือกทีหลังได้จากการ์ด
+                  รวม {extraPeople.length + 1} รายการ ·
+                  แถว &quot;คนที่&quot; เริ่ม {startTime} พร้อมกัน · แถว
+                  &quot;ต่อเวลา&quot; เริ่มต่อจากรายการก่อนหน้าจบ ·
+                  เตียงของรายการถัดไปค่อยเลือกทีหลังได้จากการ์ด
                 </p>
               )}
             </fieldset>

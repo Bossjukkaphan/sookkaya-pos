@@ -143,6 +143,11 @@ export function GroupPosForm({
       toast.error("เลือกช่องทางชำระเงินก่อน")
       return
     }
+    // บิลชุด: ถ้าทุกรายการเป็นลูกค้าคนเดียวกัน (เช่น คนเดียวนวด 2 คอร์สต่อกัน)
+    // ให้ผูก bill_id เดียว — แสดงรวมเป็นใบเดียวในยอดวันนี้/ประวัติ
+    const names = new Set(people.map((p) => `${p.customerId}|${p.customerName.trim()}`))
+    const sameCustomer = people.length > 1 && names.size === 1
+    const billId = sameCustomer ? crypto.randomUUID() : ""
     const receipts: string[] = []
     for (let i = 0; i < people.length; i++) {
       const p = people[i]
@@ -163,6 +168,7 @@ export function GroupPosForm({
       fd.set("sale_time", p.serviceTime)
       fd.set("queue_entry_id", p.queueEntryId)
       fd.set("group_id", p.groupId)
+      if (billId) fd.set("bill_id", billId)
       if (p.isRequest) {
         fd.set("is_request", "on")
         fd.set("request_fee", String(REQUEST_FEE))

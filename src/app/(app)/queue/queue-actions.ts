@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { minToTime, timeToMin } from "@/lib/queue"
 import { pushLineMessage } from "@/lib/line"
 import { msgConfirmed, msgRejected, type BookingInfo } from "@/lib/line-messages"
 
@@ -106,6 +107,8 @@ export type GroupPerson = {
   serviceId: string
   bedId: string | null
   isRequest?: boolean
+  /** รายการต่อเวลาของลูกค้าคนเดิม (บิลชุด) — เริ่มต่อจากรายการก่อนหน้าจบ ไม่ใช่พร้อมกัน */
+  sequential?: boolean
 }
 
 /**
@@ -155,20 +158,26 @@ export async function createQueueGroup(
     return { ok: false, error: "มีเมนูที่ไม่พบในระบบ" }
 
   const groupId = crypto.randomUUID()
+  // รายการ "ต่อเวลา" (ลูกค้าคนเดิมทำหลายคอร์สต่อกัน) เริ่มต่อจากรายการก่อนหน้าจบ
+  // รายการปกติ (คนละคนมาพร้อมกัน) เริ่มเวลาเดียวกันทั้งกลุ่มแบบเดิม
+  let chainEnd = timeToMin(startTime)
   const { error } = await supabase.from("queue_entries").insert(
     people.map((p) => {
       const service = serviceById.get(p.serviceId)!
+      const duration = service.duration_min ?? 60
+      const startMin = p.sequential ? chainEnd : timeToMin(startTime)
+      chainEnd = startMin + duration
       return {
         queue_date: queueDate,
         therapist_id: p.therapistId || null,
         service_id: p.serviceId,
         service_name: service.name,
-        duration_min: service.duration_min ?? 60,
+        duration_min: duration,
         customer_id: customerId,
         customer_name: customerName,
         customer_phone: customerPhone,
         is_request: p.isRequest ?? false,
-        start_time: startTime,
+        start_time: minToTime(startMin),
         source,
         bed_id: p.bedId || null,
         booking_channel: bookingChannel,

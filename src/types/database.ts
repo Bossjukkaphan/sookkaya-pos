@@ -431,6 +431,7 @@ export type Database = {
       sales: {
         Row: {
           bed_id: string | null
+          bill_id: string | null
           bonus_used: number
           booking_channel: string | null
           commission: number | null
@@ -465,6 +466,7 @@ export type Database = {
         }
         Insert: {
           bed_id?: string | null
+          bill_id?: string | null
           bonus_used?: number
           booking_channel?: string | null
           commission?: number | null
@@ -499,6 +501,7 @@ export type Database = {
         }
         Update: {
           bed_id?: string | null
+          bill_id?: string | null
           bonus_used?: number
           booking_channel?: string | null
           commission?: number | null

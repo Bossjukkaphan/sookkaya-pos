@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
+import { billTotal, groupSalesByBill } from "@/lib/bill"
 import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
 import { MONEY_INFO } from "@/lib/money-info"
 import { Button } from "@/components/ui/button"
@@ -420,15 +421,39 @@ export default async function TodayPage({
             </p>
           ) : isSingleDay ? (
             <ul className="divide-y">
-              {rows.map((s) => (
-                <SaleRow
-                  key={s.id}
-                  sale={s}
-                  therapistName={therapistName}
-                  editable={editable}
-                  editOptions={editOptions}
-                />
-              ))}
+              {groupSalesByBill(rows).map((g) =>
+                g.items.length === 1 ? (
+                  <SaleRow
+                    key={g.key}
+                    sale={g.items[0]}
+                    therapistName={therapistName}
+                    editable={editable}
+                    editOptions={editOptions}
+                  />
+                ) : (
+                  // บิลชุด: ลูกค้าคนเดียวหลายรายการจ่ายรวม — โชว์หัวบิล + รายการข้างใน
+                  <li key={g.key} className="bg-emerald-50/50">
+                    <div className="flex items-baseline justify-between px-4 pt-2 text-xs font-semibold text-emerald-800 sm:px-6">
+                      <span>
+                        🧾 บิลชุด {g.items.length} รายการ ·{" "}
+                        {g.items[0].customer_name ?? "ลูกค้า"}
+                      </span>
+                      <span>รวม {formatBaht(billTotal(g.items))} ฿</span>
+                    </div>
+                    <ul className="divide-y">
+                      {g.items.map((s) => (
+                        <SaleRow
+                          key={s.id}
+                          sale={s}
+                          therapistName={therapistName}
+                          editable={editable}
+                          editOptions={editOptions}
+                        />
+                      ))}
+                    </ul>
+                  </li>
+                )
+              )}
             </ul>
           ) : (
             byDate.map((group) => (
@@ -438,15 +463,38 @@ export default async function TodayPage({
                   <span>{formatBaht(dayTotal.get(group.date) ?? 0)} ฿</span>
                 </div>
                 <ul className="divide-y">
-                  {group.rows.map((s) => (
-                    <SaleRow
-                      key={s.id}
-                      sale={s}
-                      therapistName={therapistName}
-                      editable={editable}
-                      editOptions={editOptions}
-                    />
-                  ))}
+                  {groupSalesByBill(group.rows).map((g) =>
+                    g.items.length === 1 ? (
+                      <SaleRow
+                        key={g.key}
+                        sale={g.items[0]}
+                        therapistName={therapistName}
+                        editable={editable}
+                        editOptions={editOptions}
+                      />
+                    ) : (
+                      <li key={g.key} className="bg-emerald-50/50">
+                        <div className="flex items-baseline justify-between px-4 pt-2 text-xs font-semibold text-emerald-800 sm:px-6">
+                          <span>
+                            🧾 บิลชุด {g.items.length} รายการ ·{" "}
+                            {g.items[0].customer_name ?? "ลูกค้า"}
+                          </span>
+                          <span>รวม {formatBaht(billTotal(g.items))} ฿</span>
+                        </div>
+                        <ul className="divide-y">
+                          {g.items.map((s) => (
+                            <SaleRow
+                              key={s.id}
+                              sale={s}
+                              therapistName={therapistName}
+                              editable={editable}
+                              editOptions={editOptions}
+                            />
+                          ))}
+                        </ul>
+                      </li>
+                    )
+                  )}
                 </ul>
               </div>
             ))
