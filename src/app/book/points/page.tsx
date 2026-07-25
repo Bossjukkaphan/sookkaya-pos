@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react"
 import Link from "next/link"
 
 import { useLiff } from "../liff"
+import { linkLineAccount } from "../actions"
 import {
   getPointsHome,
   redeemReward,
@@ -12,6 +13,69 @@ import {
   type PointsHome,
 } from "../points-actions"
 import { formatThaiDate } from "@/lib/datetime"
+
+/**
+ * ยืนยันเบอร์โทรครั้งแรก — จุดแมตช์กับประวัติลูกค้าเดิมของร้าน:
+ * เบอร์ตรงกับในระบบ = ดึงประวัติ/แต้มมาผูกทันที · ไม่ตรง = สร้างสมาชิกใหม่
+ */
+function PhoneLinkForm({
+  idToken,
+  displayName,
+  onDone,
+}: {
+  idToken: string
+  displayName: string | null
+  onDone: () => void
+}) {
+  const [phone, setPhone] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    setSaving(true)
+    setError("")
+    const r = await linkLineAccount(idToken, phone)
+    if (r.ok) onDone()
+    else setError(r.error)
+    setSaving(false)
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-4 p-6">
+      <div className="text-center">
+        <p className="text-lg font-semibold">สะสมแต้ม SOOKKAYA 🌿</p>
+        <p className="mt-1 text-sm text-slate-600">
+          สวัสดีค่ะ{displayName ? `คุณ${displayName}` : ""} ยืนยันเบอร์โทรครั้งเดียว
+          — ถ้าเคยใช้บริการกับเรา ประวัติและแต้มจะผูกให้อัตโนมัติค่ะ
+        </p>
+      </div>
+      <div className="space-y-1">
+        <label className="text-sm font-medium">เบอร์โทรศัพท์</label>
+        <input
+          type="tel"
+          inputMode="numeric"
+          className="w-full rounded-xl border bg-white px-3 py-3 text-center text-lg tracking-widest"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="08x-xxx-xxxx"
+          required
+        />
+        <p className="text-xs text-slate-500">
+          ใช้เบอร์เดียวกับที่เคยแจ้งร้านไว้นะคะ ระบบจะได้จับคู่ประวัติเดิมถูกคน
+        </p>
+      </div>
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      <button
+        type="submit"
+        disabled={saving || phone.replace(/\D/g, "").length < 9}
+        className="w-full rounded-full bg-emerald-600 py-3 font-medium text-white disabled:opacity-40"
+      >
+        {saving ? "กำลังตรวจสอบ..." : "ยืนยันเบอร์"}
+      </button>
+    </form>
+  )
+}
 
 /** ฟอร์มสมาชิกครั้งแรก — กรอกสั้นๆ ก่อนเข้าหน้าแต้ม (ใช้ดูแลลูกค้า/อวยพรวันเกิด) */
 function ProfileForm({
@@ -176,21 +240,14 @@ export default function PointsPage() {
     return <p className="p-6 text-center text-sm text-red-600">{home.error}</p>
   }
 
+  // ยังไม่ผูกเบอร์ → ยืนยันเบอร์ตรงนี้เลย (จุดแมตช์กับประวัติเดิมของร้าน)
   if (!home.linked) {
     return (
-      <div className="space-y-4 p-6 text-center">
-        <p className="text-lg font-semibold">สะสมแต้ม SOOKKAYA 🌿</p>
-        <p className="text-sm text-slate-600">
-          ยืนยันเบอร์โทรครั้งแรกที่หน้าจองคิวก่อนนะคะ แต้มจะผูกกับประวัติของคุณ
-          {home.displayName ? ` (${home.displayName})` : ""}
-        </p>
-        <Link
-          href="/book"
-          className="inline-block rounded-full bg-emerald-600 px-6 py-3 font-medium text-white"
-        >
-          ไปหน้าจองคิว / ยืนยันเบอร์
-        </Link>
-      </div>
+      <PhoneLinkForm
+        idToken={liffState.phase === "ready" ? liffState.idToken : ""}
+        displayName={home.displayName}
+        onDone={reload}
+      />
     )
   }
 
