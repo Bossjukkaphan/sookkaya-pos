@@ -64,20 +64,24 @@ export default async function CrmPage({
     .map((c) => {
       const days = daysUntilBirthday(c.birthday!, today)
       return {
-        customerId: c.id,
-        name: c.name,
-        nickname: c.nickname,
-        phone: c.phone!,
-        reason:
-          days === 0
-            ? "🎂 วันเกิดวันนี้!"
-            : days === 1
-              ? "🎂 วันเกิดพรุ่งนี้"
-              : `🎂 วันเกิดอีก ${days} วัน (${formatThaiDate(c.birthday!)})`,
+        days,
+        row: {
+          customerId: c.id,
+          name: c.name,
+          nickname: c.nickname,
+          phone: c.phone!,
+          reason:
+            days === 0
+              ? "🎂 วันเกิดวันนี้!"
+              : days === 1
+                ? "🎂 วันเกิดพรุ่งนี้"
+                : `🎂 วันเกิดอีก ${days} วัน (${formatThaiDate(c.birthday!)})`,
+        } satisfies CrmRow,
       }
     })
-    .sort((a, b) => a.reason.localeCompare(b.reason))
+    .sort((a, b) => a.days - b.days)
     .slice(0, LIST_CAP)
+    .map((x) => x.row)
 
   const winbackRows: CrmRow[] = (dormant ?? [])
     .filter((c) => c.customer_id && !contacted.has(`winback|${c.customer_id}`))
