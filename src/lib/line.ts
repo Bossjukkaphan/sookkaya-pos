@@ -2,6 +2,16 @@ import "server-only"
 
 export type LineIdentity = { userId: string; displayName?: string; pictureUrl?: string }
 
+/** ชื่อจากไลน์อาจเป็น placeholder ได้จริง — เจอเคส name claim ใน id token เป็น "Loading..."
+ *  (โปรไฟล์ฝั่ง LINE ยังโหลดไม่เสร็จตอนออก token) แล้วหลุดไปโผล่บนการ์ดคิวของร้าน
+ *  ใช้กรองก่อนบันทึกทุกครั้ง: ชื่อว่าง/placeholder → null ให้ผู้เรียก fallback เอง */
+export function cleanLineDisplayName(name: string | null | undefined): string | null {
+  const n = (name ?? "").trim()
+  if (!n) return null
+  if (/^loading[.…\s]*$/i.test(n)) return null
+  return n
+}
+
 /** ตรวจ idToken กับ LINE โดยตรง — ทางเดียวที่เชื่อได้ว่าใครเป็นใคร (ห้าม throw: server action ต้องเชื่อ contract นี้ได้เสมอ) */
 export async function verifyLineIdToken(idToken: string): Promise<LineIdentity | null> {
   if (!idToken) return null

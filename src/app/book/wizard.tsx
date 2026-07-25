@@ -34,6 +34,7 @@ export function BookingWizard({ services, therapists }: {
   const liffState = useLiff()
   const [linked, setLinked] = useState<null | boolean>(null)
   const [phone, setPhone] = useState("")
+  const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState("")
   const [authExpired, setAuthExpired] = useState(false)
 
@@ -113,13 +114,16 @@ export function BookingWizard({ services, therapists }: {
         <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel"
           placeholder="08x-xxx-xxxx" className="mb-2 w-full rounded-lg border px-3 py-3" />
         {linkError && <p className="mb-2 text-sm text-red-600">{linkError}</p>}
-        <button className={BTN} disabled={phone.replace(/\D/g, "").length < 9}
+        <button className={BTN} disabled={linking || phone.replace(/\D/g, "").length < 9}
           onClick={async () => {
+            // ล็อกปุ่มระหว่างรอ server — กันกดรัวยิง link ซ้ำ / กดส่งทั้งที่สถานะยังไม่พร้อม
+            setLinking(true)
             const r = await linkLineAccount(idToken, phone)
-            if (r.ok) setLinked(true)
-            else if (r.code === "auth") recoverAuth()
-            else setLinkError(r.error)
-          }}>ยืนยัน</button>
+            if (r.ok) return setLinked(true)
+            if (r.code === "auth") return recoverAuth()
+            setLinkError(r.error)
+            setLinking(false)
+          }}>{linking ? "กำลังยืนยัน…" : "ยืนยัน"}</button>
       </div>
     )
   if (linked === null)

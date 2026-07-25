@@ -1,7 +1,7 @@
 "use server"
 
 import { createServiceClient } from "@/lib/supabase/service"
-import { pushLineMessage, verifyLineIdToken } from "@/lib/line"
+import { cleanLineDisplayName, pushLineMessage, verifyLineIdToken } from "@/lib/line"
 import { msgCancelled, msgRequested, type BookingInfo } from "@/lib/line-messages"
 import { canCancelAt, computeSlots, isBookableDate } from "@/lib/booking-slots"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
@@ -32,9 +32,12 @@ export async function getLineStatus(idToken: string): Promise<
   if (data)
     return {
       ok: true, linked: true,
-      customerName: (data as unknown as { customers: { name: string } | null }).customers?.name ?? "",
+      customerName:
+        cleanLineDisplayName(
+          (data as unknown as { customers: { name: string } | null }).customers?.name
+        ) ?? "",
     }
-  return { ok: true, linked: false, displayName: who.displayName ?? null }
+  return { ok: true, linked: false, displayName: cleanLineDisplayName(who.displayName) }
 }
 
 /** ผูกบัญชีครั้งแรกด้วยเบอร์โทร — เบอร์ช่วยจับคู่เท่านั้น ไม่ใช่ตัวให้สิทธิ์
@@ -50,12 +53,15 @@ export async function linkLineAccount(
   if (!/^0\d{8,9}$/.test(clean)) return { ok: false, error: "เบอร์โทรไม่ถูกต้อง" }
 
   const db = createServiceClient()
+  // ชื่อจากไลน์ต้องผ่านตัวกรอง placeholder ก่อนเสมอ — เคยได้ "Loading..." มาจริง
+  // แล้วกลายเป็นชื่อลูกค้าในระบบ/บนการ์ดคิว
+  const displayName = cleanLineDisplayName(who.displayName)
   const { data: matches } = await db.from("customers").select("id, name").eq("phone", clean)
   let customerId: string
   if (!matches || matches.length === 0) {
     const { data: created, error } = await db
       .from("customers")
-      .insert({ name: who.displayName ?? "ลูกค้า LINE", phone: clean })
+      .insert({ name: displayName ?? "ลูกค้า LINE", phone: clean })
       .select("id").single()
     if (error) return { ok: false, error: "สร้างข้อมูลลูกค้าไม่สำเร็จ ลองใหม่นะคะ" }
     customerId = created.id
@@ -73,7 +79,7 @@ export async function linkLineAccount(
   const { error } = await db.from("line_accounts").upsert({
     line_user_id: who.userId,
     customer_id: customerId,
-    display_name: who.displayName ?? null,
+    display_name: displayName,
     picture_url: who.pictureUrl ?? null,
     phone: clean,
   })
@@ -131,9 +137,13 @@ export async function createBookingRequest(
     .eq("line_user_id", who.userId).maybeSingle()
   if (!account) return { ok: false, error: "กรุณายืนยันเบอร์โทรก่อนจองค่ะ" }
   // ชื่อบนการ์ดคิว: ใช้ชื่อจริงในระบบลูกค้าก่อน (พนักงานคุ้นชื่อนี้) — ตกไปใช้ชื่อเล่นไลน์ถ้าไม่มี
+  // ทุกชั้นผ่านตัวกรอง placeholder (ชื่อเก่าในระบบอาจติด "Loading..." มาก่อนแล้ว) — ห้ามหลุดขึ้นการ์ด
   const customerName =
-    (account as unknown as { customers: { name: string } | null }).customers?.name ??
-    account.display_name
+    cleanLineDisplayName(
+      (account as unknown as { customers: { name: string } | null }).customers?.name
+    ) ??
+    cleanLineDisplayName(account.display_name) ??
+    "ลูกค้า LINE"
 
   if (input.people.length < 1 || input.people.length > 4)
     return { ok: false, error: "จองได้ครั้งละ 1–4 ท่านค่ะ" }
