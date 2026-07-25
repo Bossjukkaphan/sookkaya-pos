@@ -12,6 +12,7 @@ import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
+import { ServiceCombobox } from "@/components/service-combobox"
 
 type Therapist = { id: string; name: string }
 type Service = { id: string; name: string; price: number; commission: number }
@@ -230,19 +231,13 @@ export function GroupPosForm({
                         </option>
                       ))}
                     </select>
-                    <select
+                    <ServiceCombobox
+                      services={services}
                       value={p.serviceId}
-                      onChange={(e) => setPerson(i, { serviceId: e.target.value })}
-                      className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                      onChange={(serviceId) => setPerson(i, { serviceId })}
                       aria-label={`เมนูคนที่ ${i + 1}`}
-                    >
-                      <option value="">— เลือกเมนู —</option>
-                      {services.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name} · {formatBaht(s.price)}฿
-                        </option>
-                      ))}
-                    </select>
+                      triggerClassName="h-11 text-sm"
+                    />
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">

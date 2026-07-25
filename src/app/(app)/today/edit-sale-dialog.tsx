@@ -28,6 +28,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  ServiceCombobox,
+  type ComboboxService,
+} from "@/components/service-combobox"
 
 export type Therapist = { id: string; name: string }
 export type Service = { id: string; name: string; price: number; commission: number }
@@ -184,7 +188,18 @@ function EditSaleForm({
   )
 
   // เมนูที่ปิดไปแล้วไม่อยู่ใน list — ต้องใส่กลับเข้าไปไม่งั้น pre-fill จะว่าง
-  const serviceMissing = !!sale.service_id && !services.some((s) => s.id === sale.service_id)
+  const pickableServices = useMemo<ComboboxService[]>(() => {
+    if (!sale.service_id || services.some((s) => s.id === sale.service_id)) {
+      return services
+    }
+    return [
+      {
+        id: sale.service_id,
+        name: `${sale.service_name ?? "เมนูเดิม"} (เมนูที่ปิดแล้ว)`,
+      },
+      ...services,
+    ]
+  }, [services, sale.service_id, sale.service_name])
 
   const ratio =
     balance && balance.credit_granted > 0
@@ -265,25 +280,13 @@ function EditSaleForm({
       {/* เมนูบริการ */}
       <div className="space-y-2">
         <Label htmlFor={uid("service_id")}>เมนูบริการ</Label>
-        <select
+        <ServiceCombobox
           id={uid("service_id")}
           name="service_id"
+          services={pickableServices}
           value={serviceId}
-          onChange={(e) => setServiceId(e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">— เลือกเมนู —</option>
-          {serviceMissing && sale.service_id && (
-            <option value={sale.service_id}>
-              {sale.service_name ?? "เมนูเดิม"} (เมนูที่ปิดแล้ว)
-            </option>
-          )}
-          {services.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} · {formatBaht(s.price)}฿
-            </option>
-          ))}
-        </select>
+          onChange={setServiceId}
+        />
         {service && (
           <p className="text-sm text-slate-600">
             ราคาปกติ {formatBaht(service.price)} บาท · ค่ามือหมอ{" "}

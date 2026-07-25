@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ServiceCombobox } from "@/components/service-combobox"
 import { REQUEST_FEE } from "@/lib/constants"
 
 const DURATIONS = [30, 45, 60, 90, 120]
@@ -227,25 +228,19 @@ export function QueueFormDialog({
 
           <div className="space-y-2">
             <Label htmlFor="q_service">เมนูบริการ</Label>
-            <select
+            <ServiceCombobox
               id="q_service"
               name="service_id"
+              services={services}
               value={serviceId}
-              onChange={(e) => {
-                setServiceId(e.target.value)
+              onChange={(id) => {
+                setServiceId(id)
                 // ระยะเวลาเริ่มจากของเมนู แล้วปรับรายคิวได้
-                const s = services.find((x) => x.id === e.target.value)
+                const s = services.find((x) => x.id === id)
                 if (s?.duration_min) setDuration(s.duration_min)
               }}
-              className="h-11 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              <option value="">— เลือกเมนู —</option>
-              {services.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+              triggerClassName="h-11"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -368,25 +363,18 @@ export function QueueFormDialog({
                       </option>
                     ))}
                   </select>
-                  <select
+                  <ServiceCombobox
+                    services={services}
                     value={p.serviceId}
-                    onChange={(e) =>
+                    onChange={(serviceId) =>
                       setExtraPeople((arr) =>
-                        arr.map((x, j) =>
-                          j === i ? { ...x, serviceId: e.target.value } : x
-                        )
+                        arr.map((x, j) => (j === i ? { ...x, serviceId } : x))
                       )
                     }
-                    className="h-10 min-w-0 flex-1 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                    placeholder="— เมนู —"
                     aria-label={`เมนูคนที่ ${i + 2}`}
-                  >
-                    <option value="">— เมนู —</option>
-                    {services.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                    triggerClassName="h-10 min-w-0 flex-1 px-2 text-sm"
+                  />
                   <label className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-slate-600">
                     <Checkbox
                       checked={p.isRequest ?? false}

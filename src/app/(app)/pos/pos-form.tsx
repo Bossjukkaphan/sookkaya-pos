@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Card, CardContent } from "@/components/ui/card"
+import { ServiceCombobox } from "@/components/service-combobox"
 
 type Therapist = { id: string; name: string }
 type Service = { id: string; name: string; price: number; commission: number }
@@ -186,20 +187,13 @@ export function PosForm({
       {/* เมนูบริการ */}
       <div className="space-y-2">
         <Label htmlFor="service_id">เมนูบริการ</Label>
-        <select
+        <ServiceCombobox
           id="service_id"
           name="service_id"
+          services={services}
           value={serviceId}
-          onChange={(e) => setServiceId(e.target.value)}
-          className="h-12 w-full rounded-md border border-input bg-transparent px-3 text-base shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          <option value="">— เลือกเมนู —</option>
-          {services.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name} · {formatBaht(s.price)}฿
-            </option>
-          ))}
-        </select>
+          onChange={setServiceId}
+        />
         {service && (
           <p className="text-sm text-slate-600">
             ราคาปกติ {formatBaht(service.price)} บาท · ค่ามือหมอ{" "}
