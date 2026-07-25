@@ -3,6 +3,8 @@
 import { createServiceClient } from "@/lib/supabase/service"
 import { cleanLineDisplayName, pushLineMessage, verifyLineIdToken } from "@/lib/line"
 import { msgCancelled, msgRequested, type BookingInfo } from "@/lib/line-messages"
+import { pushAssistantMessage } from "@/lib/line-assistant"
+import { msgShopCancelled, msgShopNewBooking } from "@/lib/line-assistant-messages"
 import { canCancelAt, computeSlots, isBookableDate } from "@/lib/booking-slots"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 
@@ -221,6 +223,11 @@ export async function createBookingRequest(
       ? "รีเควสหมอตามที่เลือกไว้ค่ะ" : undefined,
   }
   await pushLineMessage(who.userId, msgRequested(info)) // ส่งไม่ผ่านก็ไม่เป็นไร
+  // แจ้งกลุ่มทีมร้านผ่าน OA ผู้ช่วย — env ยังไม่ตั้ง/ส่งพลาด → ข้ามเงียบๆ ไม่กระทบการจอง
+  await pushAssistantMessage(
+    process.env.LINE_ASSISTANT_QUEUE_GROUP_ID ?? "",
+    msgShopNewBooking({ name: customerName, dateLabel: info.dateLabel, time: input.time, services: info.services, phone: account.phone })
+  )
   return { ok: true }
 }
 
@@ -285,7 +292,7 @@ export async function cancelBooking(
   const db = createServiceClient()
   // อ่านก่อน — ยืนยันว่าเป็นของตัวเอง + ยังยกเลิกทัน
   const q = db.from("queue_entries")
-    .select("id, queue_date, start_time, service_name, status")
+    .select("id, queue_date, start_time, service_name, customer_name, status")
     .eq("line_user_id", who.userId).in("status", ["pending", "waiting"])
   const { data } = target.groupId
     ? await q.eq("group_id", target.groupId)
@@ -308,5 +315,13 @@ export async function cancelBooking(
     dateLabel: formatThaiDate(data[0].queue_date), time,
     services: data.map((d) => d.service_name),
   }))
+  // แจ้งกลุ่มทีมร้านผ่าน OA ผู้ช่วย — env ยังไม่ตั้ง/ส่งพลาด → ข้ามเงียบๆ ไม่กระทบการยกเลิก
+  await pushAssistantMessage(
+    process.env.LINE_ASSISTANT_QUEUE_GROUP_ID ?? "",
+    msgShopCancelled({
+      name: data[0].customer_name ?? "ลูกค้า LINE", dateLabel: formatThaiDate(data[0].queue_date),
+      time, services: data.map((d) => d.service_name),
+    })
+  )
   return { ok: true }
 }

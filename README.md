@@ -246,6 +246,12 @@ Messaging API channel + LIFF app ชี้มาที่ `https://sookkaya-pos.
 | `LINE_LOGIN_CHANNEL_ID` | ยืนยัน idToken ของ LIFF ว่าเป็นลูกค้าไลน์จริง (LINE Login channel) |
 | `NEXT_PUBLIC_LIFF_ID` | ID ของ LIFF app ที่ผูกกับหน้า `/book` — ฝั่ง client ใช้เปิด LIFF |
 | `SUPABASE_SERVICE_ROLE_KEY` | ให้ server action โซน `/book` เขียนข้อมูลแทนลูกค้าไลน์ (ไม่ผ่าน RLS แบบพนักงาน เพราะไม่ใช่ Supabase Auth user) |
+| `LINE_ASSISTANT_CHANNEL_TOKEN` | โทเคน push ของ OA ผู้ช่วย — ส่งแจ้งเตือนคิวจอง/ยกเลิกเข้ากลุ่มไลน์ทีมร้าน |
+| `LINE_ASSISTANT_CHANNEL_SECRET` | ตรวจลายเซ็น `x-line-signature` ของ webhook `/api/line-assistant/webhook` (จับ group_id) |
+| `LINE_ASSISTANT_QUEUE_GROUP_ID` | group_id ของกลุ่มทีมร้าน (อ่านจากตาราง `line_groups` หลัง OA เข้ากลุ่ม) — ปลายทางของข้อความแจ้งเตือน |
+
+ชุด `LINE_ASSISTANT_*` เป็นของฟีเจอร์แจ้งเตือนฝั่งร้านผ่าน OA ผู้ช่วย — ยังไม่ตั้งก็ไม่เป็นไร
+ฟีเจอร์จะ "หลับ" อยู่เฉยๆ (ข้ามการส่งเงียบๆ ไม่กระทบการจอง/ยกเลิกใดๆ)
 
 ## Deploy
 

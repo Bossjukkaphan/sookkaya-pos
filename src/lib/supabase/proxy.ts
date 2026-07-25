@@ -3,7 +3,8 @@ import { createServerClient } from "@supabase/ssr"
 
 import type { Database } from "@/types/database"
 
-const PUBLIC_ROUTES = ["/login", "/auth", "/book"]
+// /api/line-assistant/webhook: LINE เรียกเข้ามาโดยไม่มี session — คุมสิทธิ์ด้วยลายเซ็น x-line-signature ในตัว route เอง
+const PUBLIC_ROUTES = ["/login", "/auth", "/book", "/api/line-assistant/webhook"]
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })

@@ -195,6 +195,24 @@ export type Database = {
           },
         ]
       }
+      line_groups: {
+        Row: {
+          group_id: string
+          last_seen_at: string
+          note: string | null
+        }
+        Insert: {
+          group_id: string
+          last_seen_at?: string
+          note?: string | null
+        }
+        Update: {
+          group_id?: string
+          last_seen_at?: string
+          note?: string | null
+        }
+        Relationships: []
+      }
       member_topups: {
         Row: {
           bonus_added: number
