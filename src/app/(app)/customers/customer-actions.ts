@@ -99,3 +99,72 @@ export async function adjustPoints(
   revalidatePath(`/customers/${customerId}`)
   return { ok: true }
 }
+
+/**
+ * รวมลูกค้าซ้ำ: ย้ายทุกอย่างของ source (บิล/คิว/แต้ม/คูปอง/ไลน์/เติมเงิน/ประวัติติดต่อ)
+ * มาที่ target แล้วลบ source ทิ้ง — ใช้เคสระบบสมาชิกไลน์สร้างเรคคอร์ดใหม่
+ * ทั้งที่ร้านมีลูกค้าคนนี้อยู่แล้ว (เบอร์ไม่ตรง/ไม่เคยบันทึกเบอร์)
+ * ทำได้เฉพาะ admin/manager — ย้อนกลับไม่ได้
+ */
+export async function mergeCustomers(
+  targetId: string,
+  sourceId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (targetId === sourceId) {
+    return { ok: false, error: "เลือกลูกค้าคนละคนกัน" }
+  }
+  const me = await getMyProfile()
+  if (!me || !["admin", "manager"].includes(me.role)) {
+    return { ok: false, error: "เฉพาะผู้จัดการ/แอดมินเท่านั้น" }
+  }
+
+  const supabase = await createClient()
+  const [{ data: target }, { data: source }] = await Promise.all([
+    supabase.from("customers").select("*").eq("id", targetId).maybeSingle(),
+    supabase.from("customers").select("*").eq("id", sourceId).maybeSingle(),
+  ])
+  if (!target || !source) return { ok: false, error: "ไม่พบลูกค้า" }
+
+  // ย้ายลูกทุกตารางก่อน ลบตัวแม่ทีหลัง — พลาดกลางทางข้อมูลไม่หาย แค่กดรวมซ้ำได้
+  const tables = [
+    "sales",
+    "queue_entries",
+    "member_topups",
+    "line_accounts",
+    "point_transactions",
+    "point_redemptions",
+    "crm_contacts",
+  ] as const
+  for (const table of tables) {
+    const { error } = await supabase
+      .from(table)
+      .update({ customer_id: targetId })
+      .eq("customer_id", sourceId)
+    if (error) {
+      return { ok: false, error: `ย้ายข้อมูล ${table} ไม่สำเร็จ: ${error.message}` }
+    }
+  }
+
+  // เติมช่องที่ target ยังว่างด้วยข้อมูลจาก source (ไม่ทับของที่มีอยู่)
+  await supabase
+    .from("customers")
+    .update({
+      phone: target.phone ?? source.phone,
+      nickname: target.nickname ?? source.nickname,
+      birthday: target.birthday ?? source.birthday,
+      gender: target.gender ?? source.gender,
+      line_id: target.line_id ?? source.line_id,
+      acquisition_source: target.acquisition_source ?? source.acquisition_source,
+      notes: target.notes ?? source.notes,
+    })
+    .eq("id", targetId)
+
+  const { error: delError } = await supabase.from("customers").delete().eq("id", sourceId)
+  if (delError) {
+    return { ok: false, error: `ลบเรคคอร์ดซ้ำไม่สำเร็จ: ${delError.message}` }
+  }
+
+  revalidatePath(`/customers/${targetId}`)
+  revalidatePath("/customers")
+  return { ok: true }
+}

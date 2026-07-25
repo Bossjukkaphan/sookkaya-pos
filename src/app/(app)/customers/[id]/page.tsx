@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CustomerForm } from "../customer-form"
 import { PointsAdjust } from "../points-adjust"
+import { MergeCustomers } from "../merge-customers"
 
 export default async function CustomerDetailPage({
   params,
@@ -105,6 +106,7 @@ export default async function CustomerDetailPage({
         <div className="mt-2 flex items-center gap-2">
           <Badge variant="secondary">{customer.customer_type}</Badge>
           <CustomerForm customer={customer} />
+          <MergeCustomers targetId={customer.id} targetName={customer.name} />
         </div>
       </div>
 
