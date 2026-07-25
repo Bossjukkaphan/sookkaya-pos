@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 
-import { createSale } from "../sale-actions"
+import { checkPointCoupon, createSale, type CouponCheck } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import {
   GOWABI_METHOD,
@@ -126,6 +126,10 @@ export function PosForm({
   const [customPromo, setCustomPromo] = useState(false)
   // บิลชุด: รายการที่ 2 เป็นต้นไปของลูกค้าคนเดียวกัน (จ่ายรวมครั้งเดียว)
   const [extras, setExtras] = useState<ExtraItem[]>([])
+  // คูปองแลกแต้มจากไลน์ — ตรวจแล้วเติมลูกค้า/เมนู/ส่วนลดเต็มราคาให้อัตโนมัติ
+  const [couponCode, setCouponCode] = useState("")
+  const [couponInfo, setCouponInfo] = useState<(CouponCheck & { ok: true }) | null>(null)
+  const [checkingCoupon, setCheckingCoupon] = useState(false)
   const [pending, startTransition] = useTransition()
 
   const service = useMemo(
@@ -166,6 +170,39 @@ export function PosForm({
     setExtras((arr) => arr.map((x, j) => (j === i ? { ...x, ...patch } : x)))
   }
 
+  async function applyCoupon() {
+    setCheckingCoupon(true)
+    const r = await checkPointCoupon(couponCode)
+    if (!r.ok) {
+      toast.error(r.error)
+      setCheckingCoupon(false)
+      return
+    }
+    setCouponInfo(r)
+    setCustomerId(r.customerId)
+    setCustomerName(r.customerName)
+    setCustomerPhone(r.customerPhone)
+    setCustomPromo(true)
+    setCouponPromo("แลกแต้ม")
+    const svcId = r.serviceId ?? serviceId
+    if (r.serviceId) setServiceId(r.serviceId)
+    const svc = services.find((s) => s.id === svcId)
+    if (svc) setDiscount(String(svc.price))
+    toast.success(
+      `คูปอง ${r.rewardName} ของ ${r.customerName || "ลูกค้า"} — บิลนี้เก็บ 0 บาท` +
+        (r.serviceId ? "" : " (เลือกเมนูแล้วส่วนลดจะเต็มราคาให้เอง)")
+    )
+    setCheckingCoupon(false)
+  }
+
+  function clearCoupon() {
+    setCouponInfo(null)
+    setCouponCode("")
+    setCouponPromo("")
+    setCustomPromo(false)
+    setDiscount("")
+  }
+
   function extraNet(x: ExtraItem): number {
     const svc = services.find((s) => s.id === x.serviceId)
     if (!svc) return 0
@@ -196,6 +233,8 @@ export function PosForm({
     setCouponPromo("")
     setCustomPromo(false)
     setExtras([])
+    setCouponInfo(null)
+    setCouponCode("")
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -324,7 +363,13 @@ export function PosForm({
           value={serviceId}
           onChange={(id) => {
             setServiceId(id)
-            applyPromoDiscount(couponPromo, id)
+            if (couponInfo) {
+              // บิลแลกแต้ม: ส่วนลดต้องเต็มราคาเมนูที่เลือกเสมอ (เก็บ 0 บาท)
+              const svc = services.find((s) => s.id === id)
+              if (svc) setDiscount(String(svc.price))
+            } else {
+              applyPromoDiscount(couponPromo, id)
+            }
           }}
         />
         {service && (
@@ -478,6 +523,50 @@ export function PosForm({
           ))}
         </div>
       </fieldset>
+
+      {/* คูปองแลกแต้มจากไลน์ — ลูกค้าโชว์รหัส 6 ตัว */}
+      <div className="space-y-2 rounded-lg border border-violet-200 p-3">
+        <div className="flex items-end gap-2">
+          <div className="flex-1 space-y-1">
+            <Label htmlFor="point_coupon">
+              คูปองแลกแต้ม{" "}
+              <span className="font-normal text-slate-500">(ถ้าลูกค้าโชว์รหัสจากไลน์)</span>
+            </Label>
+            <Input
+              id="point_coupon"
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+              maxLength={6}
+              placeholder="รหัส 6 ตัว"
+              className="h-11 uppercase tracking-widest"
+              disabled={!!couponInfo}
+            />
+          </div>
+          {couponInfo ? (
+            <Button type="button" variant="outline" className="h-11" onClick={clearCoupon}>
+              ยกเลิกคูปอง
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              className="h-11"
+              onClick={applyCoupon}
+              disabled={checkingCoupon || couponCode.trim().length !== 6}
+            >
+              {checkingCoupon ? "กำลังตรวจ..." : "ตรวจคูปอง"}
+            </Button>
+          )}
+        </div>
+        {couponInfo && (
+          <>
+            <p className="text-sm font-medium text-violet-700">
+              🎁 {couponInfo.rewardName} · {couponInfo.customerName || "ลูกค้า"} — บิลนี้เก็บ 0
+              บาท (ค่ามือหมอจ่ายปกติ)
+            </p>
+            <input type="hidden" name="redemption_id" value={couponInfo.redemptionId} />
+          </>
+        )}
+      </div>
 
       {/* คูปอง/โปรโมชั่น + ส่วนลด */}
       <div className="grid grid-cols-2 gap-3">

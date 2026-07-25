@@ -7,6 +7,7 @@ import { formatBaht } from "@/lib/constants"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CustomerForm } from "../customer-form"
+import { PointsAdjust } from "../points-adjust"
 
 export default async function CustomerDetailPage({
   params,
@@ -16,21 +17,43 @@ export default async function CustomerDetailPage({
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: customer }, { data: balance }, { data: sales }] =
-    await Promise.all([
-      supabase.from("customers").select("*").eq("id", id).single(),
-      supabase
-        .from("member_balances")
-        .select("credit_balance, credit_granted, bonus_granted, cash_paid, next_expiry")
-        .eq("customer_id", id)
-        .single(),
-      supabase
-        .from("sales")
-        .select("id, sale_date, service_name, net_amount, payment_method")
-        .eq("customer_id", id)
-        .order("sale_date", { ascending: false })
-        .limit(50),
-    ])
+  const [
+    { data: customer },
+    { data: balance },
+    { data: sales },
+    { data: pointBalance },
+    { data: pointHistory },
+    { data: lineAccount },
+  ] = await Promise.all([
+    supabase.from("customers").select("*").eq("id", id).single(),
+    supabase
+      .from("member_balances")
+      .select("credit_balance, credit_granted, bonus_granted, cash_paid, next_expiry")
+      .eq("customer_id", id)
+      .single(),
+    supabase
+      .from("sales")
+      .select("id, sale_date, service_name, net_amount, payment_method")
+      .eq("customer_id", id)
+      .order("sale_date", { ascending: false })
+      .limit(50),
+    supabase
+      .from("v_point_balances")
+      .select("balance")
+      .eq("customer_id", id)
+      .maybeSingle(),
+    supabase
+      .from("point_transactions")
+      .select("delta, reason, created_at")
+      .eq("customer_id", id)
+      .order("created_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("line_accounts")
+      .select("display_name, picture_url")
+      .eq("customer_id", id)
+      .maybeSingle(),
+  ])
 
   if (!customer) notFound()
 
@@ -58,6 +81,20 @@ export default async function CustomerDetailPage({
           {customer.phone ?? "ไม่มีเบอร์โทร"}
           {customer.line_id && ` · LINE ${customer.line_id}`}
         </p>
+        {lineAccount && (
+          <p className="mt-1 flex items-center gap-2 text-sm text-emerald-700">
+            {lineAccount.picture_url && (
+              // รูปโปรไฟล์ไลน์เป็นโดเมนภายนอก — ใช้ img ธรรมดา ไม่ผ่านตัว optimize
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={lineAccount.picture_url}
+                alt=""
+                className="h-6 w-6 rounded-full"
+              />
+            )}
+            ผูกไลน์แล้ว: {lineAccount.display_name ?? "(ไม่ทราบชื่อไลน์)"}
+          </p>
+        )}
         <div className="mt-2 flex items-center gap-2">
           <Badge variant="secondary">{customer.customer_type}</Badge>
           <CustomerForm customer={customer} />
@@ -93,6 +130,51 @@ export default async function CustomerDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* แต้มสะสม */}
+      <Card className="border-violet-200">
+        <CardHeader className="flex flex-row items-center justify-between pb-2">
+          <CardTitle className="text-base">
+            แต้มสะสม 🌿{" "}
+            <span className="text-2xl font-bold text-violet-700">
+              {(pointBalance?.balance ?? 0).toLocaleString()}
+            </span>
+          </CardTitle>
+          <PointsAdjust customerId={id} />
+        </CardHeader>
+        <CardContent className="px-0">
+          {(pointHistory ?? []).length === 0 ? (
+            <p className="px-6 pb-4 text-sm text-slate-500">
+              ยังไม่มีรายการแต้ม — แต้มเข้าอัตโนมัติเมื่อบันทึกบิลที่ผูกลูกค้าคนนี้
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {(pointHistory ?? []).map((p, i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between gap-3 px-4 py-2 text-sm sm:px-6"
+                >
+                  <div>
+                    <p>{p.reason}</p>
+                    <p className="text-xs text-slate-400">
+                      {formatThaiDate(p.created_at.slice(0, 10))}
+                    </p>
+                  </div>
+                  <span
+                    className={
+                      p.delta > 0
+                        ? "font-semibold text-emerald-600"
+                        : "font-semibold text-red-500"
+                    }
+                  >
+                    {p.delta > 0 ? `+${p.delta}` : p.delta}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {customer.notes && (
         <Card>

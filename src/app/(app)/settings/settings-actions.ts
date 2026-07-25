@@ -309,3 +309,38 @@ export async function saveAlias(
   refreshPromo()
   return { ok: true }
 }
+
+/** เพิ่มของรางวัลแลกแต้ม */
+export async function saveReward(input: {
+  name: string
+  pointsCost: number
+  serviceId: string | null
+}): Promise<ActionResult> {
+  const supabase = await createClient()
+  const name = input.name.trim()
+  const pointsCost = Math.round(input.pointsCost)
+  if (!name) return { ok: false, error: "กรุณากรอกชื่อรางวัล" }
+  if (!Number.isFinite(pointsCost) || pointsCost < 1) {
+    return { ok: false, error: "แต้มที่ใช้แลกต้องเป็นเลขมากกว่า 0" }
+  }
+  const { error } = await supabase.from("point_rewards").insert({
+    name,
+    points_cost: pointsCost,
+    service_id: input.serviceId,
+  })
+  if (error) return fail(error)
+  revalidatePath("/settings")
+  return { ok: true }
+}
+
+/** เปิด/ปิดรับแลกของรางวัล */
+export async function toggleReward(id: string, isActive: boolean): Promise<ActionResult> {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from("point_rewards")
+    .update({ is_active: isActive })
+    .eq("id", id)
+  if (error) return fail(error)
+  revalidatePath("/settings")
+  return { ok: true }
+}

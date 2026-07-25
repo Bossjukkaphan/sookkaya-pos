@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { addMonths, todayInShopTz } from "@/lib/datetime"
 import { MEMBER_TIERS } from "@/lib/constants"
+import { pointExpiryDate, pointsForBaht } from "@/lib/points"
 
 export type TopupResult = { ok: true } | { ok: false; error: string }
 
@@ -26,19 +27,36 @@ export async function createTopup(formData: FormData): Promise<TopupResult> {
 
   const topupDate = todayInShopTz()
 
-  const { error } = await supabase.from("member_topups").insert({
-    topup_date: topupDate,
-    customer_id: customerId,
-    tier: tier.tier,
-    payment_method: paymentMethod,
-    cash_received: tier.cash,
-    credit_added: tier.credit,
-    bonus_added: tier.bonus,
-    expiry_date: addMonths(topupDate, tier.months),
-    notes: String(formData.get("notes") ?? "").trim() || null,
-  })
+  const { data: topup, error } = await supabase
+    .from("member_topups")
+    .insert({
+      topup_date: topupDate,
+      customer_id: customerId,
+      tier: tier.tier,
+      payment_method: paymentMethod,
+      cash_received: tier.cash,
+      credit_added: tier.credit,
+      bonus_added: tier.bonus,
+      expiry_date: addMonths(topupDate, tier.months),
+      notes: String(formData.get("notes") ?? "").trim() || null,
+    })
+    .select("id")
+    .single()
 
   if (error) return { ok: false, error: `บันทึกไม่สำเร็จ: ${error.message}` }
+
+  // แต้มสะสมจากเงินสดรับจริงตอนเติม (ตอนใช้เครดิตจ่ายจะไม่ได้แต้มซ้ำ)
+  // ลบใบเติม → แต้มหายเองผ่าน FK cascade · แต้มเป็นของแถม พลาดไม่กระทบใบเติม
+  const topupPoints = pointsForBaht(tier.cash)
+  if (topup && topupPoints > 0) {
+    await supabase.from("point_transactions").insert({
+      customer_id: customerId,
+      delta: topupPoints,
+      reason: "แต้มจากเติมเงินสมาชิก",
+      topup_id: topup.id,
+      expires_at: pointExpiryDate(topupDate),
+    })
+  }
 
   // ลูกค้าที่เติมเงินแล้วถือเป็นสมาชิก
   await supabase

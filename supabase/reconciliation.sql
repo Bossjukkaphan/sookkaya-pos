@@ -45,7 +45,10 @@ with expected(check_name, expected_value) as (values
   -- ต้องเป็น 0 เสมอ = ทุก view ใน public บังคับ RLS ตามสิทธิ์ผู้เรียก
   ('views_without_security_invoker', 0),
   -- บิลชุด: ทุกแถวใน bill_id เดียวกันต้องเป็นลูกค้า/วันที่/วิธีจ่ายเดียวกัน
-  ('bill_id_inconsistent_bills', 0)
+  ('bill_id_inconsistent_bills', 0),
+  -- แต้มสะสม: ห้ามมีลูกค้าแต้มติดลบ และคูปองที่ used ต้องมีบิลผูกเสมอ
+  ('points_negative_customers', 0),
+  ('points_used_coupon_no_sale', 0)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -131,6 +134,15 @@ actual(check_name, actual_value) as (
         or count(distinct payment_method) > 1
         or count(distinct coalesce(customer_id::text, customer_name, '')) > 1
   ) bad_bills
+
+  union all
+  select 'points_negative_customers', count(*)
+  from public.v_point_balances where balance < 0
+
+  union all
+  select 'points_used_coupon_no_sale', count(*)
+  from public.point_redemptions
+  where status = 'used' and used_sale_id is null
 
   union all
   select 'views_without_security_invoker', count(*)

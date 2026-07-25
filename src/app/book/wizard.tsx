@@ -290,8 +290,12 @@ export function BookingWizard({ services, therapists }: {
             onClick={() => setStep(step + 1)}>ถัดไป →</button>
         )}
       </div>
-      <Link href="/book/mine" className="block text-center text-sm text-[#664343] underline">
-        ดูการจองของฉัน</Link>
+      <div className="flex justify-center gap-6">
+        <Link href="/book/mine" className="text-sm text-[#664343] underline">
+          ดูการจองของฉัน</Link>
+        <Link href="/book/points" className="text-sm text-[#664343] underline">
+          🌿 แต้มสะสมของฉัน</Link>
+      </div>
     </div>
   )
 }

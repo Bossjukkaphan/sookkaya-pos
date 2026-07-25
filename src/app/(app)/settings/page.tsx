@@ -6,6 +6,7 @@ import { UsersTab } from "./users-tab"
 import { GeneralTab } from "./general-tab"
 import { CostTypesTab } from "./cost-types-tab"
 import { PromotionsTab } from "./promotions-tab"
+import { RewardsTab } from "./rewards-tab"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 export const metadata = { title: "ตั้งค่า · สุขกายา POS" }
@@ -27,6 +28,8 @@ export default async function SettingsPage() {
     { data: promotions },
     { data: unmatchedRows },
     { data: aliasRows },
+    { data: rewards },
+    { data: rewardServices },
   ] = await Promise.all([
     supabase.from("therapists").select("id, name, status").order("name"),
     supabase
@@ -54,6 +57,16 @@ export default async function SettingsPage() {
       .from("promotion_aliases")
       .select("raw_key, sample_text, promotion_id")
       .order("raw_key"),
+    supabase
+      .from("point_rewards")
+      .select("id, name, service_id, points_cost, is_active")
+      .order("sort")
+      .order("points_cost"),
+    supabase
+      .from("services")
+      .select("id, name, price, duration_min")
+      .eq("is_active", true)
+      .order("name"),
   ])
 
   const role = profile?.role ?? "staff"
@@ -104,6 +117,11 @@ export default async function SettingsPage() {
               โปรฯ
             </TabsTrigger>
           )}
+          {canEditCatalog && (
+            <TabsTrigger value="rewards" className="flex-1">
+              แต้ม
+            </TabsTrigger>
+          )}
           <TabsTrigger value="general" className="flex-1">
             ทั่วไป
           </TabsTrigger>
@@ -148,6 +166,12 @@ export default async function SettingsPage() {
               unmatched={unmatched}
               aliases={aliases}
             />
+          </TabsContent>
+        )}
+
+        {canEditCatalog && (
+          <TabsContent value="rewards" className="pt-4">
+            <RewardsTab rewards={rewards ?? []} services={rewardServices ?? []} />
           </TabsContent>
         )}
 

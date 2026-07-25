@@ -3,6 +3,9 @@
 import { revalidatePath } from "next/cache"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
+import { todayInShopTz } from "@/lib/datetime"
+import { pointExpiryDate } from "@/lib/points"
 
 export type CustomerResult =
   | { ok: true; id: string }
@@ -53,4 +56,46 @@ export async function saveCustomer(formData: FormData): Promise<CustomerResult> 
 
   revalidatePath("/customers")
   return { ok: true, id: data.id }
+}
+
+/** ปรับแต้มมือ — เหตุผลบังคับ ตรวจย้อนได้จากสมุดบัญชีแต้มเสมอ */
+export async function adjustPoints(
+  customerId: string,
+  delta: number,
+  reasonRaw: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient()
+  const reason = reasonRaw.trim()
+  const rounded = Math.round(delta)
+  if (!reason) return { ok: false, error: "กรุณากรอกเหตุผล" }
+  if (!Number.isFinite(rounded) || rounded === 0) {
+    return { ok: false, error: "จำนวนแต้มต้องไม่เป็นศูนย์" }
+  }
+
+  // ห้ามหักจนติดลบ
+  if (rounded < 0) {
+    const { data: balanceRow } = await supabase
+      .from("v_point_balances")
+      .select("balance")
+      .eq("customer_id", customerId)
+      .maybeSingle()
+    if ((balanceRow?.balance ?? 0) + rounded < 0) {
+      return {
+        ok: false,
+        error: `หักไม่ได้ แต้มคงเหลือ ${balanceRow?.balance ?? 0} แต้ม`,
+      }
+    }
+  }
+
+  const me = await getMyProfile()
+  const { error } = await supabase.from("point_transactions").insert({
+    customer_id: customerId,
+    delta: rounded,
+    reason: `ปรับมือ: ${reason}`,
+    created_by: me?.full_name ?? me?.email ?? null,
+    ...(rounded > 0 ? { expires_at: pointExpiryDate(todayInShopTz()) } : {}),
+  })
+  if (error) return { ok: false, error: error.message }
+  revalidatePath(`/customers/${customerId}`)
+  return { ok: true }
 }

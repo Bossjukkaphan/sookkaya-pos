@@ -263,6 +263,120 @@ export type Database = {
           },
         ]
       }
+      point_redemptions: {
+        Row: {
+          code: string
+          created_at: string
+          customer_id: string
+          expires_at: string
+          id: string
+          points_cost: number
+          reward_id: string
+          reward_name: string
+          status: string
+          used_at: string | null
+          used_by: string | null
+          used_sale_id: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          customer_id: string
+          expires_at: string
+          id?: string
+          points_cost: number
+          reward_id: string
+          reward_name: string
+          status?: string
+          used_at?: string | null
+          used_by?: string | null
+          used_sale_id?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          customer_id?: string
+          expires_at?: string
+          id?: string
+          points_cost?: number
+          reward_id?: string
+          reward_name?: string
+          status?: string
+          used_at?: string | null
+          used_by?: string | null
+          used_sale_id?: string | null
+        }
+        Relationships: []
+      }
+      point_rewards: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          points_cost: number
+          service_id: string | null
+          sort: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          points_cost: number
+          service_id?: string | null
+          sort?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          points_cost?: number
+          service_id?: string | null
+          sort?: number
+        }
+        Relationships: []
+      }
+      point_transactions: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          customer_id: string
+          delta: number
+          expires_at: string | null
+          id: string
+          reason: string
+          redemption_id: string | null
+          sale_id: string | null
+          topup_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          customer_id: string
+          delta: number
+          expires_at?: string | null
+          id?: string
+          reason: string
+          redemption_id?: string | null
+          sale_id?: string | null
+          topup_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          customer_id?: string
+          delta?: number
+          expires_at?: string | null
+          id?: string
+          reason?: string
+          redemption_id?: string | null
+          sale_id?: string | null
+          topup_id?: string | null
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -709,6 +823,13 @@ export type Database = {
       }
     }
     Views: {
+      v_point_balances: {
+        Row: {
+          balance: number | null
+          customer_id: string | null
+        }
+        Relationships: []
+      }
       member_balances: {
         Row: {
           bonus_granted: number | null

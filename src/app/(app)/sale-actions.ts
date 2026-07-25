@@ -7,6 +7,7 @@ import { getMyProfile } from "@/lib/auth"
 import { nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import { GOWABI_METHOD, MEMBER_CREDIT_METHOD, PAYMENT_METHODS } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
+import { pointExpiryDate, pointsForBaht } from "@/lib/points"
 
 export type SaleResult =
   | {
@@ -20,6 +21,37 @@ export type SaleResult =
 function toNumber(value: FormDataEntryValue | null, fallback = 0): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
+}
+
+/**
+ * แต้มสะสมของบิล: ลบของเดิมแล้วใส่ใหม่ตามยอดปัจจุบัน — แก้บิลแล้วแต้มตามยอดใหม่เสมอ
+ * ลบบิล → แต้มหายเองผ่าน FK cascade · เครดิตสมาชิกไม่ได้แต้ม (ได้ตอนเติมเงินแล้ว)
+ * แต้มเป็นของแถม ไม่ใช่สมุดเงิน — พลาดก็ไม่กระทบบิล จึงไม่เช็ค error
+ */
+async function syncSalePoints(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  sale: {
+    id: string
+    customer_id: string | null
+    net_amount: number
+    payment_method: string
+    sale_date: string
+  }
+) {
+  const points =
+    sale.customer_id && sale.payment_method !== MEMBER_CREDIT_METHOD
+      ? pointsForBaht(sale.net_amount)
+      : 0
+  await supabase.from("point_transactions").delete().eq("sale_id", sale.id)
+  if (points > 0 && sale.customer_id) {
+    await supabase.from("point_transactions").insert({
+      customer_id: sale.customer_id,
+      delta: points,
+      reason: "แต้มจากบิลขาย",
+      sale_id: sale.id,
+      expires_at: pointExpiryDate(sale.sale_date),
+    })
+  }
 }
 
 export async function createSale(formData: FormData): Promise<SaleResult> {
@@ -182,6 +214,30 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .single()
 
   if (error) return { ok: false, error: `บันทึกไม่สำเร็จ: ${error.message}` }
+
+  // แต้มสะสม: บิลผูกลูกค้า + จ่ายจริง → ทุก 100฿ = 1 แต้ม (เครดิตสมาชิกได้ตอนเติมไปแล้ว)
+  await syncSalePoints(supabase, {
+    id: inserted.id,
+    customer_id: customerId,
+    net_amount: amounts.netAmount,
+    payment_method: paymentMethod,
+    sale_date: saleDate,
+  })
+
+  // บิลจากคูปองแลกแต้ม → ปิดคูปองเป็นใช้แล้ว ผูกกับบิลนี้
+  const redemptionId = String(formData.get("redemption_id") ?? "")
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(redemptionId)) {
+    await supabase
+      .from("point_redemptions")
+      .update({
+        status: "used",
+        used_sale_id: inserted.id,
+        used_by: profile?.full_name ?? user.email ?? null,
+        used_at: new Date().toISOString(),
+      })
+      .eq("id", redemptionId)
+      .eq("status", "issued")
+  }
 
   // มาจากบอร์ดคิว → ปิดคิวเป็นชำระแล้ว + ผูกใบขาย
   // (สองคำสั่งแยกกัน ถ้าอัปเดตคิวพลาด ใบขายยังถูกต้อง การ์ดค้างสถานะเดิม
@@ -428,6 +484,15 @@ export async function updateSale(
     }
   }
 
+  // ยอด/ลูกค้า/วิธีจ่ายอาจเปลี่ยน → คำนวณแต้มของบิลนี้ใหม่ทั้งก้อน
+  await syncSalePoints(supabase, {
+    id,
+    customer_id: customerId,
+    net_amount: amounts.netAmount,
+    payment_method: paymentMethod,
+    sale_date: existing.sale_date,
+  })
+
   // บิลนี้อาจมีการ์ดคิวผูกอยู่ (คิววันนี้) — sync ฟิลด์ที่การ์ดคิว "มิเรอร์" มาจากบิลตอนสร้าง
   // (ดู createSale) ไม่งั้นแก้โปรแกรมนวดในบิลแล้วการ์ดคิวยังค้างค่าเก่า — เคสจริงที่พนักงานเจอ:
   // ลูกค้าเปลี่ยนโปรแกรม 60→90 นาที บิลถูกแล้วแต่การ์ดคิวยังโชว์ 60 นาที ต้องลบบิลทิ้งแล้วสร้างคิวใหม่
@@ -453,4 +518,59 @@ export async function updateSale(
   revalidatePath("/overview")
   revalidatePath("/queue")
   return { ok: true }
+}
+
+export type CouponCheck =
+  | {
+      ok: true
+      redemptionId: string
+      rewardName: string
+      customerId: string
+      customerName: string
+      customerPhone: string
+      /** เมนูที่ผูกกับรางวัล (ถ้ามี) — POS จะเลือกเมนู+ส่วนลดเต็มให้เอง */
+      serviceId: string | null
+    }
+  | { ok: false; error: string }
+
+/** ตรวจรหัสคูปองแลกแต้มจากลูกค้า — ใช้ในหน้า POS ก่อนบันทึกบิล 0 บาท */
+export async function checkPointCoupon(codeRaw: string): Promise<CouponCheck> {
+  const supabase = await createClient()
+  const code = codeRaw.trim().toUpperCase()
+  if (!/^[A-Z0-9]{6}$/.test(code)) {
+    return { ok: false, error: "รหัสคูปองต้องเป็นตัวอักษร/ตัวเลข 6 ตัว" }
+  }
+
+  const { data: coupon } = await supabase
+    .from("point_redemptions")
+    .select("id, status, expires_at, reward_name, reward_id, customer_id, customers(name, phone)")
+    .eq("code", code)
+    .maybeSingle()
+
+  if (!coupon) return { ok: false, error: "ไม่พบคูปองรหัสนี้" }
+  if (coupon.status === "used") return { ok: false, error: "คูปองนี้ถูกใช้ไปแล้ว" }
+  if (coupon.status !== "issued") return { ok: false, error: "คูปองนี้ถูกยกเลิก/หมดอายุแล้ว" }
+  if (coupon.expires_at < todayInShopTz()) {
+    return { ok: false, error: `คูปองหมดอายุแล้ว (${coupon.expires_at})` }
+  }
+
+  const { data: reward } = await supabase
+    .from("point_rewards")
+    .select("service_id")
+    .eq("id", coupon.reward_id)
+    .maybeSingle()
+
+  const customer = (
+    coupon as unknown as { customers: { name: string; phone: string | null } | null }
+  ).customers
+
+  return {
+    ok: true,
+    redemptionId: coupon.id,
+    rewardName: coupon.reward_name,
+    customerId: coupon.customer_id,
+    customerName: customer?.name ?? "",
+    customerPhone: customer?.phone ?? "",
+    serviceId: reward?.service_id ?? null,
+  }
 }
