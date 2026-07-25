@@ -81,14 +81,19 @@ function PhoneLinkForm({
 function ProfileForm({
   idToken,
   currentName,
+  currentNickname,
+  visits,
   onDone,
 }: {
   idToken: string
   currentName: string
+  currentNickname: string | null
+  /** เคยมาใช้บริการกี่ครั้ง — >0 = แมตช์ประวัติเดิมสำเร็จ โชว์ให้ลูกค้าอุ่นใจ */
+  visits: number
   onDone: () => void
 }) {
   const [fullName, setFullName] = useState(currentName)
-  const [nickname, setNickname] = useState("")
+  const [nickname, setNickname] = useState(currentNickname ?? "")
   const [birthday, setBirthday] = useState("")
   const [gender, setGender] = useState("")
   const [source, setSource] = useState("")
@@ -120,6 +125,13 @@ function ProfileForm({
           กรอกสั้นๆ ครั้งเดียว เพื่อรับสิทธิ์สะสมแต้มและของขวัญวันเกิดค่ะ
         </p>
       </div>
+      {visits > 0 && (
+        <p className="rounded-xl bg-emerald-50 p-3 text-center text-sm text-emerald-800">
+          ✅ พบประวัติของคุณในระบบแล้ว (เคยใช้บริการ {visits} ครั้ง)
+          <br />
+          ตรวจสอบชื่อด้านล่าง — แก้ไขได้เลยถ้าไม่ตรงค่ะ
+        </p>
+      )}
       <div className="space-y-1">
         <label className="text-sm font-medium">ชื่อ-นามสกุล *</label>
         <input
@@ -257,6 +269,8 @@ export default function PointsPage() {
       <ProfileForm
         idToken={liffState.idToken}
         currentName={home.customerName}
+        currentNickname={home.nickname}
+        visits={home.visits}
         onDone={reload}
       />
     )

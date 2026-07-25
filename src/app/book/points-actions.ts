@@ -36,6 +36,10 @@ export type PointsHome =
       customerName: string
       /** โปรไฟล์สมาชิกครบหรือยัง (วันเกิด+เพศ) — ยังไม่ครบให้กรอกก่อนเห็นแต้ม */
       profileComplete: boolean
+      /** ชื่อเล่นเดิมในระบบ (เติมให้ในฟอร์ม) */
+      nickname: string | null
+      /** จำนวนครั้งที่เคยมาใช้บริการ — โชว์ยืนยันว่าแมตช์ประวัติเดิมถูกคน */
+      visits: number
       balance: number
       /** แต้มก้อนแรกสุดหมดอายุวันไหน (แสดงเตือน) */
       earliestExpiry: string | null
@@ -54,7 +58,7 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
 
   const { data: account } = await db
     .from("line_accounts")
-    .select("customer_id, customers(name, birthday, gender)")
+    .select("customer_id, customers(name, nickname, birthday, gender)")
     .eq("line_user_id", who.userId)
     .maybeSingle()
 
@@ -64,7 +68,12 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
   const customerId = account.customer_id
   const profile = (
     account as unknown as {
-      customers: { name: string; birthday: string | null; gender: string | null } | null
+      customers: {
+        name: string
+        nickname: string | null
+        birthday: string | null
+        gender: string | null
+      } | null
     }
   ).customers
   const profileComplete = Boolean(profile?.birthday && profile?.gender)
@@ -103,8 +112,14 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
     }
   }
 
-  const [{ data: balanceRow }, { data: coupons }, { data: rewards }, { data: history }, { data: earliest }] =
-    await Promise.all([
+  const [
+    { data: balanceRow },
+    { data: coupons },
+    { data: rewards },
+    { data: history },
+    { data: earliest },
+    { data: ltv },
+  ] = await Promise.all([
       db.from("v_point_balances").select("balance").eq("customer_id", customerId).maybeSingle(),
       db
         .from("point_redemptions")
@@ -133,6 +148,11 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
         .order("expires_at")
         .limit(1)
         .maybeSingle(),
+      db
+        .from("v_customer_ltv")
+        .select("visits")
+        .eq("customer_id", customerId)
+        .maybeSingle(),
     ])
 
   const customerName =
@@ -143,6 +163,8 @@ export async function getPointsHome(idToken: string): Promise<PointsHome> {
     linked: true,
     customerName: cleanLineDisplayName(customerName) ?? customerName,
     profileComplete,
+    nickname: profile?.nickname ?? null,
+    visits: ltv?.visits ?? 0,
     balance: balanceRow?.balance ?? 0,
     earliestExpiry: earliest?.expires_at ?? null,
     coupons: (coupons ?? []).map((c) => ({
