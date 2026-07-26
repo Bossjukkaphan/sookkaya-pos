@@ -198,9 +198,28 @@ export default function ProfilePage() {
   const tierCls = member.tier ? (TIER_STYLE[member.tier] ?? "bg-slate-100 text-slate-600") : ""
 
   return (
-    <div className="space-y-5 pb-10">
+    <div className="space-y-5">
+      {/* ทางลัดไปแต่ละส่วน — กดแล้วเลื่อนถึงทันที ไม่ต้องไถหา */}
+      <nav className="sticky top-0 z-10 -mx-4 flex gap-2 overflow-x-auto bg-[#f8f6f3]/95 px-4 py-2 backdrop-blur">
+        {(
+          [
+            ["#info", "👤 โปรไฟล์"],
+            ["#member", "💳 เครดิตสมาชิก"],
+            ["#history", "🧾 ประวัติการใช้"],
+          ] as const
+        ).map(([href, label]) => (
+          <a
+            key={href}
+            href={href}
+            className="shrink-0 rounded-full border border-[#664343]/20 bg-white px-3 py-1.5 text-xs font-medium text-[#664343] shadow-sm"
+          >
+            {label}
+          </a>
+        ))}
+      </nav>
+
       {/* ข้อมูลส่วนตัว */}
-      <section className="rounded-2xl border bg-white p-4">
+      <section id="info" className="scroll-mt-14 rounded-2xl border bg-white p-4">
         <div className="flex items-center justify-between">
           <h2 className="font-bold">ข้อมูลส่วนตัว</h2>
           {!editing && (
@@ -245,7 +264,11 @@ export default function ProfilePage() {
       </section>
 
       {/* สถานะสมาชิกเครดิต */}
-      <section className="rounded-2xl p-5 text-white" style={{ background: "#664343" }}>
+      <section
+        id="member"
+        className="scroll-mt-14 rounded-2xl p-5 text-white"
+        style={{ background: "#664343" }}
+      >
         <div className="flex items-center justify-between">
           <h2 className="font-bold">สมาชิก SOOKKAYA</h2>
           {member.tier && (
@@ -278,7 +301,7 @@ export default function ProfilePage() {
       </section>
 
       {/* ประวัติการใช้บริการ — ทุกช่องทางจ่าย: เงินสด/โอน/บัตร/เครดิตสมาชิก */}
-      <section className="space-y-2">
+      <section id="history" className="scroll-mt-14 space-y-2">
         <h2 className="font-bold">ประวัติการใช้บริการ</h2>
         {usage.length === 0 ? (
           <p className="py-4 text-center text-sm text-slate-500">
@@ -289,17 +312,6 @@ export default function ProfilePage() {
         )}
       </section>
 
-      <div className="space-y-2 text-center text-sm">
-        <Link href="/book/points" className="block text-[#664343] underline">
-          ⭐ แต้มสะสมและคูปองของฉัน
-        </Link>
-        <Link href="/book/mine" className="block text-[#664343] underline">
-          📅 การจองของฉัน
-        </Link>
-        <Link href="/book" className="block text-[#664343] underline">
-          ← กลับหน้าจองคิว
-        </Link>
-      </div>
     </div>
   )
 }
