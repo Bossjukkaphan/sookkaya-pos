@@ -65,6 +65,7 @@ export default async function CustomersPage({
     { count: totalMembers },
     { count: newThisMonth },
     { data: creditRows },
+    { data: lineLinks },
   ] = await Promise.all([
     query,
     supabase.from("customers").select("*", { count: "exact", head: true }),
@@ -77,7 +78,11 @@ export default async function CustomersPage({
       .select("*", { count: "exact", head: true })
       .gte("created_at", monthStartIso),
     supabase.from("member_balances").select("credit_balance").gt("credit_balance", 0),
+    // ลูกค้าที่ผูกบัญชีไลน์แล้ว (จองผ่านไลน์ได้/รับแจ้งเตือน) — โชว์ป้ายเขียวให้เห็นทันที
+    supabase.from("line_accounts").select("customer_id"),
   ])
+
+  const lineLinkedIds = new Set((lineLinks ?? []).map((l) => l.customer_id))
 
   const totalOutstanding = (creditRows ?? []).reduce(
     (sum, r) => sum + (r.credit_balance ?? 0),
@@ -177,6 +182,15 @@ export default async function CustomersPage({
                               className="shrink-0 border-violet-200 bg-violet-100 text-violet-700"
                             >
                               สมาชิก
+                            </Badge>
+                          )}
+                          {/* เขียวโทนไลน์ — ลูกค้าคนนี้ผูกบัญชีไลน์กับร้านแล้ว */}
+                          {lineLinkedIds.has(c.customer_id) && (
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 border-green-300 bg-green-50 font-semibold text-green-700"
+                            >
+                              LINE ✓
                             </Badge>
                           )}
                         </div>
