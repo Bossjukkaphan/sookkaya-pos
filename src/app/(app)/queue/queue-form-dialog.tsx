@@ -154,7 +154,7 @@ export function QueueFormDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "แก้ไขคิว" : "เพิ่มคิว"}</DialogTitle>
         </DialogHeader>
@@ -339,11 +339,54 @@ export function QueueFormDialog({
                   (ครอบครัว/กลุ่ม — สร้างการ์ดให้ทุกคนพร้อมกัน)
                 </span>
               </legend>
+              {/* บล็อกละคน เมนูเต็มความกว้าง — แบบบีบรวมบรรทัดเดียวเคยกดเลือกเมนูบนมือถือไม่ได้ */}
               {extraPeople.map((p, i) => (
-                <div key={i} className="flex flex-wrap items-center gap-1.5">
-                  <span className="w-14 shrink-0 text-xs text-slate-500">
-                    {p.sequential ? `ต่อเวลา ${i + 2}` : `คนที่ ${i + 2}`}
-                  </span>
+                <div key={i} className="space-y-1.5 rounded-lg border bg-slate-50/60 p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-600">
+                      {p.sequential ? `ต่อเวลา ${i + 2}` : `คนที่ ${i + 2}`}
+                    </span>
+                    <div className="flex items-center gap-3">
+                      <label className="flex cursor-pointer items-center gap-1 text-xs text-slate-600">
+                        <Checkbox
+                          checked={p.isRequest ?? false}
+                          onCheckedChange={(v) =>
+                            setExtraPeople((arr) =>
+                              arr.map((x, j) =>
+                                j === i ? { ...x, isRequest: v === true } : x
+                              )
+                            )
+                          }
+                          aria-label={`รีเควสหมอคนที่ ${i + 2}`}
+                        />
+                        รีเควส
+                      </label>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 text-red-600"
+                        aria-label={`ลบคนที่ ${i + 2}`}
+                        onClick={() =>
+                          setExtraPeople((arr) => arr.filter((_, j) => j !== i))
+                        }
+                      >
+                        ✕
+                      </Button>
+                    </div>
+                  </div>
+                  <ServiceCombobox
+                    services={services}
+                    value={p.serviceId}
+                    onChange={(serviceId) =>
+                      setExtraPeople((arr) =>
+                        arr.map((x, j) => (j === i ? { ...x, serviceId } : x))
+                      )
+                    }
+                    placeholder="— เลือกเมนู —"
+                    aria-label={`เมนูคนที่ ${i + 2}`}
+                    triggerClassName="h-11"
+                  />
                   <select
                     value={p.therapistId ?? ""}
                     onChange={(e) =>
@@ -353,54 +396,16 @@ export function QueueFormDialog({
                         )
                       )
                     }
-                    className="h-10 w-24 shrink-0 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                    className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
                     aria-label={`หมอนวดคนที่ ${i + 2}`}
                   >
-                    <option value="">หมอ?</option>
+                    <option value="">หมอ: ยังไม่ระบุ</option>
                     {therapists.map((t) => (
                       <option key={t.id} value={t.id}>
-                        {t.name}
+                        หมอ{t.name}
                       </option>
                     ))}
                   </select>
-                  <ServiceCombobox
-                    services={services}
-                    value={p.serviceId}
-                    onChange={(serviceId) =>
-                      setExtraPeople((arr) =>
-                        arr.map((x, j) => (j === i ? { ...x, serviceId } : x))
-                      )
-                    }
-                    placeholder="— เมนู —"
-                    aria-label={`เมนูคนที่ ${i + 2}`}
-                    triggerClassName="h-10 min-w-0 flex-1 px-2 text-sm"
-                  />
-                  <label className="flex shrink-0 cursor-pointer items-center gap-1 text-xs text-slate-600">
-                    <Checkbox
-                      checked={p.isRequest ?? false}
-                      onCheckedChange={(v) =>
-                        setExtraPeople((arr) =>
-                          arr.map((x, j) =>
-                            j === i ? { ...x, isRequest: v === true } : x
-                          )
-                        )
-                      }
-                      aria-label={`รีเควสหมอคนที่ ${i + 2}`}
-                    />
-                    รีเควส
-                  </label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0 text-red-600"
-                    aria-label={`ลบคนที่ ${i + 2}`}
-                    onClick={() =>
-                      setExtraPeople((arr) => arr.filter((_, j) => j !== i))
-                    }
-                  >
-                    ✕
-                  </Button>
                 </div>
               ))}
               <div className="grid grid-cols-2 gap-2">

@@ -55,7 +55,16 @@ export default async function PosPage({
   if (multi === "1") {
     return (
       <div className="mx-auto max-w-3xl space-y-4">
-        <h1 className="text-xl font-bold">บันทึกขายหลายคน</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-xl font-bold">บันทึกขายหลายคน</h1>
+          {/* กลุ่มที่จองไว้ล่วงหน้า/ยังไม่จ่าย → ไปลงเป็นคิวกลุ่ม (ฟอร์มคิวมี "มากันหลายคน") */}
+          <Link
+            href="/queue?add=1"
+            className="rounded-md border border-[#664343]/30 bg-[#FFF0D1]/60 px-3 py-1.5 text-sm font-medium text-[#664343] hover:bg-[#FFF0D1]"
+          >
+            📅 จองล่วงหน้า
+          </Link>
+        </div>
         <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
           ครอบครัว/กลุ่มที่มาโดยไม่ได้ลงคิว — กรอกรายคนแล้วจ่ายรวมครั้งเดียว
           ระบบออกใบเสร็จแยกรายคนและลงบอร์ดคิวให้อัตโนมัติ

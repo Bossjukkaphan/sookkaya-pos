@@ -279,6 +279,27 @@ export function GroupPosForm({
                     />
                   </div>
 
+                  {/* เวลาใช้บริการรายคน — โหมดกลุ่มเคยตั้งไม่ได้ (มีเฉพาะที่ติดมาจากคิว) */}
+                  <div className="space-y-1">
+                    <label
+                      htmlFor={`g_time_${i}`}
+                      className="text-xs font-medium text-slate-600"
+                    >
+                      เวลาใช้บริการ{" "}
+                      <span className="font-normal text-slate-400">
+                        (เว้นว่าง = เวลาบันทึก)
+                      </span>
+                    </label>
+                    <Input
+                      id={`g_time_${i}`}
+                      type="time"
+                      value={p.serviceTime}
+                      onChange={(e) => setPerson(i, { serviceTime: e.target.value })}
+                      className="h-11"
+                      aria-label={`เวลาใช้บริการคนที่ ${i + 1}`}
+                    />
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2">
                     <Input
                       type="number"

@@ -15,6 +15,35 @@ type Result = { ok: true; warning?: string } | { ok: false; error: string }
 // paid ตั้งได้ทาง createSale เท่านั้น — หน้าคิวห้ามยิงสถานะนี้ตรงๆ
 const STATUSES = ["waiting", "in_service", "cancelled"] as const
 
+/**
+ * นโยบายเดียวกับหน้าบันทึกขาย: พิมพ์ชื่อ+เบอร์ใหม่ในฟอร์มคิว → จับคู่ลูกค้าด้วยเบอร์
+ * เจอ = ผูกคนเดิม (ประวัติ/แต้มต่อเนื่อง) · ไม่เจอ = สร้างลูกค้าใหม่ให้เลย
+ * ไม่ต้องไปสร้างในหน้าข้อมูลลูกค้าก่อนแล้วค่อยกลับมาเพิ่มคิว
+ * ไม่มีเบอร์ = ผูกไม่ได้ (เบอร์คือกุญแจกันสร้างคนซ้ำ) — คิวยังสร้างได้ตามปกติ
+ */
+async function linkOrCreateCustomer(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  customerId: string | null,
+  name: string | null,
+  phone: string | null
+): Promise<string | null> {
+  if (customerId || !phone) return customerId
+  const { data: byPhone } = await supabase
+    .from("customers")
+    .select("id")
+    .eq("phone", phone)
+    .limit(1)
+    .maybeSingle()
+  if (byPhone) return byPhone.id
+  if (!name) return null
+  const { data: created } = await supabase
+    .from("customers")
+    .insert({ name, phone })
+    .select("id")
+    .maybeSingle()
+  return created?.id ?? null
+}
+
 /** เพิ่มคิวลงวันของบอร์ดที่แสดงอยู่ (จองล่วงหน้าได้) · service_name เอาจาก DB ไม่เชื่อ client */
 export async function createQueueEntry(form: FormData): Promise<Result> {
   const supabase = await createClient()
@@ -80,13 +109,20 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   const { data: dup } = await dupQ
   if (dup && dup.length > 0) return { ok: true }
 
+  const linkedCustomerId = await linkOrCreateCustomer(
+    supabase,
+    customerId,
+    customerName,
+    customerPhone
+  )
+
   const { error } = await supabase.from("queue_entries").insert({
     queue_date: queueDate,
     therapist_id: therapistId,
     service_id: serviceId,
     service_name: service.name,
     duration_min: durationMin,
-    customer_id: customerId,
+    customer_id: linkedCustomerId,
     customer_name: customerName,
     customer_phone: customerPhone,
     is_request: isRequest,
@@ -157,6 +193,13 @@ export async function createQueueGroup(
   if (serviceById.size !== serviceIds.length)
     return { ok: false, error: "มีเมนูที่ไม่พบในระบบ" }
 
+  const linkedCustomerId = await linkOrCreateCustomer(
+    supabase,
+    customerId,
+    customerName,
+    customerPhone
+  )
+
   const groupId = crypto.randomUUID()
   // รายการ "ต่อเวลา" (ลูกค้าคนเดิมทำหลายคอร์สต่อกัน) เริ่มต่อจากรายการก่อนหน้าจบ
   // รายการปกติ (คนละคนมาพร้อมกัน) เริ่มเวลาเดียวกันทั้งกลุ่มแบบเดิม
@@ -173,7 +216,7 @@ export async function createQueueGroup(
         service_id: p.serviceId,
         service_name: service.name,
         duration_min: duration,
-        customer_id: customerId,
+        customer_id: linkedCustomerId,
         customer_name: customerName,
         customer_phone: customerPhone,
         is_request: p.isRequest ?? false,
