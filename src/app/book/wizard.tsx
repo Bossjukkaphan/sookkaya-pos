@@ -110,7 +110,11 @@ export function BookingWizard({ services, therapists }: {
     return (
       <div className={CARD}>
         <h2 className="mb-1 font-bold">ยืนยันเบอร์โทรครั้งแรก</h2>
-        <p className="mb-3 text-sm text-slate-600">ใช้จับคู่กับประวัติลูกค้าของร้าน — ครั้งเดียวจบค่ะ</p>
+        <p className="mb-1 text-sm text-slate-600">ใช้จับคู่กับประวัติลูกค้าของร้าน — ครั้งเดียวจบค่ะ</p>
+        {/* ลูกค้าใหม่ถูกตั้งชื่อตามโปรไฟล์ไลน์ไปก่อน — บอกให้รู้ว่าเปลี่ยนเป็นชื่อจริงได้ */}
+        <p className="mb-3 text-xs text-slate-500">
+          ลูกค้าใหม่ ระบบจะใช้ชื่อจากไลน์ของคุณไปก่อน — เปลี่ยนเป็นชื่อจริงได้โดยแจ้งพนักงานที่ร้านค่ะ
+        </p>
         <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel"
           placeholder="08x-xxx-xxxx" className="mb-2 w-full rounded-lg border px-3 py-3" />
         {linkError && <p className="mb-2 text-sm text-red-600">{linkError}</p>}

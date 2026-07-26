@@ -103,6 +103,14 @@ export default async function CustomerDetailPage({
             ผูกไลน์แล้ว: {lineAccount.display_name ?? "(ไม่ทราบชื่อไลน์)"}
           </p>
         )}
+        {/* ลูกค้าใหม่จากไลน์ยังใช้ชื่อโปรไฟล์ไลน์เป็นชื่อลูกค้าอยู่ — ชวนแก้เป็นชื่อจริง
+            (ชื่อไลน์ถูกเก็บแยกไว้เสมอ แก้ชื่อลูกค้าแล้วไม่กระทบการผูกบัญชี) */}
+        {lineAccount && customer.name === lineAccount.display_name && (
+          <p className="mt-1 text-xs text-amber-700">
+            💡 ชื่อลูกค้าคนนี้ตั้งจากชื่อไลน์อัตโนมัติ — กด &quot;แก้ไข&quot;
+            เปลี่ยนเป็นชื่อจริงได้ (การผูกไลน์และชื่อไลน์ยังอยู่ครบ)
+          </p>
+        )}
         <div className="mt-2 flex items-center gap-2">
           <Badge variant="secondary">{customer.customer_type}</Badge>
           <CustomerForm customer={customer} />
