@@ -16,7 +16,7 @@ function shiftDate(isoDate: string, days: number): string {
 export default async function QueuePage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; add?: string }>
+  searchParams: Promise<{ date?: string; add?: string; from?: string }>
 }) {
   const supabase = await createClient()
   const today = todayInShopTz()
@@ -58,6 +58,14 @@ export default async function QueuePage({
 
   return (
     <div className="space-y-4">
+      {/* ถูกพากลับมาจากหน้าบันทึกขายเดิม — บอกขั้นตอนใหม่ให้ชัดว่าต้องเริ่มจากคิว */}
+      {params.from === "pos" && (
+        <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          การขายทุกบิลเริ่มจากคิว — กด <span className="font-semibold">+ เพิ่มคิว</span>{" "}
+          (เวลาจอง = เวลาที่ลูกค้ามาถึง) แล้วเก็บเงินจากปุ่ม 💰 บนการ์ดคิว
+          ระบบจะเก็บเวลาจอง เวลาเริ่มนวดจริง และเวลาบันทึกให้ครบทุกบิล
+        </p>
+      )}
       <div className="flex items-center justify-between gap-2">
         <div>
           <h1 className="text-xl font-bold">คิว{isToday ? "วันนี้" : ""}</h1>

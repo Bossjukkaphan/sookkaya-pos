@@ -15,7 +15,6 @@ import {
   LayoutDashboard,
   MoreHorizontal,
   PiggyBank,
-  Receipt,
   ScrollText,
   Settings,
   Users,
@@ -40,7 +39,6 @@ type NavLink = {
  * ภาพรวมย้ายไป "เพิ่มเติม" เพราะซ้อนกับยอดวันนี้+รายงาน และแถบมีที่จำกัด
  */
 const PRIMARY: NavLink[] = [
-  { href: "/pos", label: "บันทึกขาย", icon: Receipt },
   { href: "/queue", label: "คิววันนี้", icon: Clock4 },
   { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
   { href: "/reports", label: "รายงาน", icon: FileBarChart, minRole: "manager" },
@@ -56,7 +54,6 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
   {
     title: "หน้าร้าน",
     links: [
-      { href: "/pos", label: "บันทึกขาย", icon: Receipt },
       { href: "/queue", label: "คิววันนี้", icon: Clock4 },
       { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
       { href: "/commission", label: "ค่ามือ", icon: HandCoins },

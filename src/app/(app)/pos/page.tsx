@@ -1,4 +1,4 @@
-import Link from "next/link"
+import { redirect } from "next/navigation"
 
 import { createClient } from "@/lib/supabase/server"
 import { PosForm } from "./pos-form"
@@ -19,10 +19,15 @@ function toShopTime(iso: string): string {
 export default async function PosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ queue?: string; group?: string; multi?: string }>
+  searchParams: Promise<{ queue?: string; group?: string }>
 }) {
   const supabase = await createClient()
-  const { queue, group, multi } = await searchParams
+  const { queue, group } = await searchParams
+
+  // ทุกการขายต้องเริ่มจากคิว — เปิดหน้านี้ตรงๆ ไม่ได้แล้ว (รวมโหมดกลุ่ม multi เดิม)
+  // walk-in: เพิ่มคิวก่อน (เวลาจอง = เวลาที่ลูกค้ามาถึง) แล้วกด 💰 เก็บเงินจากการ์ด
+  // บิลจึงมีเวลาครบ 3 ชั้นเสมอ: เวลาบันทึก · เวลาจอง · เวลาเริ่มนวดจริง
+  if (!queue && !group) redirect("/queue?from=pos")
 
   const [{ data: therapists }, { data: services }, { data: promotions }, { data: beds }] =
     await Promise.all([
@@ -49,36 +54,6 @@ export default async function PosPage({
         .eq("is_active", true)
         .order("sort"),
     ])
-
-  // ลูกค้ามาหลายคนแบบไม่ได้ลงคิวไว้ → ฟอร์มกลุ่มเปล่า เพิ่มคนเองได้เลย
-  // (บันทึกแล้วระบบสร้างการ์ดคิว "ชำระแล้ว" ให้ทุกคนอัตโนมัติ บอร์ดคิวเห็นครบ)
-  if (multi === "1") {
-    return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h1 className="text-xl font-bold">บันทึกขายหลายคน</h1>
-          {/* กลุ่มที่จองไว้ล่วงหน้า/ยังไม่จ่าย → ไปลงเป็นคิวกลุ่ม (ฟอร์มคิวมี "มากันหลายคน") */}
-          <Link
-            href="/queue?add=1"
-            className="rounded-md border border-[#664343]/30 bg-[#FFF0D1]/60 px-3 py-1.5 text-sm font-medium text-[#664343] hover:bg-[#FFF0D1]"
-          >
-            📅 จองล่วงหน้า
-          </Link>
-        </div>
-        <p className="rounded-md bg-sky-50 px-3 py-2 text-sm text-sky-800">
-          ครอบครัว/กลุ่มที่มาโดยไม่ได้ลงคิว — กรอกรายคนแล้วจ่ายรวมครั้งเดียว
-          ระบบออกใบเสร็จแยกรายคนและลงบอร์ดคิวให้อัตโนมัติ
-        </p>
-        <GroupPosForm
-          therapists={therapists ?? []}
-          services={services ?? []}
-          promotions={promotions ?? []}
-          people={[]}
-          standalone
-        />
-      </div>
-    )
-  }
 
   // เก็บเงินทั้งกลุ่ม → โหลดทุกคนในกลุ่มที่ยังไม่จ่าย/ไม่ยกเลิก มาลงจอเดียว
   const { data: groupEntries } = group
@@ -151,7 +126,10 @@ export default async function PosPage({
         .maybeSingle()
     : { data: null }
 
-  const { data: queueCustomer } = queueEntry?.customer_id
+  // คิวที่ระบุมาหาไม่เจอ/จ่ายไปแล้ว → กลับหน้าคิว (ห้ามเปิดฟอร์มเปล่าที่ไม่ผูกคิว)
+  if (!queueEntry) redirect("/queue?from=pos")
+
+  const { data: queueCustomer } = queueEntry.customer_id
     ? await supabase
         .from("customers")
         .select("id, name, phone")
@@ -161,68 +139,33 @@ export default async function PosPage({
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-xl font-bold">บันทึกขาย</h1>
-        <div className="flex gap-2">
-          {/* ลูกค้าจองล่วงหน้า/ยังไม่ชำระ → ไปลงเป็นคิว (ยังไม่นับยอดขายจนกดเก็บเงิน) */}
-          <Link
-            href="/queue?add=1"
-            className="rounded-md border border-[#664343]/30 bg-[#FFF0D1]/60 px-3 py-1.5 text-sm font-medium text-[#664343] hover:bg-[#FFF0D1]"
-          >
-            📅 จองล่วงหน้า
-          </Link>
-          <Link
-            href="/pos?multi=1"
-            className="rounded-md border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-medium text-sky-800 hover:bg-sky-100"
-          >
-            👨‍👩‍👧 มาหลายคน
-          </Link>
-        </div>
-      </div>
-      <p className="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
-        หน้านี้ = ลูกค้า<span className="font-semibold">ชำระเงินแล้ว</span>เท่านั้น ·
-        ถ้าลูกค้าจองไว้ยังไม่มา/ยังไม่จ่าย กด{" "}
-        <span className="font-semibold text-[#664343]">📅 จองล่วงหน้า</span>{" "}
-        ระบบจะเก็บชื่อ เบอร์ เมนู เวลา หมอ และรีเควสไว้ก่อน
-        แล้วค่อยกดเก็บเงินจากการ์ดคิวเมื่อลูกค้ามาถึง
+      <h1 className="text-xl font-bold">บันทึกขาย</h1>
+      <p className="rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-800">
+        เก็บเงินจากคิว: {queueEntry.service_name}
+        {queueEntry.customer_name ? ` · ${queueEntry.customer_name}` : ""}
       </p>
-      {queueEntry && (
-        <p className="rounded-md bg-violet-50 px-3 py-2 text-sm text-violet-800">
-          เก็บเงินจากคิว: {queueEntry.service_name}
-          {queueEntry.customer_name ? ` · ${queueEntry.customer_name}` : ""}
-        </p>
-      )}
       <PosForm
         therapists={therapists ?? []}
         services={services ?? []}
         promotions={promotions ?? []}
         beds={beds ?? []}
-        initial={
-          queueEntry
-            ? {
-                queueEntryId: queueEntry.id,
-                therapistId: queueEntry.therapist_id ?? "",
-                serviceId: queueEntry.service_id ?? "",
-                customerId: queueCustomer?.id ?? "",
-                customerName: queueCustomer?.name ?? queueEntry.customer_name ?? "",
-                customerPhone: queueCustomer?.phone ?? queueEntry.customer_phone ?? "",
-                isRequest: queueEntry.is_request,
-                source: queueEntry.source,
-                bedId: queueEntry.bed_id ?? "",
-                bookingChannel: queueEntry.booking_channel ?? "",
-                notes: queueEntry.notes ?? "",
-                // เวลาใช้บริการ: เวลากด "เริ่มนวด" จริงแม่นสุด รองลงมาคือเวลาคิวที่วางไว้
-                serviceTime: queueEntry.started_at
-                  ? new Intl.DateTimeFormat("en-GB", {
-                      timeZone: "Asia/Bangkok",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: false,
-                    }).format(new Date(queueEntry.started_at))
-                  : (queueEntry.start_time?.slice(0, 5) ?? ""),
-              }
-            : undefined
-        }
+        initial={{
+          queueEntryId: queueEntry.id,
+          therapistId: queueEntry.therapist_id ?? "",
+          serviceId: queueEntry.service_id ?? "",
+          customerId: queueCustomer?.id ?? "",
+          customerName: queueCustomer?.name ?? queueEntry.customer_name ?? "",
+          customerPhone: queueCustomer?.phone ?? queueEntry.customer_phone ?? "",
+          isRequest: queueEntry.is_request,
+          source: queueEntry.source,
+          bedId: queueEntry.bed_id ?? "",
+          bookingChannel: queueEntry.booking_channel ?? "",
+          notes: queueEntry.notes ?? "",
+          // เวลาใช้บริการ: เวลากด "เริ่มนวด" จริงแม่นสุด รองลงมาคือเวลาคิวที่วางไว้
+          serviceTime: queueEntry.started_at
+            ? toShopTime(queueEntry.started_at)
+            : (queueEntry.start_time?.slice(0, 5) ?? ""),
+        }}
       />
     </div>
   )

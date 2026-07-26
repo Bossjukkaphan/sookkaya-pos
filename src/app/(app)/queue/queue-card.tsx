@@ -12,7 +12,13 @@ import {
   isCustomerSource,
 } from "@/lib/customer-source"
 import { PX_PER_MIN, minToX, overlaps, timeToMin } from "@/lib/queue"
-import { approveBooking, rejectBooking, setQueueStatus } from "./queue-actions"
+import {
+  approveBooking,
+  rejectBooking,
+  setActualStartTime,
+  setQueueStatus,
+  startMassage,
+} from "./queue-actions"
 import { shortBedName, type Bed } from "@/lib/beds"
 import { type QueueEntry } from "./queue-board"
 import {
@@ -44,6 +50,77 @@ const STATUS_LABEL: Record<string, string> = {
   in_service: "กำลังนวด",
   paid: "ชำระแล้ว",
   pending: "รออนุมัติ",
+}
+
+/** timestamptz → HH:MM เวลาไทย */
+const bkkTime = (iso: string) =>
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(iso))
+
+/** เวลาปัจจุบันของร้าน (HH:MM) — ค่าตั้งต้นของกล่องกรอกเวลาเริ่มนวด */
+const nowBkk = () => bkkTime(new Date().toISOString())
+
+/** นาทีในวัน → HH:MM — คำนวณเวลาจบจากเวลาเริ่มจริง + นาทีโปรแกรม */
+const minToHHMM = (m: number) =>
+  `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`
+
+/** สีเส้นเวลานวดจริงบนไทม์ไลน์ — เข้มกว่าสีการ์ดให้เห็นเหลื่อมจากเวลาจองชัดๆ */
+const ACTUAL_LINE_COLOR: Record<string, string> = {
+  in_service: "bg-violet-500",
+  paid: "bg-emerald-500",
+}
+
+/**
+ * กล่องกรอกเวลาเริ่มนวดจริง — เด้งตอนกด ▶ เริ่มนวด (ค่าตั้งต้น = ตอนนี้ แก้ได้)
+ * และใช้ซ้ำตอนแก้เวลาย้อนหลัง/เติมเวลาที่ลืมบันทึก
+ */
+function StartTimeDialog({
+  open,
+  title,
+  initial,
+  pending,
+  onSave,
+  onClose,
+}: {
+  open: boolean
+  title: string
+  initial: string
+  pending: boolean
+  onSave: (time: string) => void
+  onClose: () => void
+}) {
+  const [time, setTime] = useState(initial)
+  // เปิดใหม่แต่ละครั้งต้องรีเซ็ตเป็นค่าตั้งต้นล่าสุด — ไม่ค้างค่าที่เคยพิมพ์รอบก่อน
+  const [openedWith, setOpenedWith] = useState(initial)
+  if (open && openedWith !== initial) {
+    setOpenedWith(initial)
+    setTime(initial)
+  }
+  return (
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-slate-600">
+          เวลาเริ่มนวดจริง — แก้ได้ถ้ากดปุ่มช้ากว่าตอนที่เริ่มจริง
+        </p>
+        <Input
+          type="time"
+          value={time}
+          onChange={(e) => setTime(e.target.value)}
+          className="text-center text-lg"
+        />
+        <Button disabled={pending || !time} onClick={() => onSave(time)}>
+          บันทึกเวลาเริ่มนวด
+        </Button>
+      </DialogContent>
+    </Dialog>
+  )
 }
 
 /** เหตุผลปฏิเสธที่พิมพ์บ่อย — เลือกไวได้ พิมพ์เองก็ได้ */
@@ -157,9 +234,20 @@ export function QueueCard({
   onChanged: () => void
 }) {
   const [open, setOpen] = useState(false)
+  // กล่องกรอกเวลาเริ่มจริง: "start" = กดเริ่มนวด · "edit" = แก้/เติมเวลาย้อนหลัง
+  const [timeDialog, setTimeDialog] = useState<"start" | "edit" | null>(null)
   const [pending, startTransition] = useTransition()
 
   const startMin = timeToMin(entry.start_time)
+  // เวลานวดจริง (นาทีในวัน) — มีเมื่อกดเริ่มนวดแล้ว · จบจริง = เริ่มจริง + นาทีโปรแกรม
+  const actualStartMin = entry.started_at ? timeToMin(bkkTime(entry.started_at)) : null
+  const actualEndMin = actualStartMin !== null ? actualStartMin + entry.duration_min : null
+  const actualLabel =
+    actualStartMin !== null && actualEndMin !== null
+      ? `${minToHHMM(actualStartMin)}–${minToHHMM(actualEndMin)}`
+      : null
+  // จ่ายเงินแล้วแต่ไม่เคยกดเริ่มนวด — ข้อมูลเวลาโหว่ ต้องเตือนให้เติมย้อนหลัง
+  const paidWithoutStart = entry.status === "paid" && !entry.started_at
   // ซ้อนเวลากับการ์ดอื่นในแถวเดียวกัน → ขอบส้มเตือน (ไม่บล็อก เผื่อนวดคู่)
   const hasOverlap = siblings.some(
     (s) =>
@@ -230,6 +318,9 @@ export function QueueCard({
             </span>
           )}
           {entry.customer_name || "ไม่ระบุลูกค้า"} · {STATUS_LABEL[entry.status]}
+          {/* เวลานวดจริงบนการ์ด — เห็นทันทีไม่ต้องเปิด dialog */}
+          {actualLabel && ` · ▶${actualLabel}`}
+          {paidWithoutStart && " · ⚠️ไม่มีเวลาเริ่ม"}
           {bed && ` · ${shortBedName(bed)}`}
           {entry.is_request && (
             <span className="ml-1 rounded border border-amber-200 bg-amber-50 px-1 text-[10px] font-medium text-amber-700">
@@ -239,6 +330,21 @@ export function QueueCard({
         </p>
       </button>
 
+      {/* เส้นเวลานวดจริง — ประกบขอบล่างของเลนการ์ด ลากจากเวลาเริ่มจริงถึงจบจริง
+          แท่งการ์ดหลักยึดเวลาจอง เส้นนี้จึงเหลื่อมซ้าย/ขวาให้เห็นว่าเริ่มเร็วหรือช้ากว่าจอง */}
+      {actualStartMin !== null && !dragging && (
+        <div
+          className={`pointer-events-none absolute z-10 h-1.5 rounded-full ${
+            ACTUAL_LINE_COLOR[entry.status] ?? "bg-slate-400"
+          }`}
+          style={{
+            left: minToX(actualStartMin),
+            top: laneTop + 6 + 52 - 3,
+            width: entry.duration_min * PX_PER_MIN,
+          }}
+        />
+      )}
+
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -247,14 +353,15 @@ export function QueueCard({
           <div className="space-y-1 text-sm text-slate-600">
             <p>
               จอง {entry.start_time.slice(0, 5)} น. · {entry.duration_min} นาที
-              {entry.started_at &&
-                ` · เริ่มจริง ${new Intl.DateTimeFormat("en-GB", {
-                  timeZone: "Asia/Bangkok",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  hour12: false,
-                }).format(new Date(entry.started_at))} น.`}
+              {actualStartMin !== null &&
+                actualEndMin !== null &&
+                ` · เริ่มจริง ${minToHHMM(actualStartMin)} → จบ ~${minToHHMM(actualEndMin)} น.`}
             </p>
+            {paidWithoutStart && (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-800">
+                ⚠️ ชำระเงินแล้วแต่ยังไม่บันทึกเวลาเริ่มนวด — กดใส่ย้อนหลังให้ข้อมูลครบ
+              </p>
+            )}
             <p>ลูกค้า: {entry.customer_name || "ไม่ระบุ"}</p>
             <p>
               หมอ: {therapistName ?? "ยังไม่ระบุ"}
@@ -311,8 +418,39 @@ export function QueueCard({
               </>
             )}
             {entry.status === "waiting" && (
-              <Button disabled={pending} onClick={() => changeStatus("in_service")}>
+              <Button
+                disabled={pending}
+                onClick={() => {
+                  // เด้งกล่องยืนยันเวลาเริ่มจริงก่อนบันทึก — ไม่ stamp เวลาเงียบๆ
+                  setOpen(false)
+                  setTimeDialog("start")
+                }}
+              >
                 ▶ เริ่มนวด
+              </Button>
+            )}
+            {entry.started_at && entry.status !== "waiting" && (
+              <Button
+                variant="outline"
+                disabled={pending}
+                onClick={() => {
+                  setOpen(false)
+                  setTimeDialog("edit")
+                }}
+              >
+                🕐 แก้เวลาเริ่ม
+              </Button>
+            )}
+            {paidWithoutStart && (
+              <Button
+                className="bg-amber-500 hover:bg-amber-600"
+                disabled={pending}
+                onClick={() => {
+                  setOpen(false)
+                  setTimeDialog("edit")
+                }}
+              >
+                🕐 ใส่เวลาเริ่มนวด
               </Button>
             )}
             {entry.status === "in_service" && (
@@ -381,6 +519,28 @@ export function QueueCard({
           </div>
         </DialogContent>
       </Dialog>
+
+      <StartTimeDialog
+        open={timeDialog !== null}
+        title={timeDialog === "start" ? "▶ เริ่มนวด" : "🕐 เวลาเริ่มนวดจริง"}
+        // เริ่มนวดครั้งแรก = ตอนนี้ · แก้ย้อนหลัง = เวลาที่เคยบันทึก (ไม่มีก็ตอนนี้)
+        initial={
+          timeDialog === "edit" && entry.started_at ? bkkTime(entry.started_at) : nowBkk()
+        }
+        pending={pending}
+        onClose={() => setTimeDialog(null)}
+        onSave={(t) =>
+          startTransition(async () => {
+            const r =
+              timeDialog === "start"
+                ? await startMassage(entry.id, t)
+                : await setActualStartTime(entry.id, t)
+            if (!r.ok) toast.error(r.error)
+            setTimeDialog(null)
+            onChanged()
+          })
+        }
+      />
     </>
   )
 }

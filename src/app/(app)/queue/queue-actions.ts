@@ -395,6 +395,66 @@ export async function setQueueStatus(id: string, status: string): Promise<Result
   return { ok: true }
 }
 
+/** HH:MM (เวลาไทย) ของวันคิว → timestamptz — ใช้เก็บเวลาเริ่มนวดจริง */
+function shopTimeToIso(queueDate: string, timeHHMM: string): string {
+  return `${queueDate}T${timeHHMM}:00+07:00`
+}
+
+/**
+ * กดเริ่มนวด — พนักงานยืนยัน/แก้เวลาเริ่มจริงก่อนบันทึก (เผื่อกดปุ่มช้ากว่าตอนเริ่มจริง)
+ * เวลาเริ่มจริงอาจไม่ตรงเวลาจอง: ลูกค้ามาเร็วเริ่มก่อน หรือมาสายเริ่มทีหลัง
+ */
+export async function startMassage(id: string, timeHHMM: string): Promise<Result> {
+  if (!/^\d{2}:\d{2}$/.test(timeHHMM))
+    return { ok: false, error: "รูปแบบเวลาไม่ถูกต้อง" }
+  const supabase = await createClient()
+  const { data: entry } = await supabase
+    .from("queue_entries")
+    .select("queue_date")
+    .eq("id", id)
+    .maybeSingle()
+  if (!entry) return { ok: false, error: "ไม่พบคิวนี้" }
+  const { error } = await supabase
+    .from("queue_entries")
+    .update({
+      status: "in_service",
+      started_at: shopTimeToIso(entry.queue_date, timeHHMM),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .not("status", "in", "(paid,pending,cancelled,rejected)")
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/queue")
+  return { ok: true }
+}
+
+/**
+ * แก้/ใส่เวลาเริ่มนวดจริงย้อนหลัง — ไม่แตะสถานะ ใช้ได้แม้จ่ายเงินไปแล้ว
+ * (เคสจ่ายก่อนนวดแล้วลืมกดเริ่ม หรือกดเริ่มด้วยเวลาที่ผิด)
+ */
+export async function setActualStartTime(id: string, timeHHMM: string): Promise<Result> {
+  if (!/^\d{2}:\d{2}$/.test(timeHHMM))
+    return { ok: false, error: "รูปแบบเวลาไม่ถูกต้อง" }
+  const supabase = await createClient()
+  const { data: entry } = await supabase
+    .from("queue_entries")
+    .select("queue_date")
+    .eq("id", id)
+    .maybeSingle()
+  if (!entry) return { ok: false, error: "ไม่พบคิวนี้" }
+  const { error } = await supabase
+    .from("queue_entries")
+    .update({
+      started_at: shopTimeToIso(entry.queue_date, timeHHMM),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+    .not("status", "in", "(pending,cancelled,rejected)")
+  if (error) return { ok: false, error: error.message }
+  revalidatePath("/queue")
+  return { ok: true }
+}
+
 /** โหลดคำขอ pending ทั้งชุด (ทั้งกลุ่มถ้ามี) — ใช้ร่วม approve/reject */
 async function loadPendingSet(id: string) {
   const supabase = await createClient()
