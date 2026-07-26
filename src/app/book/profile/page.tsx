@@ -130,12 +130,17 @@ function BillCard({ b }: { b: UsageBill }) {
         {b.services.join(" / ")}
         {b.services.length > 1 && ` (${b.services.length} รายการ)`}
       </p>
-      <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
-        <span>ชำระโดย: {b.payment}</span>
-        {b.creditUsed > 0 && b.creditAfter !== null && (
-          <span>เหลือเครดิต {formatBaht(b.creditAfter)}฿</span>
-        )}
-      </div>
+      {/* ป้ายเฉพาะบิลที่ตัดเครดิตสมาชิก — วิธีจ่ายอื่นไม่ต้องติดป้าย */}
+      {b.creditUsed > 0 && (
+        <div className="mt-1 flex items-center justify-between text-xs">
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-700">
+            ใช้เครดิตเมมเบอร์
+          </span>
+          {b.creditAfter !== null && (
+            <span className="text-slate-500">เหลือเครดิต {formatBaht(b.creditAfter)}฿</span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
