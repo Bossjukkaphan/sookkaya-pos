@@ -1,10 +1,10 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
-import Link from "next/link"
 import liff from "@line/liff"
 
 import { useLiff } from "../liff"
+import { PhoneLinkForm, ProfileForm } from "../onboarding-forms"
 import {
   getMyProfile,
   savePointsProfile,
@@ -179,22 +179,26 @@ export default function ProfilePage() {
     return <p className="py-16 text-center text-slate-500">กำลังโหลด…</p>
   if (!data.ok) return <p className="py-16 text-center text-red-600">{data.error}</p>
 
-  // ยังไม่ยืนยันเบอร์ — พาไปหน้าแต้มซึ่งมีฟอร์มผูกเบอร์อยู่แล้ว จุดเดียวไม่ซ้ำซ้อน
+  // ลูกค้าใหม่กดจาก Rich Menu "ข้อมูลส่วนตัว" — สมัครจบในหน้านี้เลย:
+  // ยืนยันเบอร์ → กรอกข้อมูลสมาชิก → เข้าโปรไฟล์ (ไม่ต้องอ้อมไปหน้าแต้มก่อน)
   if (!data.linked) {
-    return (
-      <div className="py-12 text-center">
-        <p className="text-slate-600">ยืนยันเบอร์โทรครั้งแรกก่อนนะคะ แล้วโปรไฟล์จะพร้อมใช้เลยค่ะ</p>
-        <Link
-          href="/book/points"
-          className="mt-4 inline-block rounded-full bg-[#664343] px-6 py-3 font-medium text-white"
-        >
-          ไปยืนยันเบอร์ →
-        </Link>
-      </div>
-    )
+    return <PhoneLinkForm idToken={idToken} displayName={null} onDone={load} />
   }
 
   const { profile, member, usage, visits } = data
+
+  // ผูกเบอร์แล้วแต่ข้อมูลสมาชิกยังไม่ครบ (วันเกิด+เพศ) — กรอกให้จบก่อนเข้าโปรไฟล์
+  if (!profile.birthday || !profile.gender) {
+    return (
+      <ProfileForm
+        idToken={idToken}
+        currentName={profile.name}
+        currentNickname={profile.nickname}
+        visits={visits}
+        onDone={load}
+      />
+    )
+  }
   const tierCls = member.tier ? (TIER_STYLE[member.tier] ?? "bg-slate-100 text-slate-600") : ""
 
   return (
