@@ -34,6 +34,7 @@ export function BookingWizard({ services, therapists }: {
   const liffState = useLiff()
   const [linked, setLinked] = useState<null | boolean>(null)
   const [phone, setPhone] = useState("")
+  const [realName, setRealName] = useState("")
   const [linking, setLinking] = useState(false)
   const [linkError, setLinkError] = useState("")
   const [authExpired, setAuthExpired] = useState(false)
@@ -110,19 +111,22 @@ export function BookingWizard({ services, therapists }: {
     return (
       <div className={CARD}>
         <h2 className="mb-1 font-bold">ยืนยันเบอร์โทรครั้งแรก</h2>
-        <p className="mb-1 text-sm text-slate-600">ใช้จับคู่กับประวัติลูกค้าของร้าน — ครั้งเดียวจบค่ะ</p>
-        {/* ลูกค้าใหม่ถูกตั้งชื่อตามโปรไฟล์ไลน์ไปก่อน — บอกให้รู้ว่าเปลี่ยนเป็นชื่อจริงได้ */}
-        <p className="mb-3 text-xs text-slate-500">
-          ลูกค้าใหม่ ระบบจะใช้ชื่อจากไลน์ของคุณไปก่อน — เปลี่ยนเป็นชื่อจริงได้โดยแจ้งพนักงานที่ร้านค่ะ
-        </p>
+        <p className="mb-3 text-sm text-slate-600">ใช้จับคู่กับประวัติลูกค้าของร้าน — ครั้งเดียวจบค่ะ</p>
         <input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel"
-          placeholder="08x-xxx-xxxx" className="mb-2 w-full rounded-lg border px-3 py-3" />
+          placeholder="เบอร์โทร 08x-xxx-xxxx" className="mb-2 w-full rounded-lg border px-3 py-3" />
+        {/* ชื่อจริงกรอกเองได้เลย → ใช้เป็นชื่อลูกค้าในระบบทันที · เว้นว่าง = ใช้ชื่อไลน์ไปก่อน
+            (ชื่อไลน์ถูกเก็บแยกผูกกับบัญชีไลน์เสมอ ไม่ว่าจะกรอกหรือไม่) */}
+        <input value={realName} onChange={(e) => setRealName(e.target.value)}
+          placeholder="ชื่อ-นามสกุลจริง (ไม่บังคับ)" className="mb-1 w-full rounded-lg border px-3 py-3" />
+        <p className="mb-3 text-xs text-slate-500">
+          ไม่กรอกชื่อ ระบบจะใช้ชื่อจากไลน์ไปก่อน — เปลี่ยนทีหลังได้โดยแจ้งพนักงานค่ะ
+        </p>
         {linkError && <p className="mb-2 text-sm text-red-600">{linkError}</p>}
         <button className={BTN} disabled={linking || phone.replace(/\D/g, "").length < 9}
           onClick={async () => {
             // ล็อกปุ่มระหว่างรอ server — กันกดรัวยิง link ซ้ำ / กดส่งทั้งที่สถานะยังไม่พร้อม
             setLinking(true)
-            const r = await linkLineAccount(idToken, phone)
+            const r = await linkLineAccount(idToken, phone, realName)
             if (r.ok) return setLinked(true)
             if (r.code === "auth") return recoverAuth()
             setLinkError(r.error)

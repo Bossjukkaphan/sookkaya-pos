@@ -47,7 +47,8 @@ export async function getLineStatus(idToken: string): Promise<
  *  จะได้รู้ชื่อเจ้าของเบอร์นั้นทันที เป็นช่องโหว่สอดแนมข้อมูลลูกค้า — wizard ก็ไม่ได้ใช้ชื่อนี้อยู่แล้ว */
 export async function linkLineAccount(
   idToken: string,
-  phone: string
+  phone: string,
+  realName?: string
 ): Promise<{ ok: true } | Fail> {
   const who = await verifyLineIdToken(idToken)
   if (!who) return AUTH_FAIL
@@ -58,17 +59,25 @@ export async function linkLineAccount(
   // ชื่อจากไลน์ต้องผ่านตัวกรอง placeholder ก่อนเสมอ — เคยได้ "Loading..." มาจริง
   // แล้วกลายเป็นชื่อลูกค้าในระบบ/บนการ์ดคิว
   const displayName = cleanLineDisplayName(who.displayName)
+  // ชื่อจริงที่ลูกค้ากรอกเอง (ไม่บังคับ) — ชนะชื่อไลน์เสมอสำหรับลูกค้าใหม่
+  // ส่วนชื่อไลน์ถูกเก็บแยกใน line_accounts ผูกกับ user id อยู่แล้ว ไม่หายไปไหน
+  const cleanRealName = (realName ?? "").trim().slice(0, 100) || null
   const { data: matches } = await db.from("customers").select("id, name").eq("phone", clean)
   let customerId: string
   if (!matches || matches.length === 0) {
     const { data: created, error } = await db
       .from("customers")
-      .insert({ name: displayName ?? "ลูกค้า LINE", phone: clean })
+      .insert({ name: cleanRealName ?? displayName ?? "ลูกค้า LINE", phone: clean })
       .select("id").single()
     if (error) return { ok: false, error: "สร้างข้อมูลลูกค้าไม่สำเร็จ ลองใหม่นะคะ" }
     customerId = created.id
   } else if (matches.length === 1) {
     customerId = matches[0].id
+    // ลูกค้าเก่าที่ชื่อในระบบเป็นค่า auto ("ลูกค้า LINE") → ชื่อจริงที่กรอกมาดีกว่าเสมอ
+    // ชื่อจริงอื่นๆ ที่ร้านตั้งไว้ห้ามทับ — ข้อมูลร้านเชื่อถือได้กว่าฟอร์มลูกค้า
+    if (cleanRealName && matches[0].name === "ลูกค้า LINE") {
+      await db.from("customers").update({ name: cleanRealName }).eq("id", customerId)
+    }
   } else {
     // เบอร์ซ้ำหลายคน → เลือกคนที่มีบิลล่าสุด (ตาม spec)
     const { data: latest } = await db
