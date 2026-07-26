@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { ExpenseForm } from "./expense-form"
+import { ExpenseRowActions } from "./expense-row-actions"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -139,9 +140,23 @@ export default async function ExpensesPage() {
                           {e.category}
                         </Badge>
                       </div>
-                      <span className="font-semibold whitespace-nowrap">
-                        {formatBaht(Number(e.amount))} ฿
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="font-semibold whitespace-nowrap">
+                          {formatBaht(Number(e.amount))} ฿
+                        </span>
+                        <ExpenseRowActions
+                          expense={{
+                            id: e.id,
+                            expense_date: e.expense_date,
+                            item: e.item,
+                            category: e.category,
+                            amount: Number(e.amount),
+                            paid_by: e.paid_by,
+                            notes: e.notes,
+                          }}
+                          categories={categories}
+                        />
+                      </div>
                     </li>
                   ))}
                 </ul>
