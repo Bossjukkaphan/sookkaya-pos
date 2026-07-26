@@ -64,6 +64,7 @@ export async function linkLineAccount(
   const cleanRealName = (realName ?? "").trim().slice(0, 100) || null
   const { data: matches } = await db.from("customers").select("id, name").eq("phone", clean)
   let customerId: string
+  let upgradeAutoNameTo: string | null = null
   if (!matches || matches.length === 0) {
     const { data: created, error } = await db
       .from("customers")
@@ -75,8 +76,9 @@ export async function linkLineAccount(
     customerId = matches[0].id
     // ลูกค้าเก่าที่ชื่อในระบบเป็นค่า auto ("ลูกค้า LINE") → ชื่อจริงที่กรอกมาดีกว่าเสมอ
     // ชื่อจริงอื่นๆ ที่ร้านตั้งไว้ห้ามทับ — ข้อมูลร้านเชื่อถือได้กว่าฟอร์มลูกค้า
+    // แค่จดไว้ก่อน — เขียนจริงหลังการผูกสำเร็จเท่านั้น (ดูท้ายฟังก์ชัน)
     if (cleanRealName && matches[0].name === "ลูกค้า LINE") {
-      await db.from("customers").update({ name: cleanRealName }).eq("id", customerId)
+      upgradeAutoNameTo = cleanRealName
     }
   } else {
     // เบอร์ซ้ำหลายคน → เลือกคนที่มีบิลล่าสุด (ตาม spec)
@@ -113,6 +115,12 @@ export async function linkLineAccount(
     phone: clean,
   })
   if (error) return { ok: false, error: "ผูกบัญชีไม่สำเร็จ ลองใหม่นะคะ" }
+
+  // เขียนชื่อหลังผูกสำเร็จเท่านั้น — ก่อนหน้านี้คือคำขอที่ยังไม่ผ่านด่าน
+  // ห้ามให้คำขอที่ถูกปฏิเสธ (เช่น โดนด่านกันสวมสิทธิ์) แก้ข้อมูลฝั่งร้านได้แม้แต่ตัวอักษรเดียว
+  if (upgradeAutoNameTo) {
+    await db.from("customers").update({ name: upgradeAutoNameTo }).eq("id", customerId)
+  }
   return { ok: true }
 }
 
