@@ -274,6 +274,150 @@ export async function redeemReward(
   }
 }
 
+/** ป้ายวิธีจ่ายภาษาลูกค้า — ค่าในระบบเป็นชื่อภายในร้าน */
+const PAY_LABEL: Record<string, string> = {
+  "QR Code": "โอน QR",
+  เงินสด: "เงินสด",
+  บัตรเครดิต: "บัตรเครดิต",
+  Gowabi: "Gowabi",
+  KOL: "KOL",
+  "Member Credit": "เครดิตสมาชิก",
+}
+
+export type UsageBill = {
+  key: string
+  date: string
+  time: string | null
+  services: string[]
+  total: number
+  payment: string
+  /** เครดิตสมาชิกที่ตัดในบิลนี้ (รวมโบนัส) — 0 = จ่ายช่องทางอื่น */
+  creditUsed: number
+  /** เครดิตคงเหลือหลังบิลนี้ (เฉพาะบิลที่ตัดเครดิต) */
+  creditAfter: number | null
+}
+
+export type MyProfileData =
+  | {
+      ok: true
+      linked: true
+      profile: {
+        name: string
+        nickname: string | null
+        birthday: string | null
+        gender: string | null
+        phone: string | null
+      }
+      member: {
+        /** ระดับจากใบเติมเงินล่าสุด — null = ไม่เคยเติมเครดิต */
+        tier: string | null
+        creditBalance: number
+        nextExpiry: string | null
+      }
+      visits: number
+      usage: UsageBill[]
+    }
+  | { ok: true; linked: false }
+  | Fail
+
+/** หน้าโปรไฟล์ลูกค้า — ข้อมูลส่วนตัว + สถานะสมาชิกเครดิต + ประวัติใช้บริการทุกช่องทางจ่าย */
+export async function getMyProfile(idToken: string): Promise<MyProfileData> {
+  const who = await verifyLineIdToken(idToken)
+  if (!who) return AUTH_FAIL
+  const db = createServiceClient()
+
+  const { data: account } = await db
+    .from("line_accounts")
+    .select("customer_id, customers(name, nickname, birthday, gender, phone)")
+    .eq("line_user_id", who.userId)
+    .maybeSingle()
+  if (!account) return { ok: true, linked: false }
+  const customerId = account.customer_id
+  const c = (
+    account as unknown as {
+      customers: {
+        name: string
+        nickname: string | null
+        birthday: string | null
+        gender: string | null
+        phone: string | null
+      } | null
+    }
+  ).customers
+
+  const [{ data: balance }, { data: lastTopup }, { data: saleRows }, { data: ltv }] =
+    await Promise.all([
+      db
+        .from("member_balances")
+        .select("credit_balance, next_expiry")
+        .eq("customer_id", customerId)
+        .maybeSingle(),
+      db
+        .from("member_topups")
+        .select("tier")
+        .eq("customer_id", customerId)
+        .order("topup_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      db
+        .from("sales")
+        .select(
+          "id, bill_id, sale_date, sale_time, service_name, net_amount, payment_method, credit_used, bonus_used, credit_after"
+        )
+        .eq("customer_id", customerId)
+        .order("sale_date", { ascending: false })
+        .order("sale_time", { ascending: false, nullsFirst: false })
+        .limit(80),
+      db.from("v_customer_ltv").select("visits").eq("customer_id", customerId).maybeSingle(),
+    ])
+
+  // บิลชุด (bill_id เดียวกันหลายรายการ) รวมเป็นใบเดียวให้ลูกค้าอ่านง่าย
+  const bills = new Map<string, UsageBill>()
+  for (const s of saleRows ?? []) {
+    const key = s.bill_id ?? s.id
+    const creditUsed = (s.credit_used ?? 0) + (s.bonus_used ?? 0)
+    const row = bills.get(key)
+    if (row) {
+      row.services.push(s.service_name ?? "บริการ")
+      row.total += s.net_amount ?? 0
+      row.creditUsed += creditUsed
+      if (s.credit_after !== null && (row.creditAfter === null || s.credit_after < row.creditAfter)) {
+        row.creditAfter = s.credit_after
+      }
+    } else {
+      bills.set(key, {
+        key,
+        date: s.sale_date,
+        time: s.sale_time,
+        services: [s.service_name ?? "บริการ"],
+        total: s.net_amount ?? 0,
+        payment: PAY_LABEL[s.payment_method] ?? s.payment_method,
+        creditUsed,
+        creditAfter: s.credit_after,
+      })
+    }
+  }
+
+  return {
+    ok: true,
+    linked: true,
+    profile: {
+      name: c?.name ?? "",
+      nickname: c?.nickname ?? null,
+      birthday: c?.birthday ?? null,
+      gender: c?.gender ?? null,
+      phone: c?.phone ?? null,
+    },
+    member: {
+      tier: lastTopup?.tier ?? null,
+      creditBalance: balance?.credit_balance ?? 0,
+      nextExpiry: balance?.next_expiry ?? null,
+    },
+    visits: ltv?.visits ?? 0,
+    usage: [...bills.values()].slice(0, 30),
+  }
+}
+
 const GENDERS = ["หญิง", "ชาย", "ไม่ระบุ"] as const
 const SOURCES = [
   "Instagram",

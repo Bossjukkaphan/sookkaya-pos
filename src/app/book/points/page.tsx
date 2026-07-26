@@ -389,8 +389,11 @@ export default function PointsPage() {
         </ul>
       </section>
 
-      <div className="text-center">
-        <Link href="/book" className="text-sm text-emerald-700 underline">
+      <div className="space-y-2 text-center">
+        <Link href="/book/profile" className="block text-sm text-emerald-700 underline">
+          👤 โปรไฟล์ของฉัน · เครดิตสมาชิก · ประวัติใช้บริการ
+        </Link>
+        <Link href="/book" className="block text-sm text-emerald-700 underline">
           ← กลับหน้าจองคิว
         </Link>
       </div>

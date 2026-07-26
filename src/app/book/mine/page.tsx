@@ -133,6 +133,9 @@ export default function MyBookingsPage() {
           ))}
         </>
       )}
+      <Link href="/book/profile" className="block text-center text-sm text-[#664343] underline">
+        👤 โปรไฟล์ของฉัน · เครดิตสมาชิก · ประวัติใช้บริการ
+      </Link>
       <Link href="/book" className="block text-center text-sm text-[#664343] underline">← จองคิวใหม่</Link>
     </div>
   )
