@@ -131,6 +131,13 @@ export function ProfileForm({
       )}
       <div className="space-y-1">
         <label className="text-sm font-medium">ชื่อ-นามสกุล *</label>
+        {/* ลูกค้าใหม่ที่ไม่เคยกรอกชื่อ ช่องนี้จะ prefill เป็นชื่อจากไลน์ — บอกเสมอว่าแก้ได้
+            (ป้ายเขียว "พบประวัติ" ด้านบนโชว์เฉพาะคนมีประวัติ ลูกค้าใหม่เอี่ยมต้องมีหมายเหตุนี้แทน) */}
+        {visits === 0 && (
+          <p className="text-xs text-slate-500">
+            ระบบดึงชื่อมาให้อัตโนมัติ (อาจเป็นชื่อจากไลน์) — แก้เป็นชื่อ-นามสกุลจริงได้เลยค่ะ
+          </p>
+        )}
         <input
           className={field}
           value={fullName}
