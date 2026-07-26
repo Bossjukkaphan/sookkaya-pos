@@ -185,7 +185,7 @@ export default async function CustomersPage({
                             </Badge>
                           )}
                           {/* เขียวโทนไลน์ — ลูกค้าคนนี้ผูกบัญชีไลน์กับร้านแล้ว */}
-                          {lineLinkedIds.has(c.customer_id) && (
+                          {c.customer_id !== null && lineLinkedIds.has(c.customer_id) && (
                             <Badge
                               variant="outline"
                               className="shrink-0 border-green-300 bg-green-50 font-semibold text-green-700"
