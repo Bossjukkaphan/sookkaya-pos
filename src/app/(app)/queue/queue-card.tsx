@@ -205,6 +205,7 @@ export function QueueCard({
   bed,
   siblings,
   groupSize = 1,
+  bedConflict = false,
   nowMin,
   isToday,
   dragging,
@@ -221,6 +222,8 @@ export function QueueCard({
   therapistName: string | null
   bed: Bed | null
   siblings: QueueEntry[]
+  /** เตียงใบนี้ถูกคิวใบอื่นใช้คร่อมเวลากัน (ข้ามช่องหมอ) — เตียงมีจำกัด ต้องรีบแก้ */
+  bedConflict?: boolean
   /** จำนวนคนทั้งกลุ่มของการ์ดนี้ (นับตัวเองด้วย) — 1 = มาคนเดียว */
   groupSize?: number
   /** นาทีปัจจุบัน (เวลาไทย) — ใช้เช็คคำขอค้าง (pending) ที่เลยเวลานัดแล้ว */
@@ -276,7 +279,7 @@ export function QueueCard({
           if (!movedRef.current) setOpen(true)
         }}
         className={`absolute overflow-hidden rounded-lg border-2 px-2 py-1 text-left text-xs shadow-sm select-none touch-none ${
-          hasOverlap
+          hasOverlap || bedConflict
             ? "border-orange-400"
             : isOverduePending
               ? "border-dashed border-orange-400"
@@ -322,6 +325,7 @@ export function QueueCard({
           {actualLabel && ` · ▶${actualLabel}`}
           {paidWithoutStart && " · ⚠️ไม่มีเวลาเริ่ม"}
           {bed && ` · ${shortBedName(bed)}`}
+          {bedConflict && " ⚠️ซ้อน"}
           {entry.is_request && (
             <span className="ml-1 rounded border border-amber-200 bg-amber-50 px-1 text-[10px] font-medium text-amber-700">
               รีเควส
@@ -393,6 +397,13 @@ export function QueueCard({
               <p className="text-orange-600">
                 ⚠️ เวลาซ้อนกับคิวอื่น
                 {therapistName ? `ของหมอ${therapistName}` : "ในช่องยังไม่ระบุหมอ"}
+              </p>
+            )}
+            {bedConflict && (
+              <p className="text-orange-600">
+                ⚠️ เตียง{bed ? ` ${shortBedName(bed)}` : ""}
+                ถูกคิวอื่นใช้ช่วงเวลาเดียวกัน — เตียงหนึ่งใช้ได้ทีละคน
+                กดแก้ไขเพื่อเปลี่ยนเตียงหรือเวลา
               </p>
             )}
           </div>

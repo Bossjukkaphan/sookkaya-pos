@@ -9,10 +9,12 @@ import {
   BOARD_END_MIN,
   BOARD_START_MIN,
   PX_PER_MIN,
+  bedStartMin,
   clampStart,
   countFreeTherapists,
   minToTime,
   minToX,
+  overlaps,
   snapMin,
   timeToMin,
 } from "@/lib/queue"
@@ -427,6 +429,22 @@ export function QueueBoard({
                       siblings={entries.filter(
                         (s) => s.therapist_id === row.id && s.id !== e.id
                       )}
+                      bedConflict={
+                        // เตียงมีจำกัด — ใบไหนใช้เตียงซ้อนกับใบอื่น (ข้ามช่องหมอ) ต้องเห็นทันที
+                        !!e.bed_id &&
+                        entries.some(
+                          (s) =>
+                            s.id !== e.id &&
+                            s.bed_id === e.bed_id &&
+                            s.status !== "cancelled" &&
+                            overlaps(
+                              bedStartMin(s),
+                              s.duration_min,
+                              bedStartMin(e),
+                              e.duration_min
+                            )
+                        )
+                      }
                       groupSize={
                         e.group_id
                           ? entries.filter((s) => s.group_id === e.group_id).length

@@ -51,9 +51,30 @@ type BedLike = {
   start_time: string
   duration_min: number
   status: string
+  started_at?: string | null
 }
 
-/** เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้นจาง "ไม่ว่าง" */
+/** timestamptz → นาทีในวัน (เวลาไทย) */
+export function isoToShopMin(iso: string): number {
+  return timeToMin(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Bangkok",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(new Date(iso))
+  )
+}
+
+/** เวลาที่เตียงถูกใช้จริง — เริ่มนวดแล้วยึดเวลาเริ่มจริง (มาสายเตียงติดนานขึ้น) ยังไม่เริ่มยึดเวลาจอง */
+export function bedStartMin(e: {
+  start_time: string
+  started_at?: string | null
+}): number {
+  return e.started_at ? isoToShopMin(e.started_at) : timeToMin(e.start_time)
+}
+
+/** เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้น "ไม่ว่าง" */
 export function busyBedIds(
   entries: BedLike[],
   startMin: number,
@@ -65,7 +86,7 @@ export function busyBedIds(
         (e) =>
           e.bed_id !== null &&
           e.status !== "cancelled" &&
-          overlaps(timeToMin(e.start_time), e.duration_min, startMin, durationMin)
+          overlaps(bedStartMin(e), e.duration_min, startMin, durationMin)
       )
       .map((e) => e.bed_id as string)
   )

@@ -299,8 +299,12 @@ export function QueueFormDialog({
                           size="sm"
                           variant={bedId === b.id ? "default" : "outline"}
                           className={
-                            busy.has(b.id) && bedId !== b.id ? "opacity-40" : ""
+                            busy.has(b.id) && bedId !== b.id
+                              ? "opacity-40 line-through"
+                              : ""
                           }
+                          // เตียงมีจำกัด — ไม่ว่างคือกดไม่ได้เลย (server กันซ้ำอีกชั้น)
+                          disabled={busy.has(b.id) && bedId !== b.id}
                           onClick={() => setBedId(bedId === b.id ? "" : b.id)}
                         >
                           {b.name}

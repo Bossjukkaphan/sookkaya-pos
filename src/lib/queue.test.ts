@@ -3,6 +3,7 @@ import {
   BOARD_END_MIN,
   BOARD_START_MIN,
   PX_PER_MIN,
+  bedStartMin,
   busyBedIds,
   clampStart,
   countFreeTherapists,
@@ -77,5 +78,28 @@ describe("busyBedIds", () => {
     expect(busyBedIds(entries, 630, 60)).toEqual(new Set(["b1"]))
     expect(busyBedIds(entries, 660, 30)).toEqual(new Set()) // b2 ยกเลิก
     expect(busyBedIds(entries, 720, 60)).toEqual(new Set(["b3"])) // paid ยังครองเตียงตามเวลา
+  })
+  it("เริ่มนวดแล้วยึดเวลาเริ่มจริง — มาสายเตียงติดนานขึ้น", () => {
+    // จอง 10:00 แต่เริ่มจริง 10:30 (03:30Z = 10:30 เวลาไทย) → เตียงติดถึง 11:30
+    const late = [
+      {
+        bed_id: "b1",
+        start_time: "10:00",
+        duration_min: 60,
+        status: "in_service",
+        started_at: "2026-07-26T03:30:00+00:00",
+      },
+    ]
+    expect(busyBedIds(late, 660, 30)).toEqual(new Set(["b1"])) // 11:00–11:30 ยังติด
+    expect(busyBedIds(late, 600, 30)).toEqual(new Set()) // 10:00–10:30 ว่าง (ยังไม่เริ่มจริง)
+  })
+})
+
+describe("bedStartMin", () => {
+  it("ยังไม่เริ่ม = เวลาจอง · เริ่มแล้ว = เวลาเริ่มจริง (เวลาไทย)", () => {
+    expect(bedStartMin({ start_time: "14:00", started_at: null })).toBe(840)
+    expect(
+      bedStartMin({ start_time: "14:00", started_at: "2026-07-26T07:10:00+00:00" })
+    ).toBe(850) // 07:10Z = 14:10 ไทย
   })
 })
