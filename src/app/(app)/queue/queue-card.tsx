@@ -123,6 +123,7 @@ function RejectButton({
 
 export function QueueCard({
   entry,
+  laneTop,
   bed,
   siblings,
   groupSize = 1,
@@ -136,6 +137,8 @@ export function QueueCard({
   onChanged,
 }: {
   entry: QueueEntry
+  /** ระยะจากขอบบนแถว — คิวเวลาชนกันถูกจัดลงเลนถัดไป ไม่วางทับกัน */
+  laneTop: number
   bed: Bed | null
   siblings: QueueEntry[]
   /** จำนวนคนทั้งกลุ่มของการ์ดนี้ (นับตัวเองด้วย) — 1 = มาคนเดียว */
@@ -181,7 +184,7 @@ export function QueueCard({
           // เพิ่งลากเสร็จ — อย่าเปิด dialog ของการ์ดที่เพิ่งย้าย
           if (!movedRef.current) setOpen(true)
         }}
-        className={`absolute top-1.5 bottom-1.5 overflow-hidden rounded-lg border-2 px-2 py-1 text-left text-xs shadow-sm select-none touch-none ${
+        className={`absolute overflow-hidden rounded-lg border-2 px-2 py-1 text-left text-xs shadow-sm select-none touch-none ${
           hasOverlap
             ? "border-orange-400"
             : isOverduePending
@@ -192,6 +195,8 @@ export function QueueCard({
         }`}
         style={{
           left: minToX(startMin),
+          top: laneTop + 6,
+          height: 52, // ROW_H 64 - ระยะขอบบนล่างเท่าเดิม (top-1.5/bottom-1.5)
           width: entry.duration_min * PX_PER_MIN,
           transform: dragOffset
             ? `translate(${dragOffset.dx}px, ${dragOffset.dy}px)`

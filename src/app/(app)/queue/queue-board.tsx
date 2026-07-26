@@ -34,6 +34,45 @@ export type { Bed }
 const ROW_H = 64
 const BOARD_W = (BOARD_END_MIN - BOARD_START_MIN) * PX_PER_MIN
 
+/**
+ * จัดคิวที่เวลาชนกันในแถวเดียวกันให้แยก "เลน" เรียงลงมา ไม่ทับกัน —
+ * greedy ตามเวลาเริ่ม: ใส่เลนแรกที่ว่าง ไม่มีก็เปิดเลนใหม่ แถวสูงตามจำนวนเลน
+ */
+function buildLayout(entries: QueueEntry[], rowIds: (string | null)[]) {
+  const laneById = new Map<string, number>()
+  const rowHeights: number[] = []
+  for (const rowId of rowIds) {
+    const rowEntries = entries
+      .filter((e) => e.therapist_id === rowId)
+      .slice()
+      .sort(
+        (a, b) =>
+          timeToMin(a.start_time) - timeToMin(b.start_time) ||
+          a.id.localeCompare(b.id)
+      )
+    const laneEnds: number[] = []
+    for (const e of rowEntries) {
+      const start = timeToMin(e.start_time)
+      let lane = laneEnds.findIndex((end) => end <= start)
+      if (lane === -1) {
+        lane = laneEnds.length
+        laneEnds.push(start + e.duration_min)
+      } else {
+        laneEnds[lane] = start + e.duration_min
+      }
+      laneById.set(e.id, lane)
+    }
+    rowHeights.push(Math.max(1, laneEnds.length) * ROW_H)
+  }
+  const rowTops: number[] = []
+  let acc = 0
+  for (const h of rowHeights) {
+    rowTops.push(acc)
+    acc += h
+  }
+  return { laneById, rowHeights, rowTops }
+}
+
 function nowMinInShopTz(): number {
   const t = new Intl.DateTimeFormat("en-GB", {
     timeZone: "Asia/Bangkok",
@@ -47,6 +86,9 @@ function nowMinInShopTz(): number {
 type DragState = {
   id: string
   fromRow: number
+  /** ตำแหน่ง Y ของการ์ด (รวมเลน) นับจากหัวตารางแถวแรก — แถวสูงไม่เท่ากันแล้ว
+   * จะคำนวณแถวปลายทางจาก dy/ROW_H ตรงๆ ไม่ได้ ต้องเทียบพิกัดจริง */
+  topAbs: number
   startMin: number
   duration: number
   dx: number
@@ -99,6 +141,9 @@ export function QueueBoard({
     { id: null, name: "ยังไม่ระบุหมอ" },
     ...therapists,
   ]
+
+  // ตำแหน่งเลน/ความสูงแต่ละแถว — คิวเวลาชนกันเรียงลงมาให้เห็นครบทุกใบ
+  const layout = buildLayout(entries, rows.map((r) => r.id))
 
   const refetch = useCallback(async () => {
     const supabase = createClient()
@@ -163,6 +208,8 @@ export function QueueBoard({
     const base: DragState = {
       id: entry.id,
       fromRow: rowIndex,
+      topAbs:
+        layout.rowTops[rowIndex] + (layout.laneById.get(entry.id) ?? 0) * ROW_H,
       startMin: timeToMin(entry.start_time),
       duration: entry.duration_min,
       dx: 0,
@@ -223,10 +270,12 @@ export function QueueBoard({
     }
 
     const newStart = clampStart(snapMin(d.startMin + d.dx / PX_PER_MIN), d.duration)
-    const newRow = Math.max(
-      0,
-      Math.min(rows.length - 1, d.fromRow + Math.round(d.dy / ROW_H))
+    // แถวสูงไม่เท่ากัน (ขยายตามจำนวนเลน) — หาแถวปลายทางจากจุดกึ่งกลางการ์ดเทียบพิกัดจริง
+    const centerY = d.topAbs + d.dy + ROW_H / 2
+    let newRow = layout.rowTops.findIndex(
+      (top, i) => centerY >= top && centerY < top + layout.rowHeights[i]
     )
+    if (newRow === -1) newRow = centerY < 0 ? 0 : rows.length - 1
     const therapistId = rows[newRow].id
 
     // optimistic — เห็นผลทันที แล้วยืนยันกับเซิร์ฟเวอร์
@@ -336,7 +385,7 @@ export function QueueBoard({
               </div>
               <div
                 className="relative"
-                style={{ width: BOARD_W, height: ROW_H }}
+                style={{ width: BOARD_W, height: layout.rowHeights[rowIndex] }}
                 onClick={(e) => {
                   // dialog ของการ์ดถูก portal ไปที่ body แต่ React ยัง bubble คลิกกลับมาตาม
                   // component tree ถึงแถวนี้ — เช็ค DOM จริง: target ไม่อยู่ในแถว = คลิกใน dialog
@@ -372,6 +421,7 @@ export function QueueBoard({
                     <QueueCard
                       key={e.id}
                       entry={e}
+                      laneTop={(layout.laneById.get(e.id) ?? 0) * ROW_H}
                       bed={beds.find((b) => b.id === e.bed_id) ?? null}
                       siblings={entries.filter(
                         (s) => s.therapist_id === row.id && s.id !== e.id
