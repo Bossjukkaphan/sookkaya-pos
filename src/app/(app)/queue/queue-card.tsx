@@ -94,11 +94,12 @@ function StartTimeDialog({
   onClose: () => void
 }) {
   const [time, setTime] = useState(initial)
-  // เปิดใหม่แต่ละครั้งต้องรีเซ็ตเป็นค่าตั้งต้นล่าสุด — ไม่ค้างค่าที่เคยพิมพ์รอบก่อน
-  const [openedWith, setOpenedWith] = useState(initial)
-  if (open && openedWith !== initial) {
-    setOpenedWith(initial)
-    setTime(initial)
+  // รีเซ็ตเฉพาะจังหวะ "เปิด" — ห้ามอิงค่า initial ระหว่างเปิดอยู่
+  // (ค่าตั้งต้นคือเวลาปัจจุบันซึ่งเปลี่ยนทุกนาที ถ้าอิงตลอดจะล้างค่าที่พนักงานพิมพ์ค้างไว้)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
+    if (open) setTime(initial)
   }
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -251,6 +252,9 @@ export function QueueCard({
       : null
   // จ่ายเงินแล้วแต่ไม่เคยกดเริ่มนวด — ข้อมูลเวลาโหว่ ต้องเตือนให้เติมย้อนหลัง
   const paidWithoutStart = entry.status === "paid" && !entry.started_at
+  // ป้ายเตือนดังเฉพาะบอร์ดวันนี้ — การ์ดเก่าก่อนมีระบบเวลาเริ่มจริงมีเป็นสิบใบ ไม่ต้องประจานย้อนหลัง
+  // (ปุ่มใส่เวลาย้อนหลังยังกดได้ทุกวันจาก dialog ของการ์ด)
+  const warnNoStart = paidWithoutStart && isToday
   // ซ้อนเวลากับการ์ดอื่นในแถวหมอเดียวกัน → ขอบส้มเตือน — นับจากเวลานวดจริง
   // (server กันเพิ่มใหม่แล้ว แต่การเริ่มช้า/เร็วกว่าจองอาจทำให้เวลาจริงไปทับกันทีหลัง)
   const hasOverlap = siblings.some(
@@ -324,7 +328,7 @@ export function QueueCard({
           {entry.customer_name || "ไม่ระบุลูกค้า"} · {STATUS_LABEL[entry.status]}
           {/* เวลานวดจริงบนการ์ด — เห็นทันทีไม่ต้องเปิด dialog */}
           {actualLabel && ` · ▶${actualLabel}`}
-          {paidWithoutStart && " · ⚠️ไม่มีเวลาเริ่ม"}
+          {warnNoStart && " · ⚠️ไม่มีเวลาเริ่ม"}
           {bed && ` · ${shortBedName(bed)}`}
           {bedConflict && " ⚠️ซ้อน"}
           {entry.is_request && (
@@ -362,7 +366,7 @@ export function QueueCard({
                 actualEndMin !== null &&
                 ` · เริ่มจริง ${minToHHMM(actualStartMin)} → จบ ~${minToHHMM(actualEndMin)} น.`}
             </p>
-            {paidWithoutStart && (
+            {warnNoStart && (
               <p className="rounded-md border border-amber-300 bg-amber-50 px-2 py-1.5 text-amber-800">
                 ⚠️ ชำระเงินแล้วแต่ยังไม่บันทึกเวลาเริ่มนวด — กดใส่ย้อนหลังให้ข้อมูลครบ
               </p>
@@ -535,10 +539,8 @@ export function QueueCard({
       <StartTimeDialog
         open={timeDialog !== null}
         title={timeDialog === "start" ? "▶ เริ่มนวด" : "🕐 เวลาเริ่มนวดจริง"}
-        // เริ่มนวดครั้งแรก = ตอนนี้ · แก้ย้อนหลัง = เวลาที่เคยบันทึก (ไม่มีก็ตอนนี้)
-        initial={
-          timeDialog === "edit" && entry.started_at ? bkkTime(entry.started_at) : nowBkk()
-        }
+        // มีเวลาเดิมใช้เวลาเดิม (รวมเคสย้อนเป็นรอแล้วเริ่มใหม่) · ไม่มีก็เวลาปัจจุบัน
+        initial={entry.started_at ? bkkTime(entry.started_at) : nowBkk()}
         pending={pending}
         onClose={() => setTimeDialog(null)}
         onSave={(t) =>

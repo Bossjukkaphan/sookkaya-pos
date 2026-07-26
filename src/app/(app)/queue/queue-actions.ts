@@ -628,7 +628,7 @@ export async function startMassage(id: string, timeHHMM: string): Promise<Result
     .eq("id", id)
     .maybeSingle()
   if (!entry) return { ok: false, error: "ไม่พบคิวนี้" }
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("queue_entries")
     .update({
       status: "in_service",
@@ -637,7 +637,11 @@ export async function startMassage(id: string, timeHHMM: string): Promise<Result
     })
     .eq("id", id)
     .not("status", "in", "(paid,pending,cancelled,rejected)")
+    .select("id")
   if (error) return { ok: false, error: error.message }
+  // 0 แถว = สถานะเปลี่ยนไปแล้วระหว่างเปิดกล่อง (อีกเครื่องจ่ายเงิน/ยกเลิก) — ห้ามบอกว่าสำเร็จ
+  if (!updated || updated.length === 0)
+    return { ok: false, error: "คิวนี้ถูกจัดการไปแล้ว — รีเฟรชบอร์ดแล้วลองใหม่" }
   revalidatePath("/queue")
   return { ok: true }
 }
@@ -656,7 +660,7 @@ export async function setActualStartTime(id: string, timeHHMM: string): Promise<
     .eq("id", id)
     .maybeSingle()
   if (!entry) return { ok: false, error: "ไม่พบคิวนี้" }
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("queue_entries")
     .update({
       started_at: shopTimeToIso(entry.queue_date, timeHHMM),
@@ -664,7 +668,10 @@ export async function setActualStartTime(id: string, timeHHMM: string): Promise<
     })
     .eq("id", id)
     .not("status", "in", "(pending,cancelled,rejected)")
+    .select("id")
   if (error) return { ok: false, error: error.message }
+  if (!updated || updated.length === 0)
+    return { ok: false, error: "คิวนี้ถูกยกเลิก/ยังไม่ถูกรับ — ใส่เวลาเริ่มไม่ได้" }
   revalidatePath("/queue")
   return { ok: true }
 }

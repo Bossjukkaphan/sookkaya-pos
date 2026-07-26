@@ -100,16 +100,21 @@ export async function updateExpense(
     return { ok: false, error: "เปลี่ยนวันที่ได้ภายในเดือนปัจจุบันเท่านั้น (เดือนอื่นปิดงบแล้ว)" }
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("expenses")
     .update(parsed.values)
     .eq("id", id)
+    .select("id")
 
   if (error) {
     if (error.code === "42501") {
       return { ok: false, error: "คุณไม่มีสิทธิ์แก้รายจ่าย (เฉพาะผู้จัดการขึ้นไป)" }
     }
     return { ok: false, error: `แก้ไขไม่สำเร็จ: ${error.message}` }
+  }
+  // RLS กรอง UPDATE แบบเงียบ (0 แถว ไม่มี error) — ห้ามรายงานสำเร็จทั้งที่ไม่มีอะไรเปลี่ยน
+  if (!updated || updated.length === 0) {
+    return { ok: false, error: "แก้ไม่สำเร็จ — คุณอาจไม่มีสิทธิ์ (เฉพาะผู้จัดการขึ้นไป)" }
   }
 
   revalidateFinancePages()
@@ -129,12 +134,19 @@ export async function deleteExpense(id: string): Promise<ExpenseResult> {
     return { ok: false, error: "ลบได้เฉพาะรายจ่ายของเดือนปัจจุบัน (เดือนก่อนปิดงบแล้ว)" }
   }
 
-  const { error } = await supabase.from("expenses").delete().eq("id", id)
+  const { data: deleted, error } = await supabase
+    .from("expenses")
+    .delete()
+    .eq("id", id)
+    .select("id")
   if (error) {
     if (error.code === "42501") {
       return { ok: false, error: "คุณไม่มีสิทธิ์ลบรายจ่าย (เฉพาะผู้จัดการขึ้นไป)" }
     }
     return { ok: false, error: error.message }
+  }
+  if (!deleted || deleted.length === 0) {
+    return { ok: false, error: "ลบไม่สำเร็จ — คุณอาจไม่มีสิทธิ์ (เฉพาะผู้จัดการขึ้นไป)" }
   }
 
   revalidateFinancePages()
