@@ -8,6 +8,12 @@ import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { minToTime, timeToMin } from "@/lib/queue"
 import { pushLineMessage } from "@/lib/line"
+import { pushAssistantMessage } from "@/lib/line-assistant"
+import {
+  msgShopConfirmed,
+  msgShopRejected,
+  msgShopStaffCancelled,
+} from "@/lib/line-assistant-messages"
 import { msgConfirmed, msgRejected, type BookingInfo } from "@/lib/line-messages"
 
 type Result = { ok: true; warning?: string } | { ok: false; error: string }
@@ -345,12 +351,36 @@ export async function setQueueStatus(id: string, status: string): Promise<Result
   if (!STATUSES.includes(status as (typeof STATUSES)[number]))
     return { ok: false, error: "สถานะไม่ถูกต้อง" }
   const supabase = await createClient()
+
+  // อ่านก่อนอัปเดต — ถ้าเป็นการยกเลิกคิวที่จองผ่านไลน์ ต้องแจ้งกลุ่มทีมร้าน
+  // (อ่านหลังอัปเดตจะไม่รู้แล้วว่าสถานะเดิมคืออะไร)
+  const { data: before } = status === "cancelled"
+    ? await supabase
+        .from("queue_entries")
+        .select("booking_channel, customer_name, queue_date, start_time, service_name, status")
+        .eq("id", id)
+        .maybeSingle()
+    : { data: null }
+
   const { error } = await supabase
     .from("queue_entries")
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", id)
     .not("status", "in", "(paid,pending)")
   if (error) return { ok: false, error: error.message }
+
+  // ยกเลิกคิวที่ลูกค้าจองผ่านไลน์ → กลุ่มต้องเห็นว่าใครยกเลิก (คิวประเภทอื่นไม่รก group)
+  if (
+    status === "cancelled" &&
+    before &&
+    before.booking_channel === "line" &&
+    !["paid", "pending", "cancelled", "rejected"].includes(before.status)
+  ) {
+    const staff = await getMyProfile()
+    await notifyQueueGroup(
+      msgShopStaffCancelled({ ...shopInfoOf([before]), staffName: staff?.full_name })
+    )
+  }
 
   if (status === "in_service") {
     // เวลาเริ่มนวดจริง — บันทึกครั้งแรกเท่านั้น กดย้อนไปมาไม่ทับค่าเดิม
@@ -370,18 +400,41 @@ async function loadPendingSet(id: string) {
   const supabase = await createClient()
   const { data: one } = await supabase
     .from("queue_entries")
-    .select("id, group_id, queue_date, start_time, service_name, line_user_id, status, notes")
+    .select(
+      "id, group_id, queue_date, start_time, service_name, customer_name, line_user_id, status, notes"
+    )
     .eq("id", id)
     .maybeSingle()
   if (!one || one.status !== "pending") return null
   if (!one.group_id) return { entries: [one] }
   const { data: all } = await supabase
     .from("queue_entries")
-    .select("id, group_id, queue_date, start_time, service_name, line_user_id, status, notes")
+    .select(
+      "id, group_id, queue_date, start_time, service_name, customer_name, line_user_id, status, notes"
+    )
     .eq("group_id", one.group_id)
     .eq("status", "pending")
   return { entries: all && all.length > 0 ? all : [one] }
 }
+
+/** แจ้งกลุ่มทีมร้านผ่าน OA ผู้ช่วย — env ยังไม่ตั้ง/ส่งพลาด → ข้ามเงียบๆ ไม่กระทบงานหลัก */
+const notifyQueueGroup = (text: string) =>
+  pushAssistantMessage(process.env.LINE_ASSISTANT_QUEUE_GROUP_ID ?? "", text)
+
+/** ข้อมูลคิวสำหรับข้อความแจ้งกลุ่ม — ชื่อลูกค้า วันเวลา และเมนูทุกคนในชุด */
+const shopInfoOf = (
+  entries: {
+    queue_date: string
+    start_time: string
+    service_name: string
+    customer_name?: string | null
+  }[]
+) => ({
+  name: entries[0].customer_name?.trim() || "ลูกค้า LINE",
+  dateLabel: formatThaiDate(entries[0].queue_date),
+  time: entries[0].start_time.slice(0, 5),
+  services: entries.map((e) => e.service_name),
+})
 
 const bookingInfoOf = (
   entries: { queue_date: string; start_time: string; service_name: string }[]
@@ -428,6 +481,11 @@ export async function approveBooking(id: string): Promise<Result> {
       }
     }
   }
+  // แจ้งกลุ่มทีมร้าน: คิวนี้ถูกรับแล้ว โดยใคร — ทุกคนเห็นสถานะเดียวกันไม่ต้องถามกันเอง
+  const approver = await getMyProfile()
+  await notifyQueueGroup(
+    msgShopConfirmed({ ...shopInfoOf(set.entries), staffName: approver?.full_name })
+  )
   revalidatePath("/queue")
   return { ok: true, warning }
 }
@@ -460,6 +518,15 @@ export async function rejectBooking(id: string, reason: string): Promise<Result>
     const sent = await pushLineMessage(to, msgRejected(bookingInfoOf(set.entries), cleanReason))
     if (!sent) warning = "ปฏิเสธแล้ว แต่ส่งไลน์ไม่ผ่าน — โทรแจ้งลูกค้าด้วยนะ"
   }
+  // แจ้งกลุ่มทีมร้าน: ปฏิเสธเพราะอะไร โดยใคร — เผื่อลูกค้าโทรมาถาม ทีมตอบได้ทันที
+  const rejecter = await getMyProfile()
+  await notifyQueueGroup(
+    msgShopRejected({
+      ...shopInfoOf(set.entries),
+      reason: cleanReason,
+      staffName: rejecter?.full_name,
+    })
+  )
   revalidatePath("/queue")
   return { ok: true, warning }
 }

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { msgShopNewBooking, msgShopCancelled } from "./line-assistant-messages"
+import {
+  msgShopCancelled,
+  msgShopConfirmed,
+  msgShopNewBooking,
+  msgShopRejected,
+  msgShopStaffCancelled,
+} from "./line-assistant-messages"
 
 const booking = {
   name: "คุณสมศรี",
@@ -35,5 +41,29 @@ describe("ข้อความแจ้งกลุ่มร้านผ่า�
     expect(t).toContain("ศุกร์ 25 ก.ค. 14:00")
     expect(t).toContain("(รวม 2 ท่าน)")
     expect(t).not.toContain("โทร")
+  })
+  it("ลูกค้ายกเลิกหลังร้านรับแล้ว → มีวงเล็บกำกับ", () => {
+    expect(msgShopCancelled({ ...booking, afterConfirm: true })).toContain(
+      "(ร้านรับคิวไปแล้ว)"
+    )
+    expect(msgShopCancelled(booking)).not.toContain("(ร้านรับคิวไปแล้ว)")
+  })
+  it("รับคิวแล้ว มี ✅ และชื่อพนักงานที่กด", () => {
+    const t = msgShopConfirmed({ ...booking, staffName: "ดา" })
+    expect(t).toContain("✅ รับคิวแล้ว")
+    expect(t).toContain("คุณสมศรี")
+    expect(t).toContain("โดย ดา")
+    expect(msgShopConfirmed(booking)).not.toContain("โดย")
+  })
+  it("ปฏิเสธคิว มี 🚫 เหตุผล และชื่อพนักงาน", () => {
+    const t = msgShopRejected({ ...booking, reason: "หมอไม่อยู่", staffName: "ดา" })
+    expect(t).toContain("🚫 ปฏิเสธคิว")
+    expect(t).toContain("เหตุผล: หมอไม่อยู่")
+    expect(t).toContain("โดย ดา")
+  })
+  it("พนักงานยกเลิกคิวไลน์ มี 🗑 และชื่อพนักงาน", () => {
+    const t = msgShopStaffCancelled({ ...booking, staffName: "บอส" })
+    expect(t).toContain("🗑 พนักงานยกเลิกคิวไลน์")
+    expect(t).toContain("โดย บอส")
   })
 })

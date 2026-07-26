@@ -17,5 +17,31 @@ export const msgShopNewBooking = (b: ShopBookingInfo) =>
   `🔔 คิวจองใหม่ · ${b.name} · ${b.dateLabel} ${b.time} · ${menu(b.services)}` +
   (b.phone ? ` · โทร ${b.phone}` : "")
 
-export const msgShopCancelled = (b: ShopBookingInfo) =>
-  `❌ ลูกค้ายกเลิกคิว · ${b.name} · ${b.dateLabel} ${b.time} · ${menu(b.services)}`
+export const msgShopCancelled = (
+  b: ShopBookingInfo & {
+    /** ลูกค้ายกเลิกหลังร้านกดรับไปแล้ว — ทีมต้องรู้เพราะอาจกันคิว/เตียงไว้แล้ว */
+    afterConfirm?: boolean
+  }
+) =>
+  `❌ ลูกค้ายกเลิกคิว${b.afterConfirm ? " (ร้านรับคิวไปแล้ว)" : ""} · ${b.name} · ${b.dateLabel} ${b.time} · ${menu(b.services)}`
+
+/** ต่อท้าย "โดย ..." เมื่อรู้ว่าพนักงานคนไหนกด — กลุ่มเห็นว่าใครจัดการ */
+const by = (staffName?: string | null) => (staffName ? ` · โดย ${staffName}` : "")
+
+export const msgShopConfirmed = (
+  b: ShopBookingInfo & { staffName?: string | null }
+) =>
+  `✅ รับคิวแล้ว · ${b.name} · ${b.dateLabel} ${b.time} · ${menu(b.services)}` +
+  by(b.staffName)
+
+export const msgShopRejected = (
+  b: ShopBookingInfo & { reason: string; staffName?: string | null }
+) =>
+  `🚫 ปฏิเสธคิว · ${b.name} · ${b.dateLabel} ${b.time} · ${menu(b.services)} · เหตุผล: ${b.reason}` +
+  by(b.staffName)
+
+export const msgShopStaffCancelled = (
+  b: ShopBookingInfo & { staffName?: string | null }
+) =>
+  `🗑 พนักงานยกเลิกคิวไลน์ · ${b.name} · ${b.dateLabel} ${b.time} · ${menu(b.services)}` +
+  by(b.staffName)

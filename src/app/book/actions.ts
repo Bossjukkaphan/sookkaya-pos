@@ -354,6 +354,8 @@ export async function cancelBooking(
     msgShopCancelled({
       name: data[0].customer_name ?? "ลูกค้า LINE", dateLabel: formatThaiDate(data[0].queue_date),
       time, services: data.map((d) => d.service_name),
+      // ร้านรับคิวไปแล้ว (waiting) — ทีมอาจกันหมอ/เตียงไว้ ต้องรู้ว่าคิวหลุด
+      afterConfirm: data.some((d) => d.status === "waiting"),
     })
   )
   return { ok: true }
