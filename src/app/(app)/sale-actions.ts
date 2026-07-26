@@ -316,7 +316,12 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   return { ok: true, receiptNo: inserted.receipt_no ?? "", creditAfter }
 }
 
-export async function deleteSale(id: string): Promise<{ ok: boolean; error?: string }> {
+export async function deleteSale(
+  id: string,
+  /** true (ค่าเริ่มต้น) = ยกเลิกการ์ดคิวที่ผูกกับบิลนี้ให้ด้วย ไม่ต้องไปกดยกเลิกซ้ำที่หน้าคิว
+   *  false = คงคิวไว้ (ถอยเป็น "กำลังให้บริการ") สำหรับเคสลบบิลผิดแล้วจะเก็บเงินใหม่ */
+  cancelQueue = true
+): Promise<{ ok: boolean; error?: string }> {
   const supabase = await createClient()
 
   const { data: existing } = await supabase
@@ -330,12 +335,15 @@ export async function deleteSale(id: string): Promise<{ ok: boolean; error?: str
     return { ok: false, error: "ลบได้เฉพาะรายการของเดือนปัจจุบัน" }
   }
 
-  // บิลที่มาจากคิว: ถอยการ์ดกลับเป็น "กำลังให้บริการ" ให้เก็บเงินใหม่ได้
-  // ไม่งั้นการ์ดค้างเป็น "ชำระแล้ว" ทั้งที่บิลถูกลบไปแล้ว (FK เป็น set null ก็จริง
-  // แต่ set null ไม่ได้แก้สถานะให้) — ต้องทำก่อนลบ เพราะหลังลบจะหา sale_id ไม่เจอแล้ว
+  // บิลที่มาจากคิว: จัดการการ์ดก่อนลบ เพราะหลังลบจะหา sale_id ไม่เจอแล้ว
+  // (FK เป็น set null ก็จริง แต่ set null ไม่ได้แก้สถานะให้ การ์ดจะค้าง "ชำระแล้ว")
   await supabase
     .from("queue_entries")
-    .update({ status: "in_service", sale_id: null })
+    .update(
+      cancelQueue
+        ? { status: "cancelled", sale_id: null }
+        : { status: "in_service", sale_id: null }
+    )
     .eq("sale_id", id)
     .eq("status", "paid")
 

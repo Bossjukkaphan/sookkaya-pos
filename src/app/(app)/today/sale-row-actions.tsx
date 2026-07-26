@@ -15,6 +15,7 @@ import {
   type Therapist,
 } from "./edit-sale-dialog"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -65,12 +66,14 @@ export function DeleteSaleButton({
   label: string
 }) {
   const [open, setOpen] = useState(false)
+  // ค่าเริ่มต้น: ยกเลิกคิวที่ผูกด้วย — เคสส่วนใหญ่ลบบิลเพราะยกเลิกทั้งรายการ
+  const [cancelQueue, setCancelQueue] = useState(true)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
   function handleDelete() {
     startTransition(async () => {
-      const result = await deleteSale(id)
+      const result = await deleteSale(id, cancelQueue)
       if (result.ok) {
         toast.success("ลบรายการแล้ว")
         setOpen(false)
@@ -102,6 +105,20 @@ export function DeleteSaleButton({
               {label} — ลบแล้วกู้คืนไม่ได้ และค่ามือหมอของวันนี้จะถูกคำนวณใหม่
             </DialogDescription>
           </DialogHeader>
+          <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm">
+            <Checkbox
+              checked={cancelQueue}
+              onCheckedChange={(v) => setCancelQueue(v === true)}
+              className="mt-0.5"
+            />
+            <span>
+              ยกเลิกคิวที่ผูกกับบิลนี้ด้วย
+              <span className="block text-xs font-normal text-slate-500">
+                ไม่ติ๊ก = การ์ดคิวถอยกลับเป็น &quot;กำลังนวด&quot;
+                ไว้เก็บเงินใหม่ (กรณีลบบิลผิด)
+              </span>
+            </span>
+          </label>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
               ยกเลิก
