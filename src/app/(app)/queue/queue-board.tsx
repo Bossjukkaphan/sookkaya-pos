@@ -413,7 +413,7 @@ export function QueueBoard({
                 ))}
                 {isToday && nowMin >= BOARD_START_MIN && nowMin <= BOARD_END_MIN && (
                   <div
-                    className="absolute inset-y-0 z-10 w-0.5 bg-violet-500"
+                    className="absolute inset-y-0 z-[6] w-0.5 bg-violet-500"
                     style={{ left: minToX(nowMin) }}
                   />
                 )}

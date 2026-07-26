@@ -341,9 +341,10 @@ export function QueueCard({
 
       {/* เส้นเวลานวดจริง — ประกบขอบล่างของเลนการ์ด ลากจากเวลาเริ่มจริงถึงจบจริง
           แท่งการ์ดหลักยึดเวลาจอง เส้นนี้จึงเหลื่อมซ้าย/ขวาให้เห็นว่าเริ่มเร็วหรือช้ากว่าจอง */}
+      {/* z-[6]: สูงกว่าการ์ด (z-[5]) แต่ต่ำกว่าแถบเมนูล่าง (z-10) — ไม่งั้นสกรอลล์แล้วเส้นลอยทับเมนู */}
       {actualStartMin !== null && !dragging && (
         <div
-          className={`pointer-events-none absolute z-10 h-1.5 rounded-full ${
+          className={`pointer-events-none absolute z-[6] h-1.5 rounded-full ${
             ACTUAL_LINE_COLOR[entry.status] ?? "bg-slate-400"
           }`}
           style={{
