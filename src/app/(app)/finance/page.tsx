@@ -28,16 +28,42 @@ export default async function FinancePage({
     return <FinanceAccessDenied />
   }
 
-  const month = params.month ?? todayInShopTz().slice(0, 7)
+  const today = todayInShopTz()
+  const month = params.month ?? today.slice(0, 7)
 
-  const [{ data: plRows }, { data: targetSetting }] = await Promise.all([
-    supabase.from("v_monthly_pl").select("*").order("month"),
-    supabase
-      .from("settings")
-      .select("value")
-      .eq("key", "monthly_target")
-      .maybeSingle(),
-  ])
+  // ช่วงวันที่ของเดือนที่เลือก — ใช้ดึงงวดค่ามือมาเช็คว่าครบ 3 งวดไหม
+  const [mYear, mMonth] = month.split("-").map(Number)
+  const nextMonthStart =
+    mMonth === 12
+      ? `${mYear + 1}-01-01`
+      : `${mYear}-${String(mMonth + 1).padStart(2, "0")}-01`
+
+  const [{ data: plRows }, { data: targetSetting }, { data: payoutRows }] =
+    await Promise.all([
+      supabase.from("v_monthly_pl").select("*").order("month"),
+      supabase
+        .from("settings")
+        .select("value")
+        .eq("key", "monthly_target")
+        .maybeSingle(),
+      // ผู้ท้าชิงงวดค่ามือของเดือนนี้ — กรองหยาบที่ DB แล้วตัดสินจริงด้วยกติกากลาง
+      supabase
+        .from("expenses")
+        .select("item, amount, expense_date")
+        .gte("expense_date", `${month}-01`)
+        .lt("expense_date", nextMonthStart)
+        .ilike("item", "%ค่ามือ%")
+        .gte("amount", COMMISSION_PAYOUT_MIN_AMOUNT)
+        .order("expense_date"),
+    ])
+
+  const payouts = (payoutRows ?? []).filter((r) =>
+    isCommissionPayout(r.item, Number(r.amount))
+  )
+  const payoutCheck = commissionPayoutStatus(payouts.length, {
+    isCurrentMonth: month === today.slice(0, 7),
+    dayOfMonth: Number(today.slice(8, 10)),
+  })
 
   const rows = (plRows ?? []).filter(
     (r): r is typeof r & { month: string } => r.month !== null
@@ -86,6 +112,33 @@ export default async function FinancePage({
             </p>
           </CardContent>
         </Card>
+      )}
+
+      {/* ค่ามือหมอต้องมีเดือนละ 3 งวดเสมอ (1-10 · 11-20 · 21-สิ้นเดือน)
+          ขาด/เกิน = คีย์ผิดเดือน/ซ้ำ/ตกหล่น — เคยทำกำไรสองเดือนเพี้ยนเดือนละ ~43,000 มาแล้ว */}
+      {payoutCheck.level === "warn" && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="space-y-1 py-4 text-sm">
+            <p className="font-semibold text-amber-900">⚠️ งวดค่ามือผิดปกติ</p>
+            <p className="text-amber-800">{payoutCheck.message}</p>
+            {payouts.length > 0 && (
+              <ul className="pt-1 text-xs text-amber-700">
+                {payouts.map((p, i) => (
+                  <li key={i}>
+                    {p.expense_date} · {p.item} · {formatBaht(Number(p.amount))} ฿
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+      {payoutCheck.level !== "warn" && selected && (
+        <p className="text-xs text-slate-500">
+          {payoutCheck.level === "ok" ? "✓ " : ""}
+          {payoutCheck.message}
+          {" · งวดปกติ: 1-10 · 11-20 · 21-สิ้นเดือน"}
+        </p>
       )}
 
       {!selected && (
