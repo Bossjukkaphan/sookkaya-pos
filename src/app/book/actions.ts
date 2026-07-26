@@ -156,6 +156,16 @@ export async function createBookingRequest(
     .from("line_accounts").select("customer_id, phone, display_name, customers(name)")
     .eq("line_user_id", who.userId).maybeSingle()
   if (!account) return { ok: false, error: "กรุณายืนยันเบอร์โทรก่อนจองค่ะ" }
+
+  // ชื่อ/รูปไลน์ซ่อมตัวเองทุกครั้งที่ลูกค้ากลับมาจอง — เคยผูกตอนได้ "Loading..." /
+  // เปลี่ยนชื่อไลน์ทีหลัง ข้อมูลจะทันสมัยเอง (best-effort ไม่กระทบการจอง)
+  const freshName = cleanLineDisplayName(who.displayName)
+  if (freshName && freshName !== account.display_name) {
+    await db
+      .from("line_accounts")
+      .update({ display_name: freshName, picture_url: who.pictureUrl ?? null })
+      .eq("line_user_id", who.userId)
+  }
   // ชื่อบนการ์ดคิว: ใช้ชื่อจริงในระบบลูกค้าก่อน (พนักงานคุ้นชื่อนี้) — ตกไปใช้ชื่อเล่นไลน์ถ้าไม่มี
   // ทุกชั้นผ่านตัวกรอง placeholder (ชื่อเก่าในระบบอาจติด "Loading..." มาก่อนแล้ว) — ห้ามหลุดขึ้นการ์ด
   const customerName =
