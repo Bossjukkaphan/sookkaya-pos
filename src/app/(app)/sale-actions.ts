@@ -7,7 +7,7 @@ import { getMyProfile } from "@/lib/auth"
 import { nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import { GOWABI_METHOD, MEMBER_CREDIT_METHOD, PAYMENT_METHODS } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
-import { pointExpiryDate, pointsForBaht } from "@/lib/points"
+import { earnsPoints, pointExpiryDate, pointsForBaht } from "@/lib/points"
 
 export type SaleResult =
   | {
@@ -25,7 +25,9 @@ function toNumber(value: FormDataEntryValue | null, fallback = 0): number {
 
 /**
  * แต้มสะสมของบิล: ลบของเดิมแล้วใส่ใหม่ตามยอดปัจจุบัน — แก้บิลแล้วแต้มตามยอดใหม่เสมอ
- * ลบบิล → แต้มหายเองผ่าน FK cascade · เครดิตสมาชิกไม่ได้แต้ม (ได้ตอนเติมเงินแล้ว)
+ * ลบบิล → แต้มหายเองผ่าน FK cascade
+ * ได้แต้มเฉพาะ เงินสด/QR/บัตรเครดิต — Gowabi/KOL ไม่ใช่เงินตรงจากลูกค้า
+ * เครดิตสมาชิกไม่ได้แต้มซ้ำ (ได้ไปแล้วตอนเติมเงิน)
  * แต้มเป็นของแถม ไม่ใช่สมุดเงิน — พลาดก็ไม่กระทบบิล จึงไม่เช็ค error
  */
 async function syncSalePoints(
@@ -39,7 +41,7 @@ async function syncSalePoints(
   }
 ) {
   const points =
-    sale.customer_id && sale.payment_method !== MEMBER_CREDIT_METHOD
+    sale.customer_id && earnsPoints(sale.payment_method)
       ? pointsForBaht(sale.net_amount)
       : 0
   await supabase.from("point_transactions").delete().eq("sale_id", sale.id)
@@ -316,17 +318,64 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   return { ok: true, receiptNo: inserted.receipt_no ?? "", creditAfter }
 }
 
+export type SalePointsImpact = {
+  /** แต้มที่บิลนี้เคยให้ลูกค้า — 0 = ไม่มีอะไรต้องเตือน */
+  points: number
+  /** ยอดแต้มคงเหลือของลูกค้าหลังถอนแต้มบิลนี้ — ติดลบ = ลูกค้าแลกแต้มไปแล้ว */
+  balanceAfter: number
+}
+
+/**
+ * ผลกระทบต่อแต้มถ้าลบบิลนี้ — ใช้เตือนใน dialog ก่อนพนักงานกดลบ
+ * เคสสำคัญ: ลูกค้าแลกแต้มเป็นคูปองไปแล้ว การถอนแต้มบิลนี้จะทำยอดติดลบ
+ */
+export async function getSalePointsImpact(
+  id: string
+): Promise<SalePointsImpact | null> {
+  const supabase = await createClient()
+  const { data: rows } = await supabase
+    .from("point_transactions")
+    .select("customer_id, delta")
+    .eq("sale_id", id)
+    .gt("delta", 0)
+  if (!rows || rows.length === 0) return null
+  const points = rows.reduce((sum, r) => sum + r.delta, 0)
+  const { data: balance } = await supabase
+    .from("v_point_balances")
+    .select("balance")
+    .eq("customer_id", rows[0].customer_id)
+    .maybeSingle()
+  return { points, balanceAfter: (balance?.balance ?? 0) - points }
+}
+
+/** ยอดแต้มลูกค้าหลัง sync — ติดลบ = ต้องบอกพนักงาน (ลูกค้าแลกแต้มไปก่อนแล้ว) */
+async function pointsWarningAfterSync(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  customerId: string | null
+): Promise<string | undefined> {
+  if (!customerId) return undefined
+  const { data } = await supabase
+    .from("v_point_balances")
+    .select("balance")
+    .eq("customer_id", customerId)
+    .maybeSingle()
+  const balance = data?.balance ?? 0
+  return balance < 0
+    ? `แต้มลูกค้าติดลบ ${Math.abs(balance)} แต้ม (แลกไปก่อนแล้ว) — จะหักกลบจากแต้มที่ได้ครั้งถัดไป`
+    : undefined
+}
+
 export async function deleteSale(
   id: string,
   /** true (ค่าเริ่มต้น) = ยกเลิกการ์ดคิวที่ผูกกับบิลนี้ให้ด้วย ไม่ต้องไปกดยกเลิกซ้ำที่หน้าคิว
    *  false = คงคิวไว้ (ถอยเป็น "กำลังให้บริการ") สำหรับเคสลบบิลผิดแล้วจะเก็บเงินใหม่ */
   cancelQueue = true
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; warning?: string }> {
   const supabase = await createClient()
 
   const { data: existing } = await supabase
     .from("sales")
-    .select("sale_date")
+    .select("sale_date, customer_id")
     .eq("id", id)
     .single()
 
@@ -351,15 +400,18 @@ export async function deleteSale(
 
   if (error) return { ok: false, error: error.message }
 
+  // แต้มบิลนี้ถูกถอนไปพร้อมการลบ (FK cascade) — ถ้ายอดลูกค้าติดลบต้องบอกพนักงาน
+  const warning = await pointsWarningAfterSync(supabase, existing.customer_id)
+
   revalidatePath("/today")
   revalidatePath("/")
   revalidatePath("/commission")
   revalidatePath("/overview")
   revalidatePath("/queue")
-  return { ok: true }
+  return { ok: true, warning }
 }
 
-export type UpdateResult = { ok: true } | { ok: false; error: string }
+export type UpdateResult = { ok: true; warning?: string } | { ok: false; error: string }
 
 /** แก้ได้เฉพาะเดือนปัจจุบัน — เดือนที่ปิดงบไปแล้วห้ามขยับ ไม่งั้นรายงานที่ส่งไปแล้วจะไม่ตรง */
 function isCurrentMonth(saleDate: string): boolean {
@@ -544,12 +596,15 @@ export async function updateSale(
     })
     .eq("sale_id", id)
 
+  // แต้มถูก sync ตามยอดใหม่แล้ว — ถ้ายอดลูกค้าติดลบ (แลกแต้มไปก่อนแล้ว) ต้องบอกพนักงาน
+  const warning = await pointsWarningAfterSync(supabase, customerId)
+
   revalidatePath("/today")
   revalidatePath("/")
   revalidatePath("/commission")
   revalidatePath("/overview")
   revalidatePath("/queue")
-  return { ok: true }
+  return { ok: true, warning }
 }
 
 export type CouponCheck =

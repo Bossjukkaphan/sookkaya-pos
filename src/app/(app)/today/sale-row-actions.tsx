@@ -1,11 +1,15 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Trash2 } from "lucide-react"
 import { toast } from "sonner"
 
-import { deleteSale } from "../sale-actions"
+import {
+  deleteSale,
+  getSalePointsImpact,
+  type SalePointsImpact,
+} from "../sale-actions"
 import {
   EditSaleButton,
   type EditableSale,
@@ -68,14 +72,23 @@ export function DeleteSaleButton({
   const [open, setOpen] = useState(false)
   // ค่าเริ่มต้น: ยกเลิกคิวที่ผูกด้วย — เคสส่วนใหญ่ลบบิลเพราะยกเลิกทั้งรายการ
   const [cancelQueue, setCancelQueue] = useState(true)
+  // ผลกระทบต่อแต้มลูกค้า — เช็คตอนเปิด dialog เพื่อเตือนก่อนกดลบ ไม่ใช่หลังลบไปแล้ว
+  const [impact, setImpact] = useState<SalePointsImpact | null>(null)
   const [pending, startTransition] = useTransition()
   const router = useRouter()
+
+  useEffect(() => {
+    if (!open) return
+    setImpact(null)
+    getSalePointsImpact(id).then(setImpact)
+  }, [open, id])
 
   function handleDelete() {
     startTransition(async () => {
       const result = await deleteSale(id, cancelQueue)
       if (result.ok) {
         toast.success("ลบรายการแล้ว")
+        if (result.warning) toast.warning(result.warning)
         setOpen(false)
       } else {
         toast.error(result.error ?? "ลบไม่สำเร็จ")
@@ -105,6 +118,25 @@ export function DeleteSaleButton({
               {label} — ลบแล้วกู้คืนไม่ได้ และค่ามือหมอของวันนี้จะถูกคำนวณใหม่
             </DialogDescription>
           </DialogHeader>
+          {impact && impact.points > 0 && (
+            <p
+              className={
+                impact.balanceAfter < 0
+                  ? "rounded-lg border border-orange-300 bg-orange-50 p-3 text-sm text-orange-800"
+                  : "rounded-lg bg-slate-50 p-3 text-sm text-slate-600"
+              }
+            >
+              {impact.balanceAfter < 0 ? (
+                <>
+                  ⚠️ ลูกค้าแลกแต้มไปแล้ว — ลบบิลนี้จะทำให้แต้มติดลบ{" "}
+                  <b>{Math.abs(impact.balanceAfter)} แต้ม</b>{" "}
+                  (จะถูกหักกลบจากแต้มที่ได้ครั้งถัดไป)
+                </>
+              ) : (
+                <>แต้ม {impact.points} แต้มจากบิลนี้จะถูกถอนคืนจากลูกค้า</>
+              )}
+            </p>
+          )}
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-3 text-sm">
             <Checkbox
               checked={cancelQueue}

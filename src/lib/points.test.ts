@@ -1,5 +1,28 @@
 import { describe, expect, it } from "vitest"
-import { pointsForBaht, pointExpiryDate, genCouponCode, couponExpiryDate } from "./points"
+import {
+  couponExpiryDate,
+  earnsPoints,
+  genCouponCode,
+  pointExpiryDate,
+  pointsForBaht,
+} from "./points"
+
+describe("earnsPoints (ได้แต้มเฉพาะเงินจริงที่จ่ายตรงกับร้าน)", () => {
+  it("เงินสด / QR Code / บัตรเครดิต = ได้แต้ม", () => {
+    expect(earnsPoints("เงินสด")).toBe(true)
+    expect(earnsPoints("QR Code")).toBe(true)
+    expect(earnsPoints("บัตรเครดิต")).toBe(true)
+  })
+  it("Gowabi / KOL / Member Credit = ไม่ได้แต้ม", () => {
+    expect(earnsPoints("Gowabi")).toBe(false)
+    expect(earnsPoints("KOL")).toBe(false)
+    expect(earnsPoints("Member Credit")).toBe(false)
+  })
+  it("ค่าเพี้ยน/ว่าง = ไม่ได้แต้ม", () => {
+    expect(earnsPoints("")).toBe(false)
+    expect(earnsPoints("โอนเข้าบัญชีอื่น")).toBe(false)
+  })
+})
 
 describe("pointsForBaht (ทุก 100฿ = 1 แต้ม ปัดลง)", () => {
   it("คิดจากยอดจ่ายจริง", () => {

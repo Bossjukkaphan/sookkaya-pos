@@ -239,6 +239,8 @@ function EditSaleForm({
       const result = await updateSale(sale.id, formData)
       if (result.ok) {
         toast.success("แก้ไขแล้ว")
+        // แก้บิลแล้วแต้มลูกค้าติดลบ (แลกแต้มไปก่อนแล้ว) — บอกพนักงานให้รู้ตัว
+        if (result.warning) toast.warning(result.warning)
         onDone()
         router.refresh()
       } else {

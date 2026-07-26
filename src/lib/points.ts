@@ -9,6 +9,16 @@ export function pointsForBaht(baht: number): number {
   return Math.floor(baht / 100)
 }
 
+/**
+ * วิธีจ่ายที่ได้แต้มสะสม — เงินจริงที่ลูกค้าจ่ายตรงกับร้านเท่านั้น
+ * Gowabi/KOL ไม่ได้ (ไม่ใช่เงินตรงจากลูกค้า) · เครดิตสมาชิกไม่ได้ (ได้ไปแล้วตอนเติมเงิน)
+ */
+export const POINT_EARNING_METHODS = ["เงินสด", "QR Code", "บัตรเครดิต"] as const
+
+export function earnsPoints(paymentMethod: string): boolean {
+  return (POINT_EARNING_METHODS as readonly string[]).includes(paymentMethod)
+}
+
 /** แต้มที่ได้ปีนี้ใช้ได้ถึงสิ้นปีถัดไป */
 export function pointExpiryDate(earnedDate: string): string {
   const year = Number(earnedDate.slice(0, 4))
