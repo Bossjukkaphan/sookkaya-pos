@@ -181,13 +181,15 @@ export async function createBookingRequest(
     return { ok: false, error: "มีเมนูที่ไม่พร้อมให้จอง รีเฟรชแล้วลองใหม่นะคะ" }
 
   // กันรีเควสหมอที่ลาออก/ปิดรับแล้ว (ข้อมูลฝั่งลูกค้าอาจ cache หมอเก่าไว้)
+  // เก็บชื่อไว้ด้วย — ข้อความแจ้งกลุ่มร้านต้องบอกว่ารีเควสหมอคนไหน
   const therapistIds = [...new Set(
     input.people.map((p) => p.therapistId).filter((id): id is string => id !== null))]
+  const therapistName = new Map<string, string>()
   if (therapistIds.length > 0) {
     const { data: activeTherapists } = await db
-      .from("therapists").select("id").eq("status", "active").in("id", therapistIds)
-    const activeIds = new Set((activeTherapists ?? []).map((t) => t.id))
-    if (therapistIds.some((id) => !activeIds.has(id)))
+      .from("therapists").select("id, name").eq("status", "active").in("id", therapistIds)
+    for (const t of activeTherapists ?? []) therapistName.set(t.id, t.name)
+    if (therapistIds.some((id) => !therapistName.has(id)))
       return { ok: false, error: "หมอที่เลือกไม่พร้อมให้จอง รีเฟรชแล้วลองใหม่นะคะ" }
   }
 
@@ -244,7 +246,20 @@ export async function createBookingRequest(
   // แจ้งกลุ่มทีมร้านผ่าน OA ผู้ช่วย — env ยังไม่ตั้ง/ส่งพลาด → ข้ามเงียบๆ ไม่กระทบการจอง
   await pushAssistantMessage(
     process.env.LINE_ASSISTANT_QUEUE_GROUP_ID ?? "",
-    msgShopNewBooking({ name: customerName, dateLabel: info.dateLabel, time: input.time, services: info.services, phone: account.phone })
+    msgShopNewBooking({
+      name: customerName,
+      dateLabel: info.dateLabel,
+      time: input.time,
+      // ฝั่งร้านต้องรู้ว่าท่านไหนรีเควสหมอคนไหน — ต่อท้ายชื่อเมนูรายคน
+      services: input.people.map(
+        (p) =>
+          serviceById.get(p.serviceId)!.name +
+          (p.therapistId
+            ? ` (รีเควสหมอ${therapistName.get(p.therapistId) ?? "ที่เลือกไว้"})`
+            : "")
+      ),
+      phone: account.phone,
+    })
   )
   return { ok: true }
 }

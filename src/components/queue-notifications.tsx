@@ -31,9 +31,11 @@ export type PendingRequest = {
   start_time: string
   service_name: string
   created_at: string
+  /** ชื่อหมอที่ลูกค้ารีเควส — null = ตามคิว */
+  therapist_name: string | null
 }
 
-function toPending(row: QueueRow): PendingRequest {
+function toPending(row: QueueRow, therapistNames: Map<string, string>): PendingRequest {
   return {
     id: row.id,
     customer_name: row.customer_name,
@@ -41,7 +43,15 @@ function toPending(row: QueueRow): PendingRequest {
     start_time: row.start_time,
     service_name: row.service_name,
     created_at: row.created_at,
+    therapist_name: row.therapist_id
+      ? (therapistNames.get(row.therapist_id) ?? null)
+      : null,
   }
+}
+
+/** ต่อท้ายข้อความเมื่อลูกค้ารีเควสหมอ — ร้านต้องเห็นตั้งแต่แจ้งเตือน ไม่ต้องกดเข้าไปดู */
+function reqSuffix(name: string | null): string {
+  return name ? ` · รีเควสหมอ${name}` : ""
 }
 
 type QueueNotificationsValue = {
@@ -87,26 +97,48 @@ export function QueueNotificationsProvider({
   // กัน StrictMode/remount แจ้งซ้ำ: จำ id ที่เคยเด้งเตือนไปแล้ว
   const notifiedIds = useRef(new Set<string>())
 
+  // id หมอ → ชื่อ — ใช้แปะชื่อหมอรีเควสใน toast/กระดิ่ง (realtime ส่งแค่ id มา)
+  const therapistNames = useRef(new Map<string, string>())
+
   useEffect(() => {
     const supabase = createClient()
     let cancelled = false
 
+    // โหลดชื่อหมอก่อนลิสต์ pending — แถวที่ fetch มาจะได้แปลง id เป็นชื่อได้เลย
+    const namesReady = supabase
+      .from("therapists")
+      .select("id, name")
+      .then(({ data }) => {
+        if (cancelled) return
+        for (const t of data ?? []) therapistNames.current.set(t.id, t.name)
+      })
+
     // นับ/ลิสต์ทุก pending ไม่กรองวันที่ — นโยบายเดียวกับป้ายเมนู (ดู (app)/layout.tsx):
     // คำขอที่ค้างข้ามวันลูกค้ายังเห็น "รอร้านยืนยัน" อยู่ ต้องโผล่จนกว่าจะรับ/ปฏิเสธ
-    supabase
-      .from("queue_entries")
-      .select("id, customer_name, queue_date, start_time, service_name, created_at")
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        if (cancelled || !data) return
-        setPending((prev) => {
-          const fetched = new Set(data.map((d) => d.id))
-          // เก็บแถวที่ realtime เพิ่งยัดเข้ามาระหว่างรอ fetch (ไม่อยู่ในผลลัพธ์) ไว้ด้วย
-          return [...prev.filter((p) => !fetched.has(p.id)), ...data]
+    namesReady.then(() =>
+      supabase
+        .from("queue_entries")
+        .select(
+          "id, customer_name, queue_date, start_time, service_name, created_at, therapist_id"
+        )
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .then(({ data }) => {
+          if (cancelled || !data) return
+          const rows = data.map((d) => ({
+            ...d,
+            therapist_name: d.therapist_id
+              ? (therapistNames.current.get(d.therapist_id) ?? null)
+              : null,
+          }))
+          setPending((prev) => {
+            const fetched = new Set(rows.map((d) => d.id))
+            // เก็บแถวที่ realtime เพิ่งยัดเข้ามาระหว่างรอ fetch (ไม่อยู่ในผลลัพธ์) ไว้ด้วย
+            return [...prev.filter((p) => !fetched.has(p.id)), ...rows]
+          })
+          setLoaded(true)
         })
-        setLoaded(true)
-      })
+    )
 
     const notifyNewRequest = (row: QueueRow) => {
       if (notifiedIds.current.has(row.id)) return
@@ -116,12 +148,15 @@ export function QueueNotificationsProvider({
 
       const name = row.customer_name?.trim() || "ลูกค้า"
       const time = shortTime(row.start_time)
+      const req = reqSuffix(
+        row.therapist_id ? (therapistNames.current.get(row.therapist_id) ?? "ที่เลือกไว้") : null
+      )
       const gotoQueue = () => router.push(`/queue?date=${row.queue_date}`)
 
       // toast ค้างจนพนักงานกดเอง — id = id คิว จะได้ตามไปปิดเมื่อมีคนอนุมัติจากเครื่องอื่น
       toast("มีคิวจองใหม่จากไลน์ 🌿", {
         id: row.id,
-        description: `${name} · ${formatThaiDate(row.queue_date)} ${time} น. · ${row.service_name}`,
+        description: `${name} · ${formatThaiDate(row.queue_date)} ${time} น. · ${row.service_name}${req}`,
         duration: Infinity,
         closeButton: true,
         action: { label: "ดูคิว", onClick: gotoQueue },
@@ -135,7 +170,7 @@ export function QueueNotificationsProvider({
       ) {
         try {
           const n = new Notification(`มีคิวจองใหม่จากไลน์ 🌿 ${name} · ${time} น.`, {
-            body: `${formatThaiDate(row.queue_date)} · ${row.service_name}`,
+            body: `${formatThaiDate(row.queue_date)} · ${row.service_name}${req}`,
             tag: row.id, // แถวเดิมไม่เด้งซ้อน
           })
           n.onclick = () => {
@@ -165,7 +200,9 @@ export function QueueNotificationsProvider({
           const row = payload.new as QueueRow
           if (row.status !== "pending") return
           setPending((prev) =>
-            prev.some((p) => p.id === row.id) ? prev : [toPending(row), ...prev]
+            prev.some((p) => p.id === row.id)
+              ? prev
+              : [toPending(row, therapistNames.current), ...prev]
           )
           notifyNewRequest(row)
         }
@@ -179,8 +216,10 @@ export function QueueNotificationsProvider({
             // เคสหายาก (แก้กลับมาเป็น pending) — เข้าลิสต์เงียบๆ ไม่ต้องเด้งเสียง
             setPending((prev) =>
               prev.some((p) => p.id === row.id)
-                ? prev.map((p) => (p.id === row.id ? toPending(row) : p))
-                : [toPending(row), ...prev]
+                ? prev.map((p) =>
+                    p.id === row.id ? toPending(row, therapistNames.current) : p
+                  )
+                : [toPending(row, therapistNames.current), ...prev]
             )
           } else {
             removePending(row.id)
@@ -288,6 +327,7 @@ export function QueueBell() {
                     <span className="block text-xs text-slate-500">
                       {formatThaiDate(p.queue_date)} {shortTime(p.start_time)} น. ·{" "}
                       {p.service_name}
+                      {reqSuffix(p.therapist_name)}
                     </span>
                   </Link>
                 </li>

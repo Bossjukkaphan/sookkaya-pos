@@ -124,6 +124,7 @@ function RejectButton({
 export function QueueCard({
   entry,
   laneTop,
+  therapistName,
   bed,
   siblings,
   groupSize = 1,
@@ -139,6 +140,8 @@ export function QueueCard({
   entry: QueueEntry
   /** ระยะจากขอบบนแถว — คิวเวลาชนกันถูกจัดลงเลนถัดไป ไม่วางทับกัน */
   laneTop: number
+  /** ชื่อหมอของแถวนี้ — null = ยังไม่ระบุหมอ (ใช้บอกใน dialog ว่าคิว/รีเควสของหมอท่านไหน) */
+  therapistName: string | null
   bed: Bed | null
   siblings: QueueEntry[]
   /** จำนวนคนทั้งกลุ่มของการ์ดนี้ (นับตัวเองด้วย) — 1 = มาคนเดียว */
@@ -254,6 +257,14 @@ export function QueueCard({
             </p>
             <p>ลูกค้า: {entry.customer_name || "ไม่ระบุ"}</p>
             <p>
+              หมอ: {therapistName ?? "ยังไม่ระบุ"}
+              {entry.is_request && therapistName && (
+                <span className="ml-1 rounded border border-amber-200 bg-amber-50 px-1 text-[11px] font-medium text-amber-700">
+                  ลูกค้ารีเควส
+                </span>
+              )}
+            </p>
+            <p>
               มาจาก:{" "}
               {isCustomerSource(entry.source) ? SOURCE_LABEL[entry.source] : "ไม่ทราบ"}
               {entry.booking_channel &&
@@ -273,7 +284,8 @@ export function QueueCard({
             <p>สถานะ: {STATUS_LABEL[entry.status]}</p>
             {hasOverlap && (
               <p className="text-orange-600">
-                ⚠️ เวลาซ้อนกับคิวอื่นของหมอคนเดียวกัน
+                ⚠️ เวลาซ้อนกับคิวอื่น
+                {therapistName ? `ของหมอ${therapistName}` : "ในช่องยังไม่ระบุหมอ"}
               </p>
             )}
           </div>
