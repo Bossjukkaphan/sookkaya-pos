@@ -74,6 +74,30 @@ export function bedStartMin(e: {
   return e.started_at ? isoToShopMin(e.started_at) : timeToMin(e.start_time)
 }
 
+/** หมอที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — หมอหนึ่งรับได้ทีละคิว นับจากเวลานวดจริง */
+export function busyTherapistIds(
+  entries: {
+    therapist_id: string | null
+    start_time: string
+    duration_min: number
+    status: string
+    started_at?: string | null
+  }[],
+  startMin: number,
+  durationMin: number
+): Set<string> {
+  return new Set(
+    entries
+      .filter(
+        (e) =>
+          e.therapist_id !== null &&
+          e.status !== "cancelled" &&
+          overlaps(bedStartMin(e), e.duration_min, startMin, durationMin)
+      )
+      .map((e) => e.therapist_id as string)
+  )
+}
+
 /** เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้น "ไม่ว่าง" */
 export function busyBedIds(
   entries: BedLike[],

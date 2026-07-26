@@ -56,6 +56,44 @@ async function linkOrCreateCustomer(
  * เวลาอิงการใช้จริง: ใบที่เริ่มนวดแล้วยึดเวลาเริ่มจริง (มาสายเตียงติดนานขึ้น)
  * ใบที่ยังไม่เริ่มยึดเวลาจอง — คืน null ถ้าว่าง หรือข้อความบอกว่าใครใช้ช่วงไหนอยู่
  */
+/** หาคิวใบแรกที่ใช้ทรัพยากร (เตียง/หมอ) เดียวกันคร่อมช่วงเวลานี้ในวันเดียวกัน */
+async function findResourceClash(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  column: "bed_id" | "therapist_id",
+  value: string,
+  queueDate: string,
+  startMin: number,
+  durationMin: number,
+  excludeIds: string[]
+) {
+  const { data } = await supabase
+    .from("queue_entries")
+    .select("id, customer_name, service_name, duration_min, start_time, started_at")
+    .eq("queue_date", queueDate)
+    .eq(column, value)
+    .not("status", "in", "(cancelled,rejected)")
+  return (
+    (data ?? []).find(
+      (e) =>
+        !excludeIds.includes(e.id) &&
+        overlaps(bedStartMin(e), e.duration_min, startMin, durationMin)
+    ) ?? null
+  )
+}
+
+/** ช่วงเวลา+เจ้าของคิวที่ชน — ใช้ประกอบข้อความ error ให้พนักงานรู้ว่าติดใคร */
+function clashLabel(clash: {
+  customer_name: string | null
+  service_name: string
+  duration_min: number
+  start_time: string
+  started_at: string | null
+}): string {
+  const s = bedStartMin(clash)
+  const who = clash.customer_name ? `คุณ${clash.customer_name}` : clash.service_name
+  return `${minToTime(s)}–${minToTime(s + clash.duration_min)} (คิว${who})`
+}
+
 async function bedConflictError(
   supabase: Awaited<ReturnType<typeof createClient>>,
   bedId: string | null,
@@ -65,21 +103,45 @@ async function bedConflictError(
   excludeIds: string[] = []
 ): Promise<string | null> {
   if (!bedId) return null
-  const { data } = await supabase
-    .from("queue_entries")
-    .select("id, customer_name, service_name, duration_min, start_time, started_at")
-    .eq("queue_date", queueDate)
-    .eq("bed_id", bedId)
-    .not("status", "in", "(cancelled,rejected)")
-  const clash = (data ?? []).find(
-    (e) =>
-      !excludeIds.includes(e.id) &&
-      overlaps(bedStartMin(e), e.duration_min, startMin, durationMin)
+  const clash = await findResourceClash(
+    supabase,
+    "bed_id",
+    bedId,
+    queueDate,
+    startMin,
+    durationMin,
+    excludeIds
   )
-  if (!clash) return null
-  const s = bedStartMin(clash)
-  const who = clash.customer_name ? `คุณ${clash.customer_name}` : clash.service_name
-  return `เตียงนี้ไม่ว่าง — ถูกใช้ ${minToTime(s)}–${minToTime(s + clash.duration_min)} โดยคิว${who} · เลือกเตียงอื่นหรือเปลี่ยนเวลา`
+  return clash
+    ? `เตียงนี้ไม่ว่าง — ถูกใช้ ${clashLabel(clash)} · เลือกเตียงอื่นหรือเปลี่ยนเวลา`
+    : null
+}
+
+/**
+ * หมอนวดก็มีจำกัดเหมือนเตียง — หมอหนึ่งคนรับได้ทีละคิว
+ * นับจากเวลานวดจริง: คิวที่เริ่มแล้วยึดเวลาเริ่มจริง (มาสายหมอติดนานขึ้น)
+ */
+async function therapistConflictError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  therapistId: string | null,
+  queueDate: string,
+  startMin: number,
+  durationMin: number,
+  excludeIds: string[] = []
+): Promise<string | null> {
+  if (!therapistId) return null
+  const clash = await findResourceClash(
+    supabase,
+    "therapist_id",
+    therapistId,
+    queueDate,
+    startMin,
+    durationMin,
+    excludeIds
+  )
+  return clash
+    ? `หมอคนนี้ติดคิว ${clashLabel(clash)} · เลือกหมอคนอื่นหรือเปลี่ยนเวลา`
+    : null
 }
 
 export async function createQueueEntry(form: FormData): Promise<Result> {
@@ -154,6 +216,14 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     durationMin
   )
   if (bedError) return { ok: false, error: bedError }
+  const therapistError = await therapistConflictError(
+    supabase,
+    therapistId,
+    queueDate,
+    timeToMin(startTime),
+    durationMin
+  )
+  if (therapistError) return { ok: false, error: therapistError }
 
   const linkedCustomerId = await linkOrCreateCustomer(
     supabase,
@@ -274,30 +344,54 @@ export async function createQueueGroup(
     }
   })
 
-  // เตียงมีจำกัด — เช็คชนกับคิวที่มีอยู่ และชนกันเองในกลุ่มเดียวกัน (สองคนเลือกเตียงเดียวกันเวลาทับกัน)
+  // เตียงและหมอมีจำกัด — เช็คชนกับคิวที่มีอยู่ และชนกันเองในกลุ่มเดียวกัน
+  // (สองคนเลือกเตียง/หมอเดียวกันเวลาทับกัน — รายการต่อเวลาไม่ชนเพราะเวลาเรียงต่อกัน)
   for (const [i, row] of rows.entries()) {
-    if (!row.bed_id) continue
     const startMin = timeToMin(row.start_time)
-    const bedError = await bedConflictError(
-      supabase,
-      row.bed_id,
-      queueDate,
-      startMin,
-      row.duration_min
-    )
-    if (bedError) return { ok: false, error: `คนที่ ${i + 1}: ${bedError}` }
-    const inGroupClash = rows
-      .slice(0, i)
-      .some(
-        (r) =>
-          r.bed_id === row.bed_id &&
-          overlaps(timeToMin(r.start_time), r.duration_min, startMin, row.duration_min)
+    if (row.bed_id) {
+      const bedError = await bedConflictError(
+        supabase,
+        row.bed_id,
+        queueDate,
+        startMin,
+        row.duration_min
       )
-    if (inGroupClash)
-      return {
-        ok: false,
-        error: `คนที่ ${i + 1}: เลือกเตียงซ้ำกับคนอื่นในกลุ่มช่วงเวลาเดียวกัน — เตียงหนึ่งใช้ได้ทีละคน`,
-      }
+      if (bedError) return { ok: false, error: `คนที่ ${i + 1}: ${bedError}` }
+      const inGroupBedClash = rows
+        .slice(0, i)
+        .some(
+          (r) =>
+            r.bed_id === row.bed_id &&
+            overlaps(timeToMin(r.start_time), r.duration_min, startMin, row.duration_min)
+        )
+      if (inGroupBedClash)
+        return {
+          ok: false,
+          error: `คนที่ ${i + 1}: เลือกเตียงซ้ำกับคนอื่นในกลุ่มช่วงเวลาเดียวกัน — เตียงหนึ่งใช้ได้ทีละคน`,
+        }
+    }
+    if (row.therapist_id) {
+      const therapistError = await therapistConflictError(
+        supabase,
+        row.therapist_id,
+        queueDate,
+        startMin,
+        row.duration_min
+      )
+      if (therapistError) return { ok: false, error: `คนที่ ${i + 1}: ${therapistError}` }
+      const inGroupTherapistClash = rows
+        .slice(0, i)
+        .some(
+          (r) =>
+            r.therapist_id === row.therapist_id &&
+            overlaps(timeToMin(r.start_time), r.duration_min, startMin, row.duration_min)
+        )
+      if (inGroupTherapistClash)
+        return {
+          ok: false,
+          error: `คนที่ ${i + 1}: เลือกหมอซ้ำกับคนอื่นในกลุ่มช่วงเวลาเดียวกัน — หมอหนึ่งคนรับได้ทีละคิว`,
+        }
+    }
   }
 
   const { error } = await supabase.from("queue_entries").insert(rows)
@@ -377,6 +471,15 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
     [id]
   )
   if (bedError) return { ok: false, error: bedError }
+  const therapistError = await therapistConflictError(
+    supabase,
+    therapistId,
+    current.queue_date,
+    timeToMin(startTime),
+    durationMin,
+    [id]
+  )
+  if (therapistError) return { ok: false, error: therapistError }
 
   const { error } = await supabase
     .from("queue_entries")
@@ -413,13 +516,13 @@ export async function moveQueueEntry(
     return { ok: false, error: "เวลาไม่ถูกต้อง" }
   const supabase = await createClient()
 
-  // ลากเลื่อนเวลาแล้วเตียงเดิมอาจไปชนคิวใบอื่น — เตียงมีจำกัด ใช้ซ้อนกันไม่ได้
+  // ลากเลื่อนเวลา/ย้ายช่องหมอ — เตียงเดิมและหมอปลายทางต้องไม่ชนคิวใบอื่น
   const { data: moving } = await supabase
     .from("queue_entries")
     .select("bed_id, queue_date, duration_min")
     .eq("id", id)
     .maybeSingle()
-  if (moving?.bed_id) {
+  if (moving) {
     const bedError = await bedConflictError(
       supabase,
       moving.bed_id,
@@ -429,6 +532,15 @@ export async function moveQueueEntry(
       [id]
     )
     if (bedError) return { ok: false, error: bedError }
+    const therapistError = await therapistConflictError(
+      supabase,
+      therapistId,
+      moving.queue_date,
+      timeToMin(startTime),
+      moving.duration_min,
+      [id]
+    )
+    if (therapistError) return { ok: false, error: therapistError }
   }
 
   const { error } = await supabase
@@ -563,7 +675,7 @@ async function loadPendingSet(id: string) {
   const { data: one } = await supabase
     .from("queue_entries")
     .select(
-      "id, group_id, queue_date, start_time, service_name, customer_name, line_user_id, status, notes"
+      "id, group_id, queue_date, start_time, duration_min, therapist_id, bed_id, service_name, customer_name, line_user_id, status, notes"
     )
     .eq("id", id)
     .maybeSingle()
@@ -572,7 +684,7 @@ async function loadPendingSet(id: string) {
   const { data: all } = await supabase
     .from("queue_entries")
     .select(
-      "id, group_id, queue_date, start_time, service_name, customer_name, line_user_id, status, notes"
+      "id, group_id, queue_date, start_time, duration_min, therapist_id, bed_id, service_name, customer_name, line_user_id, status, notes"
     )
     .eq("group_id", one.group_id)
     .eq("status", "pending")
@@ -643,6 +755,42 @@ export async function approveBooking(id: string): Promise<Result> {
       }
     }
   }
+  // รับแล้วแต่หมอ/เตียงของคิวนี้ชนกับคิวอื่น → เตือนให้จัดใหม่ (ไม่บล็อกการรับ —
+  // ลูกค้าได้คำยืนยันไปแล้ว พนักงานค่อยสลับหมอ/เตียง/เวลาบนบอร์ดได้)
+  const ids2 = set.entries.map((e) => e.id)
+  const clashKinds = new Set<string>()
+  for (const e of set.entries) {
+    const startMin = timeToMin(e.start_time.slice(0, 5))
+    if (
+      await therapistConflictError(
+        supabase,
+        e.therapist_id,
+        e.queue_date,
+        startMin,
+        e.duration_min,
+        ids2
+      )
+    )
+      clashKinds.add("หมอ")
+    if (
+      await bedConflictError(
+        supabase,
+        e.bed_id,
+        e.queue_date,
+        startMin,
+        e.duration_min,
+        ids2
+      )
+    )
+      clashKinds.add("เตียง")
+  }
+  if (clashKinds.size > 0) {
+    const kinds = [...clashKinds].join("/")
+    warning = [warning, `⚠️ ${kinds}ของคิวนี้ชนกับคิวอื่น — เปิดการ์ดจัด${kinds}หรือเวลาใหม่ด้วย`]
+      .filter(Boolean)
+      .join(" · ")
+  }
+
   // แจ้งกลุ่มทีมร้าน: คิวนี้ถูกรับแล้ว โดยใคร — ทุกคนเห็นสถานะเดียวกันไม่ต้องถามกันเอง
   const approver = await getMyProfile()
   await notifyQueueGroup(

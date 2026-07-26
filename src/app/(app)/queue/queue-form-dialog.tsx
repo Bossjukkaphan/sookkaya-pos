@@ -12,7 +12,7 @@ import {
   type BookingChannel,
   type CustomerSource,
 } from "@/lib/customer-source"
-import { busyBedIds, minToTime, snapMin, timeToMin } from "@/lib/queue"
+import { busyBedIds, busyTherapistIds, minToTime, snapMin, timeToMin } from "@/lib/queue"
 import {
   createQueueEntry,
   createQueueGroup,
@@ -205,25 +205,42 @@ export function QueueFormDialog({
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">หมอนวด</legend>
-            <div className="grid grid-cols-3 gap-2">
-              <Button
-                type="button"
-                variant={therapistId === "" ? "default" : "outline"}
-                onClick={() => setTherapistId("")}
-              >
-                ยังไม่ระบุ
-              </Button>
-              {therapists.map((t) => (
-                <Button
-                  key={t.id}
-                  type="button"
-                  variant={therapistId === t.id ? "default" : "outline"}
-                  onClick={() => setTherapistId(t.id)}
-                >
-                  {t.name}
-                </Button>
-              ))}
-            </div>
+            {(() => {
+              // หมอหนึ่งคนรับได้ทีละคิว (นับจากเวลานวดจริง) — โหมดแก้ไขไม่นับใบตัวเอง
+              const busyT = busyTherapistIds(
+                entries.filter((en) => en.id !== entry?.id),
+                timeToMin(/^\d{2}:\d{2}$/.test(startTime) ? startTime : "10:00"),
+                duration
+              )
+              return (
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    type="button"
+                    variant={therapistId === "" ? "default" : "outline"}
+                    onClick={() => setTherapistId("")}
+                  >
+                    ยังไม่ระบุ
+                  </Button>
+                  {therapists.map((t) => (
+                    <Button
+                      key={t.id}
+                      type="button"
+                      variant={therapistId === t.id ? "default" : "outline"}
+                      className={
+                        busyT.has(t.id) && therapistId !== t.id
+                          ? "opacity-40 line-through"
+                          : ""
+                      }
+                      disabled={busyT.has(t.id) && therapistId !== t.id}
+                      onClick={() => setTherapistId(t.id)}
+                    >
+                      {t.name}
+                      {busyT.has(t.id) ? " · ติดคิว" : ""}
+                    </Button>
+                  ))}
+                </div>
+              )
+            })()}
           </fieldset>
 
           <div className="space-y-2">

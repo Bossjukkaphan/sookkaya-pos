@@ -11,7 +11,7 @@ import {
   isBookingChannel,
   isCustomerSource,
 } from "@/lib/customer-source"
-import { PX_PER_MIN, minToX, overlaps, timeToMin } from "@/lib/queue"
+import { PX_PER_MIN, bedStartMin, minToX, overlaps, timeToMin } from "@/lib/queue"
 import {
   approveBooking,
   rejectBooking,
@@ -251,11 +251,12 @@ export function QueueCard({
       : null
   // จ่ายเงินแล้วแต่ไม่เคยกดเริ่มนวด — ข้อมูลเวลาโหว่ ต้องเตือนให้เติมย้อนหลัง
   const paidWithoutStart = entry.status === "paid" && !entry.started_at
-  // ซ้อนเวลากับการ์ดอื่นในแถวเดียวกัน → ขอบส้มเตือน (ไม่บล็อก เผื่อนวดคู่)
+  // ซ้อนเวลากับการ์ดอื่นในแถวหมอเดียวกัน → ขอบส้มเตือน — นับจากเวลานวดจริง
+  // (server กันเพิ่มใหม่แล้ว แต่การเริ่มช้า/เร็วกว่าจองอาจทำให้เวลาจริงไปทับกันทีหลัง)
   const hasOverlap = siblings.some(
     (s) =>
       s.status !== "cancelled" &&
-      overlaps(startMin, entry.duration_min, timeToMin(s.start_time), s.duration_min)
+      overlaps(bedStartMin(entry), entry.duration_min, bedStartMin(s), s.duration_min)
   )
   // คำขอจากไลน์ที่ยังไม่อนุมัติ แต่เลยเวลานัดของวันนี้ไปแล้ว → เตือนสีส้ม (รีบตัดสินใจ)
   const isOverduePending = entry.status === "pending" && isToday && startMin < nowMin

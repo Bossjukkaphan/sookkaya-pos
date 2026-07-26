@@ -5,6 +5,7 @@ import {
   PX_PER_MIN,
   bedStartMin,
   busyBedIds,
+  busyTherapistIds,
   clampStart,
   countFreeTherapists,
   minToTime,
@@ -101,5 +102,26 @@ describe("bedStartMin", () => {
     expect(
       bedStartMin({ start_time: "14:00", started_at: "2026-07-26T07:10:00+00:00" })
     ).toBe(850) // 07:10Z = 14:10 ไทย
+  })
+})
+
+describe("busyTherapistIds", () => {
+  it("หมอติดคิว = มีคิว(ไม่นับยกเลิก)คร่อมช่วงเวลา — เริ่มแล้วยึดเวลาเริ่มจริง", () => {
+    const entries = [
+      { therapist_id: "t1", start_time: "10:00", duration_min: 60, status: "waiting" },
+      { therapist_id: "t2", start_time: "10:00", duration_min: 60, status: "cancelled" },
+      { therapist_id: null, start_time: "10:00", duration_min: 60, status: "waiting" },
+      {
+        // จอง 11:00 แต่เริ่มจริง 11:30 (04:30Z) → ติดถึง 12:30
+        therapist_id: "t3",
+        start_time: "11:00",
+        duration_min: 60,
+        status: "in_service",
+        started_at: "2026-07-26T04:30:00+00:00",
+      },
+    ]
+    expect(busyTherapistIds(entries, 630, 30)).toEqual(new Set(["t1"]))
+    expect(busyTherapistIds(entries, 720, 30)).toEqual(new Set(["t3"])) // 12:00 ยังติด (เริ่มช้า)
+    expect(busyTherapistIds(entries, 660, 15)).toEqual(new Set()) // 11:00–11:15 ว่าง (t3 ยังไม่เริ่ม)
   })
 })
