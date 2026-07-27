@@ -133,3 +133,110 @@ export function compareRange(input: {
     topItems,
   }
 }
+
+export type Level = "unknown" | "ok" | "better" | "warn" | "alert"
+
+export type CategoryDelta = {
+  category: string
+  ruler: Ruler
+  /** revenue_linked = % ของยอดขาย · fixed = บาท */
+  current: number
+  baseline: number
+  /** ผลเป็นเงินของช่วงที่เทียบ ใช้ตัดสินเกณฑ์ 2,000 และเขียนบรรทัด "ประหยัดได้เท่าไร" */
+  impactBaht: number
+  deltaPct: number
+  level: Level
+}
+
+function levelOf(deltaPct: number, impactBaht: number): Level {
+  if (Math.abs(impactBaht) < MIN_IMPACT_BAHT) return "ok"
+  if (deltaPct >= ALERT_PCT) return "alert"
+  if (deltaPct >= WARN_PCT) return "warn"
+  if (deltaPct <= -WARN_PCT) return "better"
+  return "ok"
+}
+
+export function detectAnomalies(input: {
+  rows: ExpenseRow[]
+  revenueByDate: Map<string, number>
+  commissionByDate: Map<string, number>
+  month: string
+  throughDay: number
+  /** false = ข้ามหมวดคงที่ทั้งหมด เพราะจ่ายเป็นก้อนวันที่ตายตัว เทียบกลางเดือนไม่มีความหมาย */
+  monthClosed: boolean
+}): CategoryDelta[] {
+  const { rows, revenueByDate, commissionByDate, month, throughDay, monthClosed } = input
+
+  const baselineMonths = Array.from({ length: BASELINE_MONTHS }, (_, i) =>
+    shiftMonth(month, -(i + 1))
+  )
+
+  const categories = new Set(
+    rows
+      .map((r) => r.category)
+      .filter((c) => rulerOf(c) !== "discretionary")
+  )
+
+  const out: CategoryDelta[] = []
+
+  for (const category of categories) {
+    const ruler = rulerOf(category)
+    if (ruler === "fixed" && !monthClosed) continue
+
+    const isCommission = category.startsWith(COMMISSION_CATEGORY_PREFIX)
+
+    /** ค่าของเดือนหนึ่งตามไม้บรรทัดของหมวดนี้ · null = คิดไม่ได้ (ไม่มีข้อมูล) */
+    const valueOf = (m: string): number | null => {
+      const baht = isCommission
+        ? sumDaily(commissionByDate, m, throughDay)
+        : rowsInRange(rows, m, throughDay)
+            .filter((r) => r.category === category)
+            .reduce((s, r) => s + r.amount, 0)
+
+      if (ruler === "fixed") return baht > 0 ? baht : null
+
+      const revenue = sumDaily(revenueByDate, m, throughDay)
+      if (revenue <= 0) return null
+      return (baht / revenue) * 100
+    }
+
+    const current = valueOf(month)
+    const history = baselineMonths.map(valueOf).filter((v): v is number => v !== null)
+
+    if (current === null || history.length < BASELINE_MONTHS) {
+      out.push({
+        category,
+        ruler,
+        current: current ?? 0,
+        baseline: 0,
+        impactBaht: 0,
+        deltaPct: 0,
+        level: "unknown",
+      })
+      continue
+    }
+
+    const baseline = median(history)
+    const deltaPct = baseline === 0 ? 0 : ((current - baseline) / baseline) * 100
+    const impactBaht =
+      ruler === "fixed"
+        ? current - baseline
+        : ((current - baseline) / 100) * sumDaily(revenueByDate, month, throughDay)
+
+    out.push({
+      category,
+      ruler,
+      current,
+      baseline,
+      impactBaht,
+      deltaPct,
+      level: levelOf(deltaPct, impactBaht),
+    })
+  }
+
+  // เรื่องที่ต้องแก้ขึ้นก่อน แล้วค่อยเรื่องที่ดีขึ้น
+  const order: Record<Level, number> = { alert: 0, warn: 1, better: 2, ok: 3, unknown: 4 }
+  return out.sort(
+    (a, b) => order[a.level] - order[b.level] || Math.abs(b.impactBaht) - Math.abs(a.impactBaht)
+  )
+}
