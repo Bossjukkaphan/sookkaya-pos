@@ -17,6 +17,7 @@ import {
   PiggyBank,
   ScrollText,
   Settings,
+  UserCheck,
   Users,
   Wallet,
   type LucideIcon,
@@ -55,6 +56,7 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
     title: "หน้าร้าน",
     links: [
       { href: "/queue", label: "คิววันนี้", icon: Clock4 },
+      { href: "/checkin", label: "เข้างาน", icon: UserCheck },
       { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
       { href: "/commission", label: "ค่ามือ", icon: HandCoins },
       { href: "/members", label: "ระบบสมาชิก", icon: CreditCard },

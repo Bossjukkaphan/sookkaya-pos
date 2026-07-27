@@ -19,6 +19,7 @@ import {
   overlaps,
   timeToMin,
 } from "@/lib/queue"
+import { deriveCardStatus } from "@/lib/queue-status"
 import {
   approveBooking,
   rejectBooking,
@@ -217,6 +218,7 @@ export function QueueCard({
   bedConflict = false,
   nowMin,
   isToday,
+  boardDateIsPast = false,
   dragging,
   dragOffset,
   movedRef,
@@ -238,6 +240,8 @@ export function QueueCard({
   /** นาทีปัจจุบัน (เวลาไทย) — ใช้เช็คคำขอค้าง (pending) ที่เลยเวลานัดแล้ว */
   nowMin: number
   isToday: boolean
+  /** บอร์ดกำลังดูวันที่ผ่านมาแล้ว — ทุกการ์ดถือว่าเสร็จสิ้น */
+  boardDateIsPast?: boolean
   dragging: boolean
   dragOffset: { dx: number; dy: number } | null
   movedRef: React.RefObject<boolean>
@@ -273,6 +277,16 @@ export function QueueCard({
   // คำขอจากไลน์ที่ยังไม่อนุมัติ แต่เลยเวลานัดของวันนี้ไปแล้ว → เตือนสีส้ม (รีบตัดสินใจ)
   const isOverduePending = entry.status === "pending" && isToday && startMin < nowMin
 
+  // สถานะแบบภาพ ThaiHand: ชิพนวด (รอ/กำลังนวด/เสร็จสิ้นอัตโนมัติ) + ชิพจ่าย แยกอิสระ
+  // วันที่ผ่านมา = เสร็จหมดแล้ว · วันหน้า = ยังไม่เริ่ม · เฉพาะวันนี้ใช้เวลาจริง
+  const statusNow = isToday ? nowMin : boardDateIsPast ? 24 * 60 * 2 : -1
+  const derived = deriveCardStatus(entry, statusNow)
+  const SERVICE_CHIP: Record<string, { label: string; cls: string }> = {
+    waiting: { label: "รอเริ่ม", cls: "border-slate-300 bg-white text-slate-600" },
+    in_service: { label: "กำลังนวด", cls: "border-violet-300 bg-violet-100 text-violet-700" },
+    done: { label: "เสร็จสิ้น", cls: "border-emerald-300 bg-emerald-100 text-emerald-700" },
+  }
+
   function changeStatus(status: string) {
     startTransition(async () => {
       const r = await setQueueStatus(entry.id, status)
@@ -296,10 +310,18 @@ export function QueueCard({
             ? "border-orange-400"
             : isOverduePending
               ? "border-dashed border-orange-400"
-              : (STATUS_BORDER[entry.status] ?? "border-slate-300")
-        } ${STATUS_BG[entry.status] ?? "bg-white"} ${
-          dragging ? "z-30 opacity-80 ring-2 ring-violet-400" : "z-[5]"
-        }`}
+              : entry.status === "pending"
+                ? STATUS_BORDER.pending
+                : derived.awaitingPayment
+                  ? "border-amber-400"
+                  : (STATUS_BORDER[derived.service] ?? "border-slate-300")
+        } ${
+          entry.status === "pending"
+            ? STATUS_BG.pending
+            : derived.awaitingPayment
+              ? "bg-amber-50"
+              : (STATUS_BG[derived.service] ?? "bg-white")
+        } ${dragging ? "z-30 opacity-80 ring-2 ring-violet-400" : "z-[5]"}`}
         style={{
           // clamp: การ์ดเวลานอกช่วงบอร์ด (ข้อมูลเก่า/คีย์ผิด) ต้องยังโผล่ริมขอบให้กดแก้ได้
           // — เคยล่องหนจนพนักงานคีย์ซ้ำ (server กันคีย์ใหม่นอกเวลาทำการแล้ว)
@@ -344,7 +366,7 @@ export function QueueCard({
               กลุ่ม {groupSize} คน
             </span>
           )}
-          {entry.customer_name || "ไม่ระบุลูกค้า"} · {STATUS_LABEL[entry.status]}
+          {entry.customer_name || "ไม่ระบุลูกค้า"}
           {/* เวลานวดจริงบนการ์ด — เห็นทันทีไม่ต้องเปิด dialog */}
           {actualLabel && ` · ▶${actualLabel}`}
           {warnNoStart && " · ⚠️ไม่มีเวลาเริ่ม"}
@@ -360,7 +382,48 @@ export function QueueCard({
               ห้องสปา
             </span>
           )}
+          {/* 2 ชิพอิสระตามภาพ: สถานะนวด + สถานะจ่าย */}
+          {entry.status !== "pending" && (
+            <>
+              <span
+                className={`ml-1 rounded border px-1 text-[10px] font-medium ${SERVICE_CHIP[derived.service].cls}`}
+              >
+                {SERVICE_CHIP[derived.service].label}
+              </span>
+              <span
+                className={`ml-1 rounded border px-1 text-[10px] font-medium ${
+                  derived.paid
+                    ? "border-emerald-300 bg-emerald-100 text-emerald-700"
+                    : derived.awaitingPayment
+                      ? "border-amber-400 bg-amber-100 text-amber-800"
+                      : "border-slate-200 bg-slate-50 text-slate-500"
+                }`}
+              >
+                {derived.paid ? "ชำระแล้ว" : derived.awaitingPayment ? "รอชำระ" : "ยังไม่ชำระ"}
+              </span>
+            </>
+          )}
         </p>
+        {/* จับเวลาสดมุมการ์ด (เฉพาะวันนี้): เหลือ/เกิน/สาย */}
+        {isToday && entry.status !== "pending" && (
+          <>
+            {derived.remainingMin !== undefined && (
+              <span className="absolute top-0.5 right-1 rounded bg-violet-600 px-1 text-[10px] font-semibold text-white">
+                เหลือ {derived.remainingMin} น.
+              </span>
+            )}
+            {derived.overdueMin !== undefined && (
+              <span className="absolute top-0.5 right-1 rounded bg-red-500 px-1 text-[10px] font-semibold text-white">
+                ⏳ เกิน {derived.overdueMin} น.
+              </span>
+            )}
+            {derived.lateStartMin !== undefined && !derived.paid && (
+              <span className="absolute top-0.5 right-1 rounded bg-orange-500 px-1 text-[10px] font-semibold text-white">
+                สาย {derived.lateStartMin} น.
+              </span>
+            )}
+          </>
+        )}
       </button>
 
       {/* เส้นเวลานวดจริง — ประกบขอบล่างของเลนการ์ด ลากจากเวลาเริ่มจริงถึงจบจริง
@@ -425,7 +488,12 @@ export function QueueCard({
               <p className="text-teal-700">ห้องสปาส่วนตัว (+100 ฿ ลูกค้าจ่ายตอนเก็บเงิน)</p>
             )}
             {entry.notes && <p>หมายเหตุ: {entry.notes}</p>}
-            <p>สถานะ: {STATUS_LABEL[entry.status]}</p>
+            <p>
+              สถานะ:{" "}
+              {entry.status === "pending"
+                ? STATUS_LABEL.pending
+                : `${SERVICE_CHIP[derived.service].label} · ${derived.paid ? "ชำระแล้ว" : "ยังไม่ชำระ"}`}
+            </p>
             {hasOverlap && (
               <p className="text-orange-600">
                 ⚠️ เวลาซ้อนกับคิวอื่น

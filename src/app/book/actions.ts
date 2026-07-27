@@ -220,6 +220,22 @@ export async function createBookingRequest(
       return { ok: false, error: "หมอที่เลือกไม่พร้อมให้จอง รีเฟรชแล้วลองใหม่นะคะ" }
   }
 
+  // เช็คอินรายวัน: วันไหนแอดมินติ๊กเข้างานแล้ว (วันนี้/พรุ่งนี้ล่วงหน้า)
+  // หมอที่ไม่ได้เข้างานวันนั้นรับรีเควสไม่ได้ · ไม่มีใครเข้างานเลย = ปิดรับทั้งวัน
+  const { data: dayAttendance } = await db
+    .from("attendance")
+    .select("therapist_id")
+    .eq("work_date", input.date)
+    .not("therapist_id", "is", null)
+  if ((dayAttendance ?? []).length > 0) {
+    const checkedInIds = new Set((dayAttendance ?? []).map((a) => a.therapist_id))
+    if (therapistIds.some((id) => !checkedInIds.has(id)))
+      return {
+        ok: false,
+        error: "หมอที่เลือกไม่ได้เข้างานวันนั้นค่ะ เลือกหมอท่านอื่นหรือให้ร้านจัดให้นะคะ",
+      }
+  }
+
   const maxDuration = Math.max(
     ...input.people.map((p) => serviceById.get(p.serviceId)!.duration_min ?? 60))
   const validSlots = computeSlots({ date: input.date, today, nowMin: nowMin(), durationMin: maxDuration })

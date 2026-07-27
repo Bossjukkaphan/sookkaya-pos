@@ -31,6 +31,7 @@ export type ServiceOption = { id: string; name: string; duration_min: number | n
 // Bed/shortBedName ย้ายไป @/lib/beds — ไฟล์นี้เป็น "use client" ห้ามมี util
 // ที่ฝั่ง server ต้องเรียก (หน้าประวัติบิลเคยพังเพราะ import จากที่นี่)
 import type { Bed } from "@/lib/beds"
+import { todayInShopTz } from "@/lib/datetime"
 export type { Bed }
 
 const ROW_H = 64
@@ -105,6 +106,7 @@ export function QueueBoard({
   initialEntries,
   boardDate,
   isToday,
+  checkedInTherapistIds,
   turnAwayCount,
   autoOpenAdd = false,
 }: {
@@ -114,10 +116,19 @@ export function QueueBoard({
   initialEntries: QueueEntry[]
   boardDate: string
   isToday: boolean
+  /** หมอที่เช็คอินวันนี้ (หน้า /checkin) — คนที่ไม่อยู่ในลิสต์ = แถวปิดรับคิว */
+  checkedInTherapistIds: string[]
   turnAwayCount: number
   /** มาจากปุ่ม "จองล่วงหน้า" หน้าบันทึกขาย — เปิดฟอร์มเพิ่มคิวให้เลย */
   autoOpenAdd?: boolean
 }) {
+  // มีข้อมูลเช็คอินของวันนั้นเมื่อไหร่ ค่อยบังคับ — วันที่ยังไม่ติ๊กเลย เปิดทุกแถวตามเดิม
+  const hasCheckinData = checkedInTherapistIds.length > 0
+  // บอร์ดวันเก่า: ทุกการ์ดถือว่าเสร็จสิ้นแล้ว (ใช้กับชิพสถานะบนการ์ด)
+  const boardDateIsPast = !isToday && boardDate < todayInShopTz()
+  const checkedIn = new Set(checkedInTherapistIds)
+  const isAbsentRow = (therapistId: string | null) =>
+    hasCheckinData && therapistId !== null && !checkedIn.has(therapistId)
   const [entries, setEntries] = useState(initialEntries)
   const [nowMin, setNowMin] = useState(nowMinInShopTz)
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -280,6 +291,13 @@ export function QueueBoard({
     if (newRow === -1) newRow = centerY < 0 ? 0 : rows.length - 1
     const therapistId = rows[newRow].id
 
+    // ห้ามวางการ์ดใส่แถวหมอที่ไม่ได้เช็คอิน (ปิดรับคิว)
+    if (isAbsentRow(therapistId)) {
+      toast.error("หมอคนนี้ไม่ได้เข้างานวันนี้ — เช็คอินได้ที่หน้า เข้างาน")
+      movedRef.current = false
+      return
+    }
+
     // optimistic — เห็นผลทันที แล้วยืนยันกับเซิร์ฟเวอร์
     setEntries((prev) =>
       prev.map((en) =>
@@ -357,6 +375,39 @@ export function QueueBoard({
         />
       )}
 
+      {/* สรุปสด ณ ตอนนี้ (ตามภาพตัวอย่าง): หมอที่เข้างานและว่าง + เตียงว่าง */}
+      {isToday &&
+        (() => {
+          const busy = entries.filter((e) => {
+            if (e.status === "pending" || !e.start_time) return false
+            const s = timeToMin(e.start_time)
+            return nowMin >= s && nowMin < s + e.duration_min
+          })
+          const busyTherapists = new Set(busy.map((e) => e.therapist_id).filter(Boolean))
+          const availableTherapists = hasCheckinData
+            ? therapists.filter((t) => checkedIn.has(t.id))
+            : therapists
+          const freeTherapists = availableTherapists.filter(
+            (t) => !busyTherapists.has(t.id)
+          ).length
+          const busyBeds = new Set(busy.map((e) => e.bed_id).filter(Boolean))
+          const freeBeds = beds.filter((b) => !busyBeds.has(b.id)).length
+          return (
+            <p className="text-sm font-medium text-slate-700">
+              ตอนนี้ว่าง{" "}
+              <span className={freeTherapists === 0 ? "text-red-600" : "text-emerald-700"}>
+                {freeTherapists} คน
+              </span>{" "}
+              ·{" "}
+              <span className={freeBeds === 0 ? "text-red-600" : "text-emerald-700"}>
+                {freeBeds} เตียง
+              </span>
+              {hasCheckinData &&
+                ` · เข้างาน ${checkedIn.size}/${therapists.length} คน`}
+            </p>
+          )
+        })()}
+
       <div ref={scrollRef} className="overflow-x-auto rounded-lg border bg-white">
         <div
           style={{ width: BOARD_W + 96 }}
@@ -385,13 +436,30 @@ export function QueueBoard({
 
           {rows.map((row, rowIndex) => (
             <div key={row.id ?? "none"} className="flex border-b last:border-b-0">
-              <div className="sticky left-0 z-20 flex w-24 shrink-0 items-center border-r bg-white px-2 text-sm font-medium">
+              <div className="sticky left-0 z-20 flex w-24 shrink-0 items-center gap-1.5 border-r bg-white px-2 text-sm font-medium">
+                {/* วงแหวนเช็คอินแบบภาพตัวอย่าง: เขียว=มา แดง=ไม่มา (เฉพาะวันที่มีข้อมูลติ๊กแล้ว) */}
+                {row.id !== null && hasCheckinData && (
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full border-[3px] ${
+                      checkedIn.has(row.id) ? "border-emerald-500" : "border-red-400"
+                    }`}
+                  />
+                )}
                 <span className="truncate">{row.name}</span>
               </div>
               <div
-                className="relative"
+                className={`relative ${
+                  isAbsentRow(row.id)
+                    ? "bg-[repeating-linear-gradient(45deg,transparent,transparent_8px,rgba(100,67,67,0.07)_8px,rgba(100,67,67,0.07)_16px)]"
+                    : ""
+                }`}
                 style={{ width: BOARD_W, height: layout.rowHeights[rowIndex] }}
                 onClick={(e) => {
+                  // แถวหมอที่ไม่เข้างาน — ปิดรับคิว แตะเพิ่มไม่ได้
+                  if (isAbsentRow(row.id)) {
+                    toast.error("หมอคนนี้ไม่ได้เข้างานวันนี้ — เช็คอินได้ที่หน้า เข้างาน")
+                    return
+                  }
                   // dialog ของการ์ดถูก portal ไปที่ body แต่ React ยัง bubble คลิกกลับมาตาม
                   // component tree ถึงแถวนี้ — เช็ค DOM จริง: target ไม่อยู่ในแถว = คลิกใน dialog
                   // (เคยทำช่อง "เหตุผลอื่น" ตอนปฏิเสธคิวไลน์ เผลอเปิดฟอร์มเพิ่มคิวซ้อนขึ้นมา)
@@ -455,6 +523,7 @@ export function QueueBoard({
                       }
                       nowMin={nowMin}
                       isToday={isToday}
+                      boardDateIsPast={boardDateIsPast}
                       dragging={drag?.lifted === true && drag.id === e.id}
                       dragOffset={
                         drag?.lifted === true && drag.id === e.id

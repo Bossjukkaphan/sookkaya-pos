@@ -37,6 +37,36 @@ export type Database = {
         }
         Relationships: []
       }
+      attendance: {
+        Row: {
+          checked_in_at: string
+          checked_out_at: string | null
+          created_by: string | null
+          id: string
+          staff_id: string | null
+          therapist_id: string | null
+          work_date: string
+        }
+        Insert: {
+          checked_in_at?: string
+          checked_out_at?: string | null
+          created_by?: string | null
+          id?: string
+          staff_id?: string | null
+          therapist_id?: string | null
+          work_date: string
+        }
+        Update: {
+          checked_in_at?: string
+          checked_out_at?: string | null
+          created_by?: string | null
+          id?: string
+          staff_id?: string | null
+          therapist_id?: string | null
+          work_date?: string
+        }
+        Relationships: []
+      }
       beds: {
         Row: {
           id: string
@@ -850,6 +880,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      staff_members: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          role: string
+          sort: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          role: string
+          sort?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          role?: string
+          sort?: number
+        }
+        Relationships: []
       }
       therapists: {
         Row: {

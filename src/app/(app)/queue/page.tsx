@@ -26,8 +26,13 @@ export default async function QueuePage({
     params.date && /^\d{4}-\d{2}-\d{2}$/.test(params.date) ? params.date : today
   const isToday = boardDate === today
 
-  const [{ data: therapists }, { data: services }, { data: entries }, { data: beds }] =
-    await Promise.all([
+  const [
+    { data: therapists },
+    { data: services },
+    { data: entries },
+    { data: beds },
+    { data: attendanceRows },
+  ] = await Promise.all([
       supabase
         .from("therapists")
         .select("id, name")
@@ -49,6 +54,11 @@ export default async function QueuePage({
         .select("id, room, name")
         .eq("is_active", true)
         .order("sort"),
+      supabase
+        .from("attendance")
+        .select("therapist_id")
+        .eq("work_date", boardDate)
+        .not("therapist_id", "is", null),
     ])
 
   const { count: turnAwayCount } = await supabase
@@ -104,6 +114,9 @@ export default async function QueuePage({
         initialEntries={entries ?? []}
         boardDate={boardDate}
         isToday={isToday}
+        checkedInTherapistIds={(attendanceRows ?? [])
+          .map((a) => a.therapist_id)
+          .filter((id): id is string => Boolean(id))}
         turnAwayCount={turnAwayCount ?? 0}
         autoOpenAdd={params.add === "1"}
       />
