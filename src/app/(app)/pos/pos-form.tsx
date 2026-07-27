@@ -40,6 +40,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Time24Field } from "@/components/time24-field"
 import { Card, CardContent } from "@/components/ui/card"
 import { ServiceCombobox } from "@/components/service-combobox"
 
@@ -395,15 +396,14 @@ export function PosForm({
       {/* เวลาใช้บริการ ≠ เวลาบันทึก — บิลมักถูกคีย์หลังนวดเสร็จ
           เวลาบันทึกระบบประทับให้เองเสมอ ช่องนี้คือเวลาที่ลูกค้าเริ่มใช้บริการจริง */}
       <div className="space-y-2">
-        <Label htmlFor="sale_time">เวลาที่ใช้บริการ</Label>
-        <Input
-          id="sale_time"
-          name="sale_time"
-          type="time"
+        <Label>เวลาที่ใช้บริการ (24 ชม.)</Label>
+        <input type="hidden" name="sale_time" value={serviceTime} />
+        <Time24Field
           value={serviceTime}
-          onChange={(e) => setServiceTime(e.target.value)}
-          className="h-12 w-40"
-          required
+          onChange={setServiceTime}
+          startHour={10}
+          endHour={23}
+          ariaLabel="เวลาที่ใช้บริการ"
         />
         <p className="text-xs text-slate-500">
           {initial

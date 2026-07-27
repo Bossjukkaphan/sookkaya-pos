@@ -156,7 +156,7 @@ async function therapistConflictError(
 function startTimeError(startTime: string): string | null {
   const m = timeToMin(startTime)
   if (m < BOARD_START_MIN || m >= BOARD_END_MIN)
-    return `เวลาเริ่ม ${startTime} อยู่นอกเวลาทำการ (10:00–22:00) — เช็ค AM/PM อีกทีนะ`
+    return `เวลาเริ่ม ${startTime} อยู่นอกช่วงบอร์ดคิว (${minToTime(BOARD_START_MIN)}–${minToTime(BOARD_END_MIN)})`
   return null
 }
 

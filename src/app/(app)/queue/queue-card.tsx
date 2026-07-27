@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Time24Field } from "@/components/time24-field"
 
 /** สีการ์ดตามสถานะ — รอ ขาว · กำลังนวด ม่วง · จ่ายแล้ว เขียว
  * แยกขอบกับพื้น เพราะขอบถูกแทนด้วยสีส้มเมื่อเวลาซ้อน (ผสม class ขอบสองสีแล้ว
@@ -70,6 +71,10 @@ const bkkTime = (iso: string) =>
 
 /** เวลาปัจจุบันของร้าน (HH:MM) — ค่าตั้งต้นของกล่องกรอกเวลาเริ่มนวด */
 const nowBkk = () => bkkTime(new Date().toISOString())
+
+/** นาทีที่นวดไปแล้ว → ป้ายสั้นๆ เช่น "25 น." / "1:15 ชม." */
+const fmtElapsed = (m: number) =>
+  m < 60 ? `${m} น.` : `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")} ชม.`
 
 /** นาทีในวัน → HH:MM — คำนวณเวลาจบจากเวลาเริ่มจริง + นาทีโปรแกรม */
 const minToHHMM = (m: number) =>
@@ -117,12 +122,8 @@ function StartTimeDialog({
         <p className="text-sm text-slate-600">
           เวลาเริ่มนวดจริง — แก้ได้ถ้ากดปุ่มช้ากว่าตอนที่เริ่มจริง
         </p>
-        <Input
-          type="time"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-          className="text-center text-lg"
-        />
+        {/* dropdown 24 ชม. — กัน AM/PM หลอกตาเหมือนฟอร์มเพิ่มคิว */}
+        <Time24Field value={time} onChange={setTime} ariaLabel="เวลาเริ่มนวดจริง" />
         <Button disabled={pending || !time} onClick={() => onSave(time)}>
           บันทึกเวลาเริ่มนวด
         </Button>
@@ -311,6 +312,15 @@ export function QueueCard({
             : undefined,
         }}
       >
+        {/* ตัวนับเวลาบริการ — เดินตามนาฬิกาบอร์ด (รีเฟรชทุกนาที) เฉพาะการ์ดที่กำลังนวดวันนี้ */}
+        {entry.status === "in_service" &&
+          actualStartMin !== null &&
+          isToday &&
+          nowMin >= actualStartMin && (
+            <span className="absolute top-0.5 right-1 rounded bg-violet-600 px-1 text-[10px] font-semibold text-white">
+              ⏱ {fmtElapsed(nowMin - actualStartMin)}
+            </span>
+          )}
         <p className="truncate font-semibold">
           {/* คำขอจากไลน์ที่ยังไม่อนุมัติ — เด่นสุดในบรรดาป้าย เพราะต้องรีบตัดสินใจ */}
           {entry.status === "pending" && (

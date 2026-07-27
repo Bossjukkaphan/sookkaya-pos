@@ -13,6 +13,7 @@ import {
   type CustomerSource,
 } from "@/lib/customer-source"
 import { busyBedIds, busyTherapistIds, minToTime, snapMin, timeToMin } from "@/lib/queue"
+import { Time24Field } from "@/components/time24-field"
 import {
   createQueueEntry,
   createQueueGroup,
@@ -269,14 +270,15 @@ export function QueueFormDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="q_start">เวลาเริ่ม</Label>
-              <Input
-                id="q_start"
-                name="start_time"
-                type="time"
-                className="h-11"
+              <Label>เวลาเริ่ม (24 ชม.)</Label>
+              {/* dropdown 24 ชม. — input type=time บนมือถือโชว์ AM/PM แล้วเคยคีย์ผิดเป็น 00:30 */}
+              <input type="hidden" name="start_time" value={startTime} />
+              <Time24Field
                 value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
+                onChange={setStartTime}
+                startHour={10}
+                endHour={23}
+                ariaLabel="เวลาเริ่ม"
               />
             </div>
             <div className="space-y-2">
