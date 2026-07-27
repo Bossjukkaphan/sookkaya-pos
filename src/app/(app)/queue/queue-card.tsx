@@ -12,6 +12,7 @@ import {
   isCustomerSource,
 } from "@/lib/customer-source"
 import {
+  CARD_H,
   PX_PER_MIN,
   bedStartMin,
   clampStart,
@@ -288,6 +289,23 @@ export function QueueCard({
     done: { label: "เสร็จ", cls: "border-emerald-300 bg-emerald-100 text-emerald-700" },
   }
 
+  // ป้ายจับเวลามุมขวาบน — เลือกมาแสดงตัวเดียวตามลำดับความเร่งด่วน
+  // (เตือนก่อน แล้วค่อยเวลาที่นวดไปแล้ว แล้วค่อยเวลาที่เหลือ)
+  const timerBadge: { label: string; cls: string } | null =
+    !isToday || entry.status === "pending"
+      ? null
+      : derived.overdueMin !== undefined
+        ? { label: `⏳ เกิน ${derived.overdueMin} น.`, cls: "bg-red-500" }
+        : derived.lateStartMin !== undefined && !derived.paid
+          ? { label: `สาย ${derived.lateStartMin} น.`, cls: "bg-orange-500" }
+          : entry.status === "in_service" &&
+              actualStartMin !== null &&
+              nowMin >= actualStartMin
+            ? { label: `⏱ ${fmtElapsed(nowMin - actualStartMin)}`, cls: "bg-violet-600" }
+            : derived.remainingMin !== undefined
+              ? { label: `เหลือ ${derived.remainingMin} น.`, cls: "bg-violet-600" }
+              : null
+
   function changeStatus(status: string) {
     startTransition(async () => {
       const r = await setQueueStatus(entry.id, status)
@@ -328,74 +346,69 @@ export function QueueCard({
           // — เคยล่องหนจนพนักงานคีย์ซ้ำ (server กันคีย์ใหม่นอกเวลาทำการแล้ว)
           left: minToX(clampStart(startMin, entry.duration_min)),
           top: laneTop + 6,
-          height: 52, // ROW_H 64 - ระยะขอบบนล่างเท่าเดิม (top-1.5/bottom-1.5)
+          height: CARD_H,
           width: entry.duration_min * PX_PER_MIN,
           transform: dragOffset
             ? `translate(${dragOffset.dx}px, ${dragOffset.dy}px)`
             : undefined,
         }}
       >
-        {/* ตัวนับเวลาบริการ — เดินตามนาฬิกาบอร์ด (รีเฟรชทุกนาที) เฉพาะการ์ดที่กำลังนวดวันนี้ */}
-        {entry.status === "in_service" &&
-          actualStartMin !== null &&
-          isToday &&
-          nowMin >= actualStartMin && (
-            <span className="absolute top-0.5 right-1 rounded bg-violet-600 px-1 text-[10px] font-semibold text-white">
-              ⏱ {fmtElapsed(nowMin - actualStartMin)}
-            </span>
-          )}
-        <p className="truncate font-semibold">
-          {/* คำขอจากไลน์ที่ยังไม่อนุมัติ — เด่นสุดในบรรดาป้าย เพราะต้องรีบตัดสินใจ */}
-          {entry.status === "pending" && (
-            <span className="mr-1 rounded bg-sky-500 px-1 text-[10px] text-white">
-              LINE·รออนุมัติ
-            </span>
-          )}
-          {/* ป้ายเฉพาะจอง/agency — walk-in คือกรณีปกติไม่ติดป้าย */}
-          {isCustomerSource(entry.source) && SOURCE_BADGE[entry.source] && (
+        {/* ทุกบรรทัดตัดคำแยกกัน และของที่ห้ามหาย (ป้าย/ชิพ) เป็นพี่น้อง shrink-0 เสมอ
+            — เคยเอาชิพต่อท้ายบรรทัด truncate แล้วหายหมดในการ์ด 60 นาที (กว้าง 120px) */}
+        <p className="flex items-center gap-1 leading-tight">
+          <span className="min-w-0 flex-1 truncate font-semibold">
+            {/* คำขอจากไลน์ที่ยังไม่อนุมัติ — เด่นสุดในบรรดาป้าย เพราะต้องรีบตัดสินใจ */}
+            {entry.status === "pending" && (
+              <span className="mr-1 rounded bg-sky-500 px-1 text-[10px] text-white">
+                LINE·รออนุมัติ
+              </span>
+            )}
+            {/* ป้ายเฉพาะจอง/agency — walk-in คือกรณีปกติไม่ติดป้าย */}
+            {isCustomerSource(entry.source) && SOURCE_BADGE[entry.source] && (
+              <span
+                className={`mr-1 rounded border px-1 text-[10px] font-medium ${SOURCE_BADGE[entry.source]}`}
+              >
+                {SOURCE_LABEL[entry.source]}
+              </span>
+            )}
+            {entry.service_name}
+          </span>
+          {/* ป้ายจับเวลาสด (เฉพาะวันนี้) — ตัวเดียวจบ เรียงตามความเร่งด่วน
+              เดิมแยกเป็น 4 ก้อน absolute มุมเดียวกัน การ์ดที่กำลังนวดเลยมี ⏱ กับ "เหลือ" ทับกัน */}
+          {timerBadge && (
             <span
-              className={`mr-1 rounded border px-1 text-[10px] font-medium ${SOURCE_BADGE[entry.source]}`}
+              className={`shrink-0 rounded px-1 text-[10px] font-semibold text-white ${timerBadge.cls}`}
             >
-              {SOURCE_LABEL[entry.source]}
+              {timerBadge.label}
             </span>
           )}
-          {entry.service_name}
         </p>
-        {/* บรรทัด 2 = ข้อความที่ตัดได้ + ชิพสถานะที่ห้ามตัด (shrink-0)
-            เดิมชิพต่อท้ายอยู่ในบรรทัด truncate เดียวกัน เลยหายทุกการ์ดที่แคบ */}
-        <span className="flex items-center gap-1">
-        <p className="min-w-0 flex-1 truncate text-slate-500">
-          {groupSize > 1 && (
-            <span className="mr-1 rounded border border-sky-200 bg-sky-50 px-1 text-[10px] font-medium text-sky-700">
-              กลุ่ม {groupSize} คน
-            </span>
-          )}
-          {entry.customer_name || "ไม่ระบุลูกค้า"}
-          {/* เวลานวดจริงบนการ์ด — เห็นทันทีไม่ต้องเปิด dialog */}
-          {actualLabel && ` · ▶${actualLabel}`}
+        <p className="truncate leading-tight text-slate-600">
+          👤 {entry.customer_name || "ไม่ระบุลูกค้า"}
+          {groupSize > 1 && ` · กลุ่ม ${groupSize} คน`}
+          {entry.is_request && " · 💖รีเควส"}
+        </p>
+        <p className="truncate leading-tight text-slate-500">
+          🕐 {minToHHMM(startMin)}–{minToHHMM(startMin + entry.duration_min)} ·{" "}
+          {entry.duration_min} น.
+          {/* เวลานวดจริงโชว์เมื่อไม่ตรงเวลาจอง — ตรงกันแล้วไม่ต้องรกการ์ด */}
+          {actualLabel && actualStartMin !== startMin && ` · ▶${actualLabel}`}
           {warnNoStart && " · ⚠️ไม่มีเวลาเริ่ม"}
-          {bed && ` · ${shortBedName(bed)}`}
+        </p>
+        <p className="truncate leading-tight text-slate-500">
+          📍 {bed ? `${bed.room} (${bed.name})` : "ยังไม่ระบุเตียง"}
           {bedConflict && " ⚠️ซ้อน"}
-          {entry.is_request && (
-            <span className="ml-1 rounded border border-amber-200 bg-amber-50 px-1 text-[10px] font-medium text-amber-700">
-              รีเควส
-            </span>
-          )}
-          {entry.private_room && (
-            <span className="ml-1 rounded border border-teal-200 bg-teal-50 px-1 text-[10px] font-medium text-teal-700">
-              ห้องสปา
-            </span>
-          )}
+          {entry.private_room && " · ห้องสปา"}
         </p>
         {entry.status !== "pending" && (
-          <span className="flex shrink-0 gap-0.5">
+          <p className="flex gap-0.5 leading-tight">
             <span
               className={`rounded border px-1 text-[10px] font-medium ${SERVICE_CHIP[derived.service].cls}`}
             >
               {SERVICE_CHIP[derived.service].label}
             </span>
             {/* ชิพจ่ายเงินโชว์เฉพาะตอนมีความหมาย — "ยังไม่ชำระ" ของคิวที่ยังไม่เริ่ม
-                เป็นค่าปกติอยู่แล้ว ตัดออกเพื่อเหลือที่ให้ชื่อลูกค้าบนการ์ดแคบ */}
+                เป็นค่าปกติอยู่แล้ว ตัดออกเพื่อไม่ให้การ์ดรก */}
             {(derived.paid || derived.awaitingPayment) && (
               <span
                 className={`rounded border px-1 text-[10px] font-medium ${
@@ -404,31 +417,10 @@ export function QueueCard({
                     : "border-amber-400 bg-amber-100 text-amber-800"
                 }`}
               >
-                {derived.paid ? "จ่าย" : "ค้างจ่าย"}
+                {derived.paid ? "ชำระแล้ว" : "ค้างจ่าย"}
               </span>
             )}
-          </span>
-        )}
-        </span>
-        {/* จับเวลาสดมุมการ์ด (เฉพาะวันนี้): เหลือ/เกิน/สาย */}
-        {isToday && entry.status !== "pending" && (
-          <>
-            {derived.remainingMin !== undefined && (
-              <span className="absolute top-0.5 right-1 rounded bg-violet-600 px-1 text-[10px] font-semibold text-white">
-                เหลือ {derived.remainingMin} น.
-              </span>
-            )}
-            {derived.overdueMin !== undefined && (
-              <span className="absolute top-0.5 right-1 rounded bg-red-500 px-1 text-[10px] font-semibold text-white">
-                ⏳ เกิน {derived.overdueMin} น.
-              </span>
-            )}
-            {derived.lateStartMin !== undefined && !derived.paid && (
-              <span className="absolute top-0.5 right-1 rounded bg-orange-500 px-1 text-[10px] font-semibold text-white">
-                สาย {derived.lateStartMin} น.
-              </span>
-            )}
-          </>
+          </p>
         )}
       </button>
 
@@ -442,7 +434,7 @@ export function QueueCard({
           }`}
           style={{
             left: minToX(actualStartMin),
-            top: laneTop + 6 + 52 - 3,
+            top: laneTop + 6 + CARD_H - 3,
             width: entry.duration_min * PX_PER_MIN,
           }}
         />

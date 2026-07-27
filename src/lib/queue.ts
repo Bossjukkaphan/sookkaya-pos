@@ -6,6 +6,11 @@ export const SLOT_MIN = 15
 /** 1 นาที = 2px → ชั่วโมงละ 120px · บอร์ดกว้าง 1,440px */
 export const PX_PER_MIN = 2
 
+/** ความสูงการ์ดคิว — พอดี 5 บรรทัด (เมนู · ลูกค้า · เวลา · เตียง · ชิพสถานะ)
+ *  ROW_H = CARD_H + ระยะขอบบนล่าง 6px สองด้าน · ต้องคู่กันเสมอ ไม่งั้นพิกัดลากการ์ดเพี้ยน */
+export const CARD_H = 88
+export const ROW_H = CARD_H + 12
+
 export function timeToMin(t: string): number {
   const [h, m] = t.split(":").map(Number)
   return h * 60 + m

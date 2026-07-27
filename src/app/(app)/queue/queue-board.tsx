@@ -9,6 +9,7 @@ import {
   BOARD_END_MIN,
   BOARD_START_MIN,
   PX_PER_MIN,
+  ROW_H,
   bedStartMin,
   clampStart,
   countFreeTherapists,
@@ -34,8 +35,7 @@ import type { Bed } from "@/lib/beds"
 import { todayInShopTz } from "@/lib/datetime"
 export type { Bed }
 
-const ROW_H = 64
-const BOARD_W = (BOARD_END_MIN - BOARD_START_MIN) * PX_PER_MIN
+const BOARD_W =(BOARD_END_MIN - BOARD_START_MIN) * PX_PER_MIN
 
 /**
  * จัดคิวที่เวลาชนกันในแถวเดียวกันให้แยก "เลน" เรียงลงมา ไม่ทับกัน —
@@ -131,6 +131,8 @@ export function QueueBoard({
     hasCheckinData && therapistId !== null && !checkedIn.has(therapistId)
   const [entries, setEntries] = useState(initialEntries)
   const [nowMin, setNowMin] = useState(nowMinInShopTz)
+  // กางรายละเอียดหมอ/เตียงที่ว่าง — เปิดค้างไว้ตอนแรกเพราะเป็นข้อมูลที่ต้องดูก่อนรับลูกค้า
+  const [freeOpen, setFreeOpen] = useState(true)
   const [drag, setDrag] = useState<DragState | null>(null)
   // ฟอร์มเพิ่ม/แก้คิว — mount เมื่อเปิดเท่านั้น state ในฟอร์มจะสดเสมอ
   // autoOpenAdd: มาจากปุ่ม "จองล่วงหน้า" หน้าบันทึกขาย → เปิดฟอร์มรอเลย
@@ -394,20 +396,71 @@ export function QueueBoard({
             (t) => !busyTherapists.has(t.id)
           ).length
           const busyBeds = new Set(busy.map((e) => e.bed_id).filter(Boolean))
-          const freeBeds = beds.filter((b) => !busyBeds.has(b.id)).length
+          const freeBedList = beds.filter((b) => !busyBeds.has(b.id))
+          // แยกตามห้องเพื่อให้พนักงานรู้ทันทีว่าเหลือห้องไหน ไม่ใช่แค่จำนวนรวม
+          const byRoom = new Map<string, string[]>()
+          for (const b of freeBedList) {
+            byRoom.set(b.room, [...(byRoom.get(b.room) ?? []), b.name])
+          }
           return (
-            <p className="text-sm font-medium text-slate-700">
-              ตอนนี้ว่าง{" "}
-              <span className={freeTherapists === 0 ? "text-red-600" : "text-emerald-700"}>
-                {freeTherapists} คน
-              </span>{" "}
-              ·{" "}
-              <span className={freeBeds === 0 ? "text-red-600" : "text-emerald-700"}>
-                {freeBeds} เตียง
-              </span>
-              {hasCheckinData &&
-                ` · เข้างาน ${checkedIn.size}/${therapists.length} คน`}
-            </p>
+            <div className="rounded-lg border bg-white">
+              <button
+                type="button"
+                onClick={() => setFreeOpen((v) => !v)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium text-slate-700"
+              >
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                  ว่างตอนนี้
+                </span>
+                <span className={freeTherapists === 0 ? "text-red-600" : "text-emerald-700"}>
+                  {freeTherapists} คน
+                </span>
+                <span className="text-slate-300">·</span>
+                <span className={freeBedList.length === 0 ? "text-red-600" : "text-emerald-700"}>
+                  {freeBedList.length} เตียง
+                </span>
+                {hasCheckinData && (
+                  <span className="text-xs font-normal text-slate-500">
+                    เข้างาน {checkedIn.size}/{therapists.length} คน
+                  </span>
+                )}
+                <span className="ml-auto text-xs text-slate-400">
+                  {freeOpen ? "▲ ย่อ" : "▼ ดูรายละเอียด"}
+                </span>
+              </button>
+              {freeOpen && (
+                <div className="grid gap-3 border-t px-3 py-2 text-xs sm:grid-cols-2">
+                  <div>
+                    <p className="font-semibold text-slate-600">
+                      หมอที่ว่าง {freeTherapists}/{availableTherapists.length}
+                    </p>
+                    <p className="mt-0.5 text-slate-500">
+                      {availableTherapists
+                        .filter((t) => !busyTherapists.has(t.id))
+                        .map((t) => t.name)
+                        .join(" · ") || "ไม่มีหมอว่าง"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="font-semibold text-slate-600">
+                      เตียงที่ว่าง {freeBedList.length}/{beds.length}
+                    </p>
+                    {byRoom.size === 0 ? (
+                      <p className="mt-0.5 text-slate-500">ไม่มีเตียงว่าง</p>
+                    ) : (
+                      <ul className="mt-0.5 space-y-0.5 text-slate-500">
+                        {[...byRoom].map(([room, names]) => (
+                          <li key={room}>
+                            {room}: <span className="font-medium">{names.length}</span>{" "}
+                            <span className="text-slate-400">({names.join(", ")})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           )
         })()}
 
@@ -434,6 +487,15 @@ export function QueueBoard({
                   {h}:00
                 </span>
               ))}
+              {/* ป้ายเวลาปัจจุบันบนหัวเส้นม่วง — บอกว่าเส้นที่ลากลงไปทุกแถวคือเวลาเท่าไร */}
+              {isToday && nowMin >= BOARD_START_MIN && nowMin <= BOARD_END_MIN && (
+                <span
+                  className="absolute top-1 -translate-x-1/2 rounded bg-violet-600 px-1.5 py-0.5 text-[11px] font-semibold text-white"
+                  style={{ left: minToX(nowMin) }}
+                >
+                  {minToTime(nowMin)}
+                </span>
+              )}
             </div>
           </div>
 
