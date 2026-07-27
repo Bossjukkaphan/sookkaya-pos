@@ -273,3 +273,115 @@ export function detectAnomalies(input: {
     (a, b) => order[a.level] - order[b.level] || Math.abs(b.impactBaht) - Math.abs(a.impactBaht)
   )
 }
+
+export type Trend = "up" | "down" | "flat"
+
+export type MonthlySeries = {
+  months: string[]
+  byCategory: {
+    category: string
+    ruler: Ruler
+    /** เรียงตรงกับ months */
+    amounts: number[]
+    /** null = เดือนที่ปิดแล้วไม่ถึง 3 เดือน */
+    median3: number | null
+    trend: Trend | null
+  }[]
+  /** ต้นทุนรวมต่อรายได้ 100 บาท เรียงตรงกับ months */
+  costPer100Revenue: number[]
+}
+
+export function monthlySeries(input: {
+  rows: ExpenseRow[]
+  revenueByMonth: Map<string, number>
+  currentMonth: string
+}): MonthlySeries {
+  const { rows, revenueByMonth, currentMonth } = input
+
+  const months = [...new Set(rows.map((r) => r.expense_date.slice(0, 7)))].sort()
+  // เดือนปัจจุบันยอดยังไม่ครบ ถ้านับรวมจะได้ลูกศรชี้ลงทุกหมวดเสมอ
+  const closed = months.filter((m) => m < currentMonth)
+  const last3Closed = closed.slice(-3)
+
+  const categories = [...new Set(rows.map((r) => r.category))].sort()
+
+  const amountOf = (category: string, month: string) =>
+    rows
+      .filter((r) => r.category === category && r.expense_date.startsWith(`${month}-`))
+      .reduce((s, r) => s + r.amount, 0)
+
+  const byCategory = categories.map((category) => {
+    const history = last3Closed.map((m) => amountOf(category, m))
+    const enough = last3Closed.length === 3
+    let trend: Trend | null = null
+    if (enough) {
+      const [a, b, c] = history
+      trend = c > b && b > a ? "up" : c < b && b < a ? "down" : "flat"
+    }
+    return {
+      category,
+      ruler: rulerOf(category),
+      amounts: months.map((m) => amountOf(category, m)),
+      median3: enough ? median(history) : null,
+      trend,
+    }
+  })
+
+  const costPer100Revenue = months.map((m) => {
+    const revenue = revenueByMonth.get(m) ?? 0
+    if (revenue <= 0) return 0
+    const expense = rows
+      .filter((r) => r.expense_date.startsWith(`${m}-`))
+      .reduce((s, r) => s + r.amount, 0)
+    return (expense / revenue) * 100
+  })
+
+  return { months, byCategory, costPer100Revenue }
+}
+
+/** ประมาณรายจ่ายทั้งเดือนจากยอดที่บันทึกแล้ว + หมวดประจำที่ยังบันทึกไม่ครบ
+ *  หมวดที่เจ้าของร้านตั้งใจจ่ายเอง (การตลาด อื่นๆ) นับเฉพาะที่บันทึกแล้ว ไม่เดาต่อ
+ *  เพราะเป็นของก้อนเดียวที่ไม่ได้เกิดทุกเดือน */
+export function projectMonthEnd(input: {
+  rows: ExpenseRow[]
+  month: string
+  throughDay: number
+}): { total: number; assumedCategories: string[] } {
+  const { rows, month, throughDay } = input
+  const baselineMonths = Array.from({ length: BASELINE_MONTHS }, (_, i) =>
+    shiftMonth(month, -(i + 1))
+  )
+  const categories = [...new Set(rows.map((r) => r.category))].sort()
+
+  let total = 0
+  const assumedCategories: string[] = []
+
+  for (const category of categories) {
+    const recorded = rowsInRange(rows, month, throughDay)
+      .filter((r) => r.category === category)
+      .reduce((s, r) => s + r.amount, 0)
+
+    if (rulerOf(category) === "discretionary") {
+      total += recorded
+      continue
+    }
+
+    const history = baselineMonths
+      .map((m) =>
+        rows
+          .filter((r) => r.category === category && r.expense_date.startsWith(`${m}-`))
+          .reduce((s, r) => s + r.amount, 0)
+      )
+      .filter((v) => v > 0)
+
+    const typical = history.length === BASELINE_MONTHS ? median(history) : 0
+    if (typical > recorded) {
+      total += typical
+      assumedCategories.push(category)
+    } else {
+      total += recorded
+    }
+  }
+
+  return { total, assumedCategories }
+}

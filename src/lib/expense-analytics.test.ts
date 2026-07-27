@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
-  COMMISSION_LABEL, WARN_PCT, compareRange, detectAnomalies, median, rulerOf,
+  COMMISSION_LABEL, WARN_PCT, compareRange, detectAnomalies, median, monthlySeries,
+  projectMonthEnd, rulerOf,
   type ExpenseRow,
 } from "./expense-analytics"
 
@@ -480,5 +481,83 @@ describe("detectAnomalies — ข้อมูลจริงหลายแถ�
     // ซักรีด 2,500 บาทของวันที่ 29 หายไปจากช่วง 1-27
     expect(Math.round((full.current / 100) * 347018)).toBe(9900)
     expect(Math.round((partial.current / 100) * 347018)).toBe(7400)
+  })
+})
+
+describe("monthlySeries — บล็อก 3 และ 4", () => {
+  const salary = (month: string, amount: number) =>
+    row(`${month}-30`, "เงินเดือนพนักงานประจำ", "เงินเดือน", amount)
+  const rows = [
+    salary("2026-03", 38250), salary("2026-04", 39500),
+    salary("2026-05", 41650), salary("2026-06", 52450),
+    salary("2026-07", 5000), // เดือนปัจจุบันยังไม่จบ ยอดยังไม่ครบ
+  ]
+  const revenueByMonth = new Map([
+    ["2026-03", 174842], ["2026-04", 316123],
+    ["2026-05", 286158], ["2026-06", 347018], ["2026-07", 322242],
+  ])
+
+  const result = monthlySeries({ rows, revenueByMonth, currentMonth: "2026-07" })
+
+  it("เรียงเดือนจากเก่าไปใหม่", () => {
+    expect(result.months).toEqual(["2026-03", "2026-04", "2026-05", "2026-06", "2026-07"])
+  })
+
+  it("ลูกศรแนวโน้มไม่นับเดือนปัจจุบัน ไม่งั้นทุกหมวดจะชี้ลงเสมอ", () => {
+    const salaryRow = result.byCategory.find((c) => c.category.startsWith("เงินเดือน"))!
+    expect(salaryRow.trend).toBe("up")
+  })
+
+  it("ค่ากลางคิดจากเดือนที่ปิดแล้ว 3 เดือนล่าสุด", () => {
+    const salaryRow = result.byCategory.find((c) => c.category.startsWith("เงินเดือน"))!
+    expect(salaryRow.median3).toBe(41650)
+  })
+
+  it("ต้นทุนต่อรายได้ 100 บาท", () => {
+    const jun = result.costPer100Revenue[3]
+    expect(Math.round(jun * 10) / 10).toBe(15.1)
+  })
+
+  it("เดือนที่ปิดแล้วไม่ถึง 3 เดือน ไม่แสดงลูกศรและไม่มีค่ากลาง", () => {
+    const short = monthlySeries({
+      rows: [salary("2026-05", 41650), salary("2026-06", 52450)],
+      revenueByMonth,
+      currentMonth: "2026-06",
+    })
+    const r = short.byCategory[0]
+    expect(r.trend).toBeNull()
+    expect(r.median3).toBeNull()
+  })
+})
+
+describe("projectMonthEnd — ประมาณการสิ้นเดือน", () => {
+  it("เติมเฉพาะหมวดประจำที่ยังบันทึกไม่ถึงค่าปกติ ส่วนหมวดตั้งใจจ่ายเองนับตามจริง", () => {
+    const rows = [
+      // ค่าเช่า: ปกติ 36,000 แต่เดือนนี้บันทึกแค่ 2,500 → ต้องเติมให้ถึง 36,000
+      row("2026-04-05", "ค่าเช่าสถานที่", "ค่าเช่า", 36000),
+      row("2026-05-05", "ค่าเช่าสถานที่", "ค่าเช่า", 36000),
+      row("2026-06-05", "ค่าเช่าสถานที่", "ค่าเช่า", 36000),
+      row("2026-07-05", "ค่าเช่าสถานที่", "มัดจำ", 2500),
+      // อื่นๆ เป็นหมวดตั้งใจจ่ายเอง → นับเฉพาะที่บันทึกแล้ว ไม่เดาต่อ
+      row("2026-04-20", "อื่นๆ", "ค่าป้ายร้าน", 104500),
+      row("2026-05-20", "อื่นๆ", "เครื่องซักผ้า", 22290),
+      row("2026-06-20", "อื่นๆ", "ค่าช่าง", 23000),
+      row("2026-07-20", "อื่นๆ", "โอนให้คุณบอส", 2990),
+    ]
+    const result = projectMonthEnd({ rows, month: "2026-07", throughDay: 27 })
+    expect(result.total).toBe(38990)
+    expect(result.assumedCategories).toEqual(["ค่าเช่าสถานที่"])
+  })
+
+  it("บันทึกเกินค่าปกติแล้วไม่ต้องเติม", () => {
+    const rows = [
+      row("2026-04-05", "ค่าเช่าสถานที่", "ค่าเช่า", 10000),
+      row("2026-05-05", "ค่าเช่าสถานที่", "ค่าเช่า", 10000),
+      row("2026-06-05", "ค่าเช่าสถานที่", "ค่าเช่า", 10000),
+      row("2026-07-05", "ค่าเช่าสถานที่", "ค่าเช่า", 15000),
+    ]
+    const result = projectMonthEnd({ rows, month: "2026-07", throughDay: 27 })
+    expect(result.total).toBe(15000)
+    expect(result.assumedCategories).toEqual([])
   })
 })
