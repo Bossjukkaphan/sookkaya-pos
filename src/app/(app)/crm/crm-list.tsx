@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -83,12 +84,17 @@ export function CrmList({
             <CardContent className="space-y-2 py-3">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="font-medium">
+                  {/* กดชื่อเข้าโปรไฟล์ลูกค้า — ประวัติการติดต่อกับประวัติการใช้บริการอยู่ที่นั่น
+                      พนักงานจะได้รู้ว่าเคยคุยอะไรไว้และเขาชอบนวดอะไร ก่อนกดโทร */}
+                  <Link
+                    href={`/customers/${row.customerId}`}
+                    className="font-medium underline decoration-slate-300 underline-offset-2 hover:decoration-slate-600"
+                  >
                     {row.name}
                     {row.nickname && (
                       <span className="font-normal text-slate-500"> ({row.nickname})</span>
                     )}
-                  </p>
+                  </Link>
                   <p className="text-xs text-slate-500">{row.reason}</p>
                 </div>
                 <a
