@@ -112,7 +112,7 @@ export function ShiftGrid({
                   type="button"
                   disabled={busy}
                   onClick={() => tap(person, kind, d.date)}
-                  className={`h-9 w-9 border-l text-[10px] font-medium ${cell.cls} ${
+                  className={`h-10 w-10 border-l text-[10px] font-medium ${cell.cls} ${
                     d.date === today ? "ring-2 ring-violet-400 ring-inset" : ""
                   } ${busy ? "opacity-40" : ""}`}
                   aria-label={`${person.name} วันที่ ${d.day}`}
@@ -148,7 +148,7 @@ export function ShiftGrid({
               {days.map((d) => (
                 <th
                   key={d.date}
-                  className={`w-9 border-l px-0 py-1 text-center font-normal ${
+                  className={`w-10 border-l px-0 py-1 text-center font-normal ${
                     d.date === today ? "bg-violet-100 font-bold text-violet-700" : ""
                   }`}
                 >

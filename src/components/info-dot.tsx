@@ -66,11 +66,11 @@ export function InfoDot({
         type="button"
         onClick={toggle}
         aria-label="ความหมาย"
-        className={
-          light
-            ? "flex text-white/60 transition-colors hover:text-white"
-            : "flex text-slate-300 transition-colors hover:text-slate-500"
-        }
+        // ไอคอนเล็ก 14px แต่ต้องกดโดนด้วยนิ้ว — ขยายพื้นที่กดด้วย before ที่มองไม่เห็น
+        // แทนการเพิ่ม padding เพราะ padding จะดันข้อความข้างๆ ให้เลื่อนตำแหน่ง
+        className={`relative flex transition-colors before:absolute before:-inset-3.5 before:content-[''] ${
+          light ? "text-white/60 hover:text-white" : "text-slate-300 hover:text-slate-500"
+        }`}
       >
         <Info className="size-3.5" aria-hidden />
       </button>
