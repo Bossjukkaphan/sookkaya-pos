@@ -3,6 +3,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { monthLabel, shiftMonth } from "@/lib/month"
 import { ExpenseForm } from "./expense-form"
 import { ExpenseRowActions } from "./expense-row-actions"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -25,17 +26,6 @@ const FALLBACK_CATEGORIES = [
   "อื่นๆ",
 ]
 
-const THAI_MONTHS = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-]
-
-function shiftMonth(yearMonth: string, delta: number) {
-  const [y, m] = yearMonth.split("-").map(Number)
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`
-}
-
 export default async function ExpensesPage({
   searchParams,
 }: {
@@ -50,7 +40,7 @@ export default async function ExpensesPage({
   const [my, mm] = month.split("-").map(Number)
   const monthStart = `${month}-01`
   const monthEnd = `${month}-${String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2, "0")}`
-  const monthName = `${THAI_MONTHS[mm - 1]} ${my + 543}`
+  const monthName = monthLabel(month)
 
   const [{ data: setting }, { data: expenses }] = await Promise.all([
     supabase
