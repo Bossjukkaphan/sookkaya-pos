@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
@@ -150,10 +150,13 @@ export function QueueBoard({
   const movedRef = useRef(false)
 
   // แถว 0 = ยังไม่ระบุหมอ (ที่พักคิว) · ที่เหลือแถวละหมอ
+  // หมอที่ไม่ได้เช็คอินถูกดันลงล่างสุด — แถวที่ใช้งานจริงอยู่ติดกัน ไม่มีแถวปิดมาคั่นกลาง
   const rows: { id: string | null; name: string }[] = [
     { id: null, name: "ยังไม่ระบุหมอ" },
-    ...therapists,
+    ...therapists.filter((t) => !isAbsentRow(t.id)),
+    ...therapists.filter((t) => isAbsentRow(t.id)),
   ]
+  const workingRowCount = 1 + therapists.filter((t) => !isAbsentRow(t.id)).length
 
   // ตำแหน่งเลน/ความสูงแต่ละแถว — คิวเวลาชนกันเรียงลงมาให้เห็นครบทุกใบ
   const layout = buildLayout(entries, rows.map((r) => r.id))
@@ -435,7 +438,17 @@ export function QueueBoard({
           </div>
 
           {rows.map((row, rowIndex) => (
-            <div key={row.id ?? "none"} className="flex border-b last:border-b-0">
+            <Fragment key={row.id ?? "none"}>
+              {/* คั่นก่อนกลุ่มหมอที่ไม่ได้เข้างาน — แถวใช้งานจริงจบตรงนี้ */}
+              {rowIndex === workingRowCount && (
+                <div className="flex border-b bg-slate-100">
+                  <div className="sticky left-0 z-20 w-24 shrink-0 border-r bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                    ไม่เข้างาน
+                  </div>
+                  <div style={{ width: BOARD_W }} />
+                </div>
+              )}
+              <div className="flex border-b last:border-b-0">
               <div className="sticky left-0 z-20 flex w-24 shrink-0 items-center gap-1.5 border-r bg-white px-2 text-sm font-medium">
                 {/* วงแหวนเช็คอินแบบภาพตัวอย่าง: เขียว=มา แดง=ไม่มา (เฉพาะวันที่มีข้อมูลติ๊กแล้ว) */}
                 {row.id !== null && hasCheckinData && (
@@ -537,7 +550,8 @@ export function QueueBoard({
                     />
                   ))}
               </div>
-            </div>
+              </div>
+            </Fragment>
           ))}
         </div>
       </div>
