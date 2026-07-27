@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  compareRange, detectAnomalies, median, rulerOf, type ExpenseRow,
+  COMMISSION_LABEL, compareRange, detectAnomalies, median, rulerOf, type ExpenseRow,
 } from "./expense-analytics"
 
 describe("rulerOf — หมวดไหนใช้ไม้บรรทัดอะไร", () => {
@@ -29,6 +29,12 @@ describe("rulerOf — หมวดไหนใช้ไม้บรรทัด�
   // กันเตือนผิดด้วยไม้บรรทัดผิดอัน — ปลอดภัยกว่าเดา
   it("หมวดที่ไม่รู้จักตกไปกลุ่มไม่เตือน", () => {
     expect(rulerOf("หมวดที่พึ่งสร้างเมื่อวาน")).toBe("discretionary")
+  })
+
+  it("คำขึ้นต้นต้องไม่สั้นจนคาบเกี่ยวหมวดอื่น", () => {
+    expect(rulerOf("ค่าน้ำมันรถ")).toBe("discretionary")
+    expect(rulerOf("ค่าน้ำดื่มลูกค้า")).toBe("discretionary")
+    expect(rulerOf("ค่าน้ำ / ค่าไฟ / Internet")).toBe("fixed")
   })
 })
 
@@ -205,7 +211,7 @@ describe("detectAnomalies — บล็อก 2", () => {
       throughDay: 27,
       monthClosed: false,
     })
-    const d = out.find((x) => x.category.startsWith("HR / payroll"))!
+    const d = out.find((x) => x.category === COMMISSION_LABEL)!
     // 131035/322242 = 40.66% เทียบค่ากลาง 39.82% = โตแค่ 2.1% ยังไม่ถึงเกณฑ์
     expect(Math.round(d.current * 100) / 100).toBe(40.66)
     expect(Math.round(d.baseline * 100) / 100).toBe(39.82)
@@ -285,5 +291,95 @@ describe("detectAnomalies — บล็อก 2", () => {
       monthClosed: true,
     })
     expect(out.find((d) => d.category.startsWith("ค่าเช่า"))!.level).toBe("better")
+  })
+
+  /** สร้างรายได้ก้อนเดียวกลางเดือน — พอสำหรับเทสที่ throughDay >= 15 */
+  const revMid = (amount: number) =>
+    new Map([
+      ["2026-04-15", amount], ["2026-05-15", amount],
+      ["2026-06-15", amount], ["2026-07-15", amount],
+    ])
+
+  it("หมวดที่เพิ่งโผล่ครั้งแรกต้องเป็น unknown ไม่ใช่ ok", () => {
+    const out = detectAnomalies({
+      rows: [row("2026-07-10", "วัสดุ-สิ้นเปลือง (น้ำมัน บาล์ม ฯลฯ)", "บาล์มล็อตใหญ่", 50000)],
+      revenueByDate: revMid(300000),
+      commissionByDate: new Map(),
+      month: "2026-07",
+      throughDay: 27,
+      monthClosed: false,
+    })
+    // เคยขึ้นเขียว "ปกติ" ทั้งที่ไม่มีอะไรให้เทียบ แล้วแบกยอด 50,000 ไว้ในการ์ด
+    expect(out.find((d) => d.category.startsWith("วัสดุ"))!.level).toBe("unknown")
+  })
+
+  it("บิลที่ยังไม่ได้คีย์ในเดือนที่ยังไม่จบ ต้องไม่ขึ้นว่าประหยัดได้", () => {
+    const laundry = (month: string) => row(`${month}-03`, "ซักรีด", "ค่าซักผ้า", 11000)
+    const out = detectAnomalies({
+      rows: [laundry("2026-04"), laundry("2026-05"), laundry("2026-06")],
+      revenueByDate: revMid(300000),
+      commissionByDate: new Map(),
+      month: "2026-07",
+      throughDay: 20,
+      monthClosed: false,
+    })
+    // เคยขึ้น better −100% ประหยัดได้ 11,000 ทั้งที่แค่ยังไม่คีย์บิล
+    expect(out.find((d) => d.category === "ซักรีด")!.level).toBe("unknown")
+  })
+
+  it("เดือนที่ยังไม่จบและเพิ่งผ่านไปไม่กี่วัน ต้องยังไม่ตัดสินหมวดที่วัดเป็น %", () => {
+    const supply = (month: string, amount: number) =>
+      row(`${month}-01`, "วัสดุ-สิ้นเปลือง (น้ำมัน บาล์ม ฯลฯ)", "ของใช้", amount)
+    const rev = new Map([
+      ["2026-04-01", 10000], ["2026-05-01", 10000],
+      ["2026-06-01", 10000], ["2026-07-01", 10000],
+    ])
+    const out = detectAnomalies({
+      rows: [supply("2026-04", 400), supply("2026-05", 400), supply("2026-06", 400), supply("2026-07", 8000)],
+      revenueByDate: rev,
+      commissionByDate: new Map(),
+      month: "2026-07",
+      throughDay: 2,
+      monthClosed: false,
+    })
+    // เคยขึ้นแดง "โต 1,900%" เพราะซื้อของล็อตเดียววันที่ 1 แล้วดูวันที่ 2
+    expect(out.find((d) => d.category.startsWith("วัสดุ"))!.level).toBe("unknown")
+  })
+
+  it("ค่ามือหมอต้องถูกตรวจแม้เดือนนั้นยังไม่มีแถวจ่ายค่ามือเลย", () => {
+    const out = detectAnomalies({
+      rows: [row("2026-07-01", "ซักรีด", "ซักผ้า", 5000)],
+      revenueByDate: revMid(300000),
+      commissionByDate: new Map([
+        ["2026-04-15", 100000], ["2026-05-15", 100000],
+        ["2026-06-15", 100000], ["2026-07-15", 200000],
+      ]),
+      month: "2026-07",
+      throughDay: 27,
+      monthClosed: false,
+    })
+    const d = out.find((x) => x.category === COMMISSION_LABEL)
+    // ค่ามือเป็นก้อนใหญ่สุดของร้าน หายไปทั้งหมวดแปลว่าหน้าเว็บโกหกว่าไม่มีอะไรผิดปกติ
+    expect(d).toBeDefined()
+    expect(d!.level).toBe("alert")
+  })
+
+  it("ชื่อหมวดค่ามือเก่ากับใหม่อยู่ด้วยกัน ต้องได้การ์ดเดียว", () => {
+    const out = detectAnomalies({
+      rows: [
+        row("2026-04-10", "HR / payroll (ค่ามือหมอ)", "ค่ามืองวด", 100000),
+        row("2026-07-10", "HR / payroll (เงินประกัน ค่ามือ เงินเดือน)", "ค่ามืองวด", 120000),
+      ],
+      revenueByDate: revMid(300000),
+      commissionByDate: new Map([
+        ["2026-04-15", 100000], ["2026-05-15", 100000],
+        ["2026-06-15", 100000], ["2026-07-15", 100000],
+      ]),
+      month: "2026-07",
+      throughDay: 27,
+      monthClosed: false,
+    })
+    expect(out.filter((d) => d.category === COMMISSION_LABEL)).toHaveLength(1)
+    expect(out.filter((d) => d.category.startsWith("HR / payroll"))).toHaveLength(0)
   })
 })

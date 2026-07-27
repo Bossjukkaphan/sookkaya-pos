@@ -24,6 +24,14 @@ export const BASELINE_MONTHS = 3
 /** ค่ามือหมอต้องอ่านจากงานที่ทำจริง ไม่ใช่จากแถวรายจ่าย เพราะยอดจ่ายขึ้นกับงวด */
 export const COMMISSION_CATEGORY_PREFIX = "HR / payroll"
 
+/** ป้ายชื่อหมวดค่ามือในบล็อกนี้ — ค่ามืออ่านจาก v_commission_daily ไม่ใช่จากแถวรายจ่าย
+ *  จึงไม่ผูกกับชื่อหมวดที่แก้ได้จากหน้าตั้งค่า (เคยเปลี่ยนชื่อมาแล้ว 27/7/2569 แล้วเกือบได้การ์ดซ้ำสองใบ) */
+export const COMMISSION_LABEL = "ค่ามือหมอ"
+
+/** เดือนที่ยังไม่จบต้องผ่านไปอย่างน้อยเท่านี้วันก่อนถึงจะตัดสินหมวดที่วัดเป็น % ของยอดขาย
+ *  ของที่ซื้อเป็นล็อต (บาล์ม ผ้า) ถ้าซื้อวันที่ 1 แล้วดูวันที่ 2 สัดส่วนจะพุ่งจนไร้ความหมาย */
+export const MIN_DAYS_FOR_RATIO = 7
+
 /** จับคู่ด้วยคำขึ้นต้น ไม่ใช่ชื่อเต็ม เพราะชื่อหมวดแก้ได้จากหน้าตั้งค่า
  *  หมวดที่จับไม่ได้ตกไปกลุ่ม discretionary เสมอ — เห็นตัวเลขครบแต่ไม่เตือนผิด */
 const RULER_BY_PREFIX: { prefix: string; ruler: Ruler }[] = [
@@ -32,7 +40,8 @@ const RULER_BY_PREFIX: { prefix: string; ruler: Ruler }[] = [
   { prefix: "ซักรีด", ruler: "revenue_linked" },
   { prefix: "ค่าเช่าสถานที่", ruler: "fixed" },
   { prefix: "เงินเดือนพนักงานประจำ", ruler: "fixed" },
-  { prefix: "ค่าน้ำ", ruler: "fixed" },
+  // "ค่าน้ำ" อย่างเดียวคาบเกี่ยว ค่าน้ำมันรถ / ค่าน้ำดื่มลูกค้า ซึ่งเป็นต้นทุนแปรผันตามงาน
+  { prefix: "ค่าน้ำ / ค่าไฟ", ruler: "fixed" },
 ]
 
 export function rulerOf(category: string): Ruler {
@@ -171,29 +180,53 @@ export function detectAnomalies(input: {
     shiftMonth(month, -(i + 1))
   )
 
-  const categories = new Set(
+  // หมวดค่ามือทุกชื่อ (เก่า/ใหม่) ยุบเหลือป้ายเดียว — ไม่งั้นเปลี่ยนชื่อหมวดทีไรได้การ์ดซ้ำ
+  const nonCommissionCategories = new Set(
     rows
       .map((r) => r.category)
-      .filter((c) => rulerOf(c) !== "discretionary")
+      .filter((c) => rulerOf(c) !== "discretionary" && !c.startsWith(COMMISSION_CATEGORY_PREFIX))
   )
+
+  // ค่ามือมาจาก commissionByDate เสมอ จึงต้องตรวจแม้ไม่มีแถวรายจ่ายค่ามือเลยในเดือนนี้
+  const hasCommissionData = [month, ...baselineMonths].some(
+    (m) => sumDaily(commissionByDate, m, throughDay) > 0
+  )
+
+  const categories: string[] = [...nonCommissionCategories]
+  if (hasCommissionData) categories.push(COMMISSION_LABEL)
 
   const out: CategoryDelta[] = []
 
   for (const category of categories) {
-    const ruler = rulerOf(category)
+    const isCommission = category === COMMISSION_LABEL
+    const ruler: Ruler = isCommission ? "revenue_linked" : rulerOf(category)
     if (ruler === "fixed" && !monthClosed) continue
 
-    const isCommission = category.startsWith(COMMISSION_CATEGORY_PREFIX)
+    if (ruler === "revenue_linked" && !monthClosed && throughDay < MIN_DAYS_FOR_RATIO) {
+      out.push({
+        category, ruler, current: 0, baseline: 0, impactBaht: 0, deltaPct: 0, level: "unknown",
+      })
+      continue
+    }
+
+    /** เดือนนั้นมีข้อมูลของหมวดนี้ไหม — ต้องแยก "ยังไม่ได้คีย์" ออกจาก "คีย์แล้วเป็น 0"
+     *  ถ้าเดาผิดจะได้การ์ดเขียว "ประหยัดได้ 11,000" ทั้งที่แค่ยังไม่คีย์บิล */
+    const hasData = (m: string): boolean =>
+      isCommission
+        ? sumDaily(commissionByDate, m, throughDay) > 0
+        : rowsInRange(rows, m, throughDay).some((r) => r.category === category)
 
     /** ค่าของเดือนหนึ่งตามไม้บรรทัดของหมวดนี้ · null = คิดไม่ได้ (ไม่มีข้อมูล) */
     const valueOf = (m: string): number | null => {
+      if (!hasData(m)) return null
+
       const baht = isCommission
         ? sumDaily(commissionByDate, m, throughDay)
         : rowsInRange(rows, m, throughDay)
             .filter((r) => r.category === category)
             .reduce((s, r) => s + r.amount, 0)
 
-      if (ruler === "fixed") return baht > 0 ? baht : null
+      if (ruler === "fixed") return baht
 
       const revenue = sumDaily(revenueByDate, m, throughDay)
       if (revenue <= 0) return null
