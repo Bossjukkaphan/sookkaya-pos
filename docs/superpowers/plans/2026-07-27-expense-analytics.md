@@ -1540,10 +1540,16 @@ import { monthShortLabel } from "@/lib/month"
   const series = monthlySeries({ rows, revenueByMonth, currentMonth: today.slice(0, 7) })
   const projection = projectMonthEnd({ rows, month, throughDay })
 
-  const costPoints = series.months.map((m, i) => ({
-    label: monthShortLabel(m),
-    value: Math.round(series.costPer100Revenue[i] * 10) / 10,
-  }))
+  // กราฟเส้นเอาเฉพาะเดือนที่ปิดแล้ว — เดือนที่ยังไม่จบมีแต่รายจ่ายที่คีย์ทันแล้ว
+  // (เงินเดือน ค่าเช่า และงวดค่ามือท้ายเดือนยังไม่เข้า) ถ้าต่อท้ายกราฟ เส้นจะดิ่งลง
+  // ทุกเดือนเหมือนต้นทุนลดฮวบ ทั้งที่ยังไม่มีอะไรเกิดขึ้นจริง
+  const costPoints = series.months
+    .map((m, i) => ({ month: m, value: series.costPer100Revenue[i] }))
+    .filter((p) => p.month < today.slice(0, 7))
+    .map((p) => ({
+      label: monthShortLabel(p.month),
+      value: Math.round(p.value * 10) / 10,
+    }))
 
   const latestClosed = series.months.filter((m) => m < today.slice(0, 7)).slice(-1)[0]
   const latestIndex = latestClosed ? series.months.indexOf(latestClosed) : -1
