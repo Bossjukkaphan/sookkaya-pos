@@ -48,11 +48,30 @@ export default async function ExpenseInsightsPage({
   // เดือนที่ยังไม่จบดูถึงวันนี้ · เดือนที่ปิดแล้วดูทั้งเดือน
   const throughDay = isCurrentMonth ? Number(today.slice(8, 10)) : daysInMonth(month)
 
+  // จำกัดช่วงข้อมูลที่ดึง — PostgREST คืนได้สูงสุด 1,000 แถวโดยดีฟอลต์ ถ้าไม่จำกัด
+  // วันไว้ พอรายจ่ายสะสมเกินพันแถว (ร้านบันทึกราว 410 แถว/ปี) ข้อมูลเก่าจะถูกตัดทิ้ง
+  // เงียบๆ โดยไม่มี error แล้วค่าปกติกับกราฟจะเพี้ยนโดยไม่มีใครรู้
+  //
+  // 13 เดือนพอสำหรับทุกอย่างบนหน้านี้: ตัวเทียบย้อนหลังใช้แค่ 3 เดือน
+  // ส่วนตารางกับกราฟก็ยาวเกินหนึ่งปีแล้วอ่านไม่ไหวอยู่ดี
+  // ยึดจากเดือนที่กำลังดูหรือเดือนปัจจุบัน แล้วแต่ว่าอันไหนเก่ากว่า
+  const anchorMonth = month < today.slice(0, 7) ? month : today.slice(0, 7)
+  const dataFloor = `${shiftMonth(anchorMonth, -12)}-01`
+
   const [{ data: expenseRows }, { data: dailyRows }, { data: commissionRows }] =
     await Promise.all([
-      supabase.from("expenses").select("expense_date, category, item, amount"),
-      supabase.from("v_daily_summary").select("sale_date, net_revenue"),
-      supabase.from("v_commission_daily").select("work_date, commission"),
+      supabase
+        .from("expenses")
+        .select("expense_date, category, item, amount")
+        .gte("expense_date", dataFloor),
+      supabase
+        .from("v_daily_summary")
+        .select("sale_date, net_revenue")
+        .gte("sale_date", dataFloor),
+      supabase
+        .from("v_commission_daily")
+        .select("work_date, commission")
+        .gte("work_date", dataFloor),
     ])
 
   const rows: ExpenseRow[] = (expenseRows ?? []).map((r) => ({
