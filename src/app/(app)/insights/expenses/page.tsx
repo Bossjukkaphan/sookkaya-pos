@@ -3,7 +3,7 @@ import { getMyProfile } from "@/lib/auth"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
 import { formatBaht } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
-import { daysInMonth, monthLabel, monthShortLabel, shiftMonth } from "@/lib/month"
+import { monthLabel, monthShortLabel, shiftMonth } from "@/lib/month"
 import {
   compareRange,
   detectAnomalies,
@@ -45,8 +45,13 @@ export default async function ExpenseInsightsPage({
   const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : today.slice(0, 7)
 
   const isCurrentMonth = month === today.slice(0, 7)
-  // เดือนที่ยังไม่จบดูถึงวันนี้ · เดือนที่ปิดแล้วดูทั้งเดือน
-  const throughDay = isCurrentMonth ? Number(today.slice(8, 10)) : daysInMonth(month)
+  // เดือนที่ยังไม่จบดูถึงวันนี้ · เดือนที่ปิดแล้วส่ง 31 = ไม่ตัดวันเลย
+  //
+  // ห้ามส่ง daysInMonth(month) ตรงนี้เด็ดขาด — ค่านี้ถูกเอาไปตัดเดือนฐานย้อนหลังด้วย
+  // ดูเดือน มิ.ย. (30 วัน) แล้วส่ง 30 จะไปตัดวันที่ 31 ของ มี.ค. และ พ.ค. ทิ้ง
+  // ซึ่งเป็นวันที่จ่ายเงินเดือนพอดี ประวัติเลยเหลือเดือนเดียวแล้วขึ้นว่า "ตัดสินไม่ได้"
+  // ทั้งที่เงินเดือนโต 32.8% (เจอจริงตอนตรวจหน้าเว็บหลัง deploy 27/7/2569)
+  const throughDay = isCurrentMonth ? Number(today.slice(8, 10)) : 31
 
   // จำกัดช่วงข้อมูลที่ดึง — PostgREST คืนได้สูงสุด 1,000 แถวโดยดีฟอลต์ ถ้าไม่จำกัด
   // วันไว้ พอรายจ่ายสะสมเกินพันแถว (ร้านบันทึกราว 410 แถว/ปี) ข้อมูลเก่าจะถูกตัดทิ้ง

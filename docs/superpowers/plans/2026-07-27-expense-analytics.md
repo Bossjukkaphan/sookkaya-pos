@@ -1258,8 +1258,12 @@ export default async function ExpenseInsightsPage({
   const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : today.slice(0, 7)
 
   const isCurrentMonth = month === today.slice(0, 7)
-  // เดือนที่ยังไม่จบดูถึงวันนี้ · เดือนที่ปิดแล้วดูทั้งเดือน
-  const throughDay = isCurrentMonth ? Number(today.slice(8, 10)) : daysInMonth(month)
+  // เดือนที่ยังไม่จบดูถึงวันนี้ · เดือนที่ปิดแล้วส่ง 31 = ไม่ตัดวันเลย
+  //
+  // ห้ามส่ง daysInMonth(month) ตรงนี้ — ค่านี้ถูกเอาไปตัดเดือนฐานย้อนหลังด้วย
+  // ดูเดือน มิ.ย. (30 วัน) แล้วส่ง 30 จะไปตัดวันที่ 31 ของ มี.ค./พ.ค. ทิ้ง
+  // ซึ่งเป็นวันจ่ายเงินเดือนพอดี แล้วการ์ดเตือนสำคัญที่สุดจะหายไปเงียบๆ
+  const throughDay = isCurrentMonth ? Number(today.slice(8, 10)) : 31
 
   const [{ data: expenseRows }, { data: dailyRows }, { data: commissionRows }] =
     await Promise.all([
