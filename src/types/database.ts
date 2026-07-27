@@ -11,6 +11,8 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
@@ -34,6 +36,63 @@ export type Database = {
           email?: string
           full_name?: string | null
           role?: string
+        }
+        Relationships: []
+      }
+      assistant_chat_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: number
+          role: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: never
+          role: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: never
+          role?: string
+        }
+        Relationships: []
+      }
+      assistant_memories: {
+        Row: {
+          content: string
+          created_at: string
+          id: number
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: never
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: never
+        }
+        Relationships: []
+      }
+      assistant_secrets: {
+        Row: {
+          key: string
+          updated_at: string
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string
+          value: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string
+          value?: string
         }
         Relationships: []
       }
@@ -64,6 +123,78 @@ export type Database = {
           staff_id?: string | null
           therapist_id?: string | null
           work_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_therapist_id_fkey"
+            columns: ["therapist_id"]
+            isOneToOne: false
+            referencedRelation: "therapists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      backup_expenses_costtype_20260720: {
+        Row: {
+          category: string | null
+          cost_type: string | null
+          id: string | null
+          item: string | null
+        }
+        Insert: {
+          category?: string | null
+          cost_type?: string | null
+          id?: string | null
+          item?: string | null
+        }
+        Update: {
+          category?: string | null
+          cost_type?: string | null
+          id?: string | null
+          item?: string | null
+        }
+        Relationships: []
+      }
+      backup_sales_time_20260720: {
+        Row: {
+          id: string | null
+          receipt_no: string | null
+          sale_time: string | null
+        }
+        Insert: {
+          id?: string | null
+          receipt_no?: string | null
+          sale_time?: string | null
+        }
+        Update: {
+          id?: string | null
+          receipt_no?: string | null
+          sale_time?: string | null
+        }
+        Relationships: []
+      }
+      backup_services_cost_20260720: {
+        Row: {
+          id: string | null
+          material_cost: number | null
+          name: string | null
+        }
+        Insert: {
+          id?: string | null
+          material_cost?: number | null
+          name?: string | null
+        }
+        Update: {
+          id?: string | null
+          material_cost?: number | null
+          name?: string | null
         }
         Relationships: []
       }
@@ -119,16 +250,39 @@ export type Database = {
           note?: string | null
           result?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "crm_contacts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
+          },
+        ]
       }
       customers: {
         Row: {
-          birthday: string | null
           acquisition_source: string | null
+          birthday: string | null
           created_at: string
           customer_type: string
           gender: string | null
           id: string
+          legacy_ref: string | null
           line_id: string | null
           name: string
           nationality: string | null
@@ -145,6 +299,7 @@ export type Database = {
           customer_type?: string
           gender?: string | null
           id?: string
+          legacy_ref?: string | null
           line_id?: string | null
           name: string
           nationality?: string | null
@@ -161,6 +316,7 @@ export type Database = {
           customer_type?: string
           gender?: string | null
           id?: string
+          legacy_ref?: string | null
           line_id?: string | null
           name?: string
           nationality?: string | null
@@ -256,6 +412,20 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "line_accounts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "line_accounts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
+          },
         ]
       }
       line_groups: {
@@ -324,6 +494,20 @@ export type Database = {
             referencedRelation: "customers"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "member_topups_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "member_topups_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
+          },
         ]
       }
       point_redemptions: {
@@ -369,7 +553,43 @@ export type Database = {
           used_by?: string | null
           used_sale_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "point_redemptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "point_redemptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_redemptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_redemptions_reward_id_fkey"
+            columns: ["reward_id"]
+            isOneToOne: false
+            referencedRelation: "point_rewards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "point_redemptions_used_sale_id_fkey"
+            columns: ["used_sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       point_rewards: {
         Row: {
@@ -399,7 +619,15 @@ export type Database = {
           service_id?: string | null
           sort?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "point_rewards_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       point_transactions: {
         Row: {
@@ -438,7 +666,50 @@ export type Database = {
           sale_id?: string | null
           topup_id?: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_transactions_redemption_id_fkey"
+            columns: ["redemption_id"]
+            isOneToOne: false
+            referencedRelation: "point_redemptions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "point_transactions_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "point_transactions_topup_id_fkey"
+            columns: ["topup_id"]
+            isOneToOne: false
+            referencedRelation: "member_topups"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -463,6 +734,42 @@ export type Database = {
           role?: string
         }
         Relationships: []
+      }
+      promotion_aliases: {
+        Row: {
+          promotion_id: string | null
+          raw_key: string
+          sample_text: string | null
+          updated_at: string
+        }
+        Insert: {
+          promotion_id?: string | null
+          raw_key: string
+          sample_text?: string | null
+          updated_at?: string
+        }
+        Update: {
+          promotion_id?: string | null
+          raw_key?: string
+          sample_text?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "promotion_aliases_promotion_id_fkey"
+            columns: ["promotion_id"]
+            isOneToOne: false
+            referencedRelation: "promotions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "promotion_aliases_promotion_id_fkey"
+            columns: ["promotion_id"]
+            isOneToOne: false
+            referencedRelation: "v_promo_roi"
+            referencedColumns: ["promotion_id"]
+          },
+        ]
       }
       promotions: {
         Row: {
@@ -491,43 +798,22 @@ export type Database = {
         }
         Relationships: []
       }
-      promotion_aliases: {
-        Row: {
-          promotion_id: string | null
-          raw_key: string
-          sample_text: string | null
-          updated_at: string
-        }
-        Insert: {
-          promotion_id?: string | null
-          raw_key: string
-          sample_text?: string | null
-          updated_at?: string
-        }
-        Update: {
-          promotion_id?: string | null
-          raw_key?: string
-          sample_text?: string | null
-          updated_at?: string
-        }
-        Relationships: []
-      }
       queue_entries: {
         Row: {
           bed_id: string | null
           booking_channel: string | null
+          client_key: string | null
           created_at: string
           customer_id: string | null
           customer_name: string | null
-          group_id: string | null
           customer_phone: string | null
-          is_request: boolean
-          private_room: boolean
-          client_key: string | null
           duration_min: number
+          group_id: string | null
           id: string
+          is_request: boolean
           line_user_id: string | null
           notes: string | null
+          private_room: boolean
           queue_date: string
           reject_reason: string | null
           sale_id: string | null
@@ -543,18 +829,18 @@ export type Database = {
         Insert: {
           bed_id?: string | null
           booking_channel?: string | null
+          client_key?: string | null
           created_at?: string
           customer_id?: string | null
           customer_name?: string | null
-          group_id?: string | null
           customer_phone?: string | null
-          is_request?: boolean
-          private_room?: boolean
-          client_key?: string | null
           duration_min: number
+          group_id?: string | null
           id?: string
+          is_request?: boolean
           line_user_id?: string | null
           notes?: string | null
+          private_room?: boolean
           queue_date: string
           reject_reason?: string | null
           sale_id?: string | null
@@ -570,18 +856,18 @@ export type Database = {
         Update: {
           bed_id?: string | null
           booking_channel?: string | null
+          client_key?: string | null
           created_at?: string
           customer_id?: string | null
           customer_name?: string | null
-          group_id?: string | null
           customer_phone?: string | null
-          is_request?: boolean
-          private_room?: boolean
-          client_key?: string | null
           duration_min?: number
+          group_id?: string | null
           id?: string
+          is_request?: boolean
           line_user_id?: string | null
           notes?: string | null
+          private_room?: boolean
           queue_date?: string
           reject_reason?: string | null
           sale_id?: string | null
@@ -594,7 +880,57 @@ export type Database = {
           therapist_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "queue_entries_bed_id_fkey"
+            columns: ["bed_id"]
+            isOneToOne: false
+            referencedRelation: "beds"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "queue_entries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "queue_entries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "queue_entries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "queue_entries_sale_id_fkey"
+            columns: ["sale_id"]
+            isOneToOne: false
+            referencedRelation: "sales"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "queue_entries_service_id_fkey"
+            columns: ["service_id"]
+            isOneToOne: false
+            referencedRelation: "services"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "queue_entries_therapist_id_fkey"
+            columns: ["therapist_id"]
+            isOneToOne: false
+            referencedRelation: "therapists"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       receipt_counters: {
         Row: {
@@ -619,20 +955,18 @@ export type Database = {
           booking_channel: string | null
           commission: number | null
           coupon_promo: string | null
-          credit_after: number | null
           created_at: string
           created_by: string | null
+          credit_after: number | null
           credit_used: number
-          edited_by: string | null
           customer_id: string | null
           customer_name: string | null
           customer_phone: string | null
           discount: number
-          id: string
+          edited_by: string | null
           group_id: string | null
+          id: string
           is_request: boolean
-          private_room: boolean
-          client_key: string | null
           member_status: string | null
           net_amount: number
           notes: string | null
@@ -640,8 +974,8 @@ export type Database = {
           price_normal: number
           receipt_no: string | null
           request_fee: number
-          room_fee: number
           revenue_recognize: number | null
+          room_fee: number
           sale_date: string
           sale_time: string | null
           service_id: string | null
@@ -657,20 +991,18 @@ export type Database = {
           booking_channel?: string | null
           commission?: number | null
           coupon_promo?: string | null
-          credit_after?: number | null
           created_at?: string
           created_by?: string | null
+          credit_after?: number | null
           credit_used?: number
-          edited_by?: string | null
           customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
           discount?: number
-          id?: string
+          edited_by?: string | null
           group_id?: string | null
+          id?: string
           is_request?: boolean
-          private_room?: boolean
-          client_key?: string | null
           member_status?: string | null
           net_amount: number
           notes?: string | null
@@ -678,8 +1010,8 @@ export type Database = {
           price_normal: number
           receipt_no?: string | null
           request_fee?: number
-          room_fee?: number
           revenue_recognize?: number | null
+          room_fee?: number
           sale_date: string
           sale_time?: string | null
           service_id?: string | null
@@ -695,20 +1027,18 @@ export type Database = {
           booking_channel?: string | null
           commission?: number | null
           coupon_promo?: string | null
-          credit_after?: number | null
           created_at?: string
           created_by?: string | null
+          credit_after?: number | null
           credit_used?: number
-          edited_by?: string | null
           customer_id?: string | null
           customer_name?: string | null
           customer_phone?: string | null
           discount?: number
-          id?: string
+          edited_by?: string | null
           group_id?: string | null
+          id?: string
           is_request?: boolean
-          private_room?: boolean
-          client_key?: string | null
           member_status?: string | null
           net_amount?: number
           notes?: string | null
@@ -716,8 +1046,8 @@ export type Database = {
           price_normal?: number
           receipt_no?: string | null
           request_fee?: number
-          room_fee?: number
           revenue_recognize?: number | null
+          room_fee?: number
           sale_date?: string
           sale_time?: string | null
           service_id?: string | null
@@ -728,11 +1058,32 @@ export type Database = {
         }
         Relationships: [
           {
+            foreignKeyName: "sales_bed_id_fkey"
+            columns: ["bed_id"]
+            isOneToOne: false
+            referencedRelation: "beds"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "sales_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "customers"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sales_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "sales_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
           },
           {
             foreignKeyName: "sales_service_id_fkey"
@@ -804,83 +1155,6 @@ export type Database = {
         }
         Relationships: []
       }
-      turn_aways: {
-        Row: {
-          created_at: string
-          created_by: string | null
-          id: string
-          note: string | null
-          queue_date: string
-        }
-        Insert: {
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          note?: string | null
-          queue_date: string
-        }
-        Update: {
-          created_at?: string
-          created_by?: string | null
-          id?: string
-          note?: string | null
-          queue_date?: string
-        }
-        Relationships: []
-      }
-      therapist_daily_commission: {
-        Row: {
-          guarantee_amount: number
-          id: string
-          is_paid: boolean
-          net_commission: number | null
-          notes: string | null
-          request_fee: number
-          room_fee: number
-          status: string | null
-          therapist_id: string
-          total_commission: number
-          total_income: number | null
-          work_date: string
-        }
-        Insert: {
-          guarantee_amount?: number
-          id?: string
-          is_paid?: boolean
-          net_commission?: number | null
-          notes?: string | null
-          request_fee?: number
-          room_fee?: number
-          status?: string | null
-          therapist_id: string
-          total_commission?: number
-          total_income?: number | null
-          work_date: string
-        }
-        Update: {
-          guarantee_amount?: number
-          id?: string
-          is_paid?: boolean
-          net_commission?: number | null
-          notes?: string | null
-          request_fee?: number
-          room_fee?: number
-          status?: string | null
-          therapist_id?: string
-          total_commission?: number
-          total_income?: number | null
-          work_date?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "therapist_daily_commission_therapist_id_fkey"
-            columns: ["therapist_id"]
-            isOneToOne: false
-            referencedRelation: "therapists"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       shift_plans: {
         Row: {
           created_at: string
@@ -912,7 +1186,22 @@ export type Database = {
           therapist_id?: string | null
           work_date?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "shift_plans_staff_id_fkey"
+            columns: ["staff_id"]
+            isOneToOne: false
+            referencedRelation: "staff_members"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shift_plans_therapist_id_fkey"
+            columns: ["therapist_id"]
+            isOneToOne: false
+            referencedRelation: "therapists"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       staff_members: {
         Row: {
@@ -941,6 +1230,56 @@ export type Database = {
         }
         Relationships: []
       }
+      therapist_daily_commission: {
+        Row: {
+          guarantee_amount: number
+          id: string
+          is_paid: boolean
+          net_commission: number | null
+          notes: string | null
+          request_fee: number
+          status: string | null
+          therapist_id: string
+          total_commission: number
+          total_income: number | null
+          work_date: string
+        }
+        Insert: {
+          guarantee_amount?: number
+          id?: string
+          is_paid?: boolean
+          net_commission?: number | null
+          notes?: string | null
+          request_fee?: number
+          status?: string | null
+          therapist_id: string
+          total_commission?: number
+          total_income?: number | null
+          work_date: string
+        }
+        Update: {
+          guarantee_amount?: number
+          id?: string
+          is_paid?: boolean
+          net_commission?: number | null
+          notes?: string | null
+          request_fee?: number
+          status?: string | null
+          therapist_id?: string
+          total_commission?: number
+          total_income?: number | null
+          work_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "therapist_daily_commission_therapist_id_fkey"
+            columns: ["therapist_id"]
+            isOneToOne: false
+            referencedRelation: "therapists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       therapists: {
         Row: {
           created_at: string
@@ -962,15 +1301,32 @@ export type Database = {
         }
         Relationships: []
       }
-    }
-    Views: {
-      v_point_balances: {
+      turn_aways: {
         Row: {
-          balance: number | null
-          customer_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          queue_date: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          queue_date: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          queue_date?: string
         }
         Relationships: []
       }
+    }
+    Views: {
       member_balances: {
         Row: {
           bonus_granted: number | null
@@ -987,14 +1343,10 @@ export type Database = {
         }
         Relationships: []
       }
-      v_daily_summary: {
+      v_commission_daily: {
         Row: {
-          cash_in: number | null
-          discount_total: number | null
-          net_revenue: number | null
-          sale_date: string | null
-          sessions: number | null
-          volume: number | null
+          commission: number | null
+          work_date: string | null
         }
         Relationships: []
       }
@@ -1013,35 +1365,23 @@ export type Database = {
         }
         Relationships: []
       }
+      v_daily_summary: {
+        Row: {
+          cash_in: number | null
+          discount_total: number | null
+          net_revenue: number | null
+          sale_date: string | null
+          sessions: number | null
+          volume: number | null
+        }
+        Relationships: []
+      }
       v_hourly_density: {
         Row: {
           hour: number | null
           revenue: number | null
           sessions: number | null
           weekday: number | null
-        }
-        Relationships: []
-      }
-      v_promo_roi: {
-        Row: {
-          customers: number | null
-          discount_given: number | null
-          first_used: string | null
-          kind: string | null
-          last_used: string | null
-          promotion_id: string | null
-          promotion_name: string | null
-          returning_customers: number | null
-          revenue: number | null
-          uses: number | null
-        }
-        Relationships: []
-      }
-      v_promo_unmatched: {
-        Row: {
-          raw_key: string | null
-          sample_text: string | null
-          uses: number | null
         }
         Relationships: []
       }
@@ -1076,6 +1416,58 @@ export type Database = {
         }
         Relationships: []
       }
+      v_point_balances: {
+        Row: {
+          balance: number | null
+          customer_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_ltv"
+            referencedColumns: ["customer_id"]
+          },
+        ]
+      }
+      v_promo_roi: {
+        Row: {
+          customers: number | null
+          discount_given: number | null
+          first_used: string | null
+          kind: string | null
+          last_used: string | null
+          promotion_id: string | null
+          promotion_name: string | null
+          returning_customers: number | null
+          revenue: number | null
+          uses: number | null
+        }
+        Relationships: []
+      }
+      v_promo_unmatched: {
+        Row: {
+          raw_key: string | null
+          sample_text: string | null
+          uses: number | null
+        }
+        Relationships: []
+      }
       v_therapist_daily: {
         Row: {
           guarantee_amount: number | null
@@ -1089,11 +1481,20 @@ export type Database = {
           total_income: number | null
           work_date: string | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sales_therapist_id_fkey"
+            columns: ["therapist_id"]
+            isOneToOne: false
+            referencedRelation: "therapists"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Functions: {
       app_role: { Args: never; Returns: string }
+      assistant_sql: { Args: { query: string }; Returns: Json }
       hourly_density: {
         Args: { from_date?: string }
         Returns: {
@@ -1115,18 +1516,125 @@ export type Database = {
   }
 }
 
-type DefaultSchema = Database["public"]
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
-  T extends keyof (DefaultSchema["Tables"] & DefaultSchema["Views"]),
-> = (DefaultSchema["Tables"] & DefaultSchema["Views"])[T] extends {
-  Row: infer R
+  DefaultSchemaTableNameOrOptions extends
+    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
 }
-  ? R
-  : never
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+      Row: infer R
+    }
+    ? R
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])
+    ? (DefaultSchema["Tables"] &
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        Row: infer R
+      }
+      ? R
+      : never
+    : never
 
-export type TablesInsert<T extends keyof DefaultSchema["Tables"]> =
-  DefaultSchema["Tables"][T] extends { Insert: infer I } ? I : never
+export type TablesInsert<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Insert: infer I
+    }
+    ? I
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Insert: infer I
+      }
+      ? I
+      : never
+    : never
 
-export type TablesUpdate<T extends keyof DefaultSchema["Tables"]> =
-  DefaultSchema["Tables"][T] extends { Update: infer U } ? U : never
+export type TablesUpdate<
+  DefaultSchemaTableNameOrOptions extends
+    | keyof DefaultSchema["Tables"]
+    | { schema: keyof DatabaseWithoutInternals },
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+    : never = never,
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+      Update: infer U
+    }
+    ? U
+    : never
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+        Update: infer U
+      }
+      ? U
+      : never
+    : never
+
+export type Enums<
+  DefaultSchemaEnumNameOrOptions extends
+    | keyof DefaultSchema["Enums"]
+    | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+    : never = never,
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+    : never
+
+export type CompositeTypes<
+  PublicCompositeTypeNameOrOptions extends
+    | keyof DefaultSchema["CompositeTypes"]
+    | { schema: keyof DatabaseWithoutInternals },
+  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
+    : never = never,
+> = PublicCompositeTypeNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
+  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
+    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
+    : never
+
+export const Constants = {
+  public: {
+    Enums: {},
+  },
+} as const
