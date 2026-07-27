@@ -198,7 +198,7 @@ export default async function TeamPage({
       <div className="flex flex-wrap items-center gap-2">
         <Link
           href={`/team?from=${prevMonth.from}&to=${prevMonth.to}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
+          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
         >
           ←
         </Link>
@@ -207,7 +207,7 @@ export default async function TeamPage({
         </span>
         <Link
           href={`/team?from=${nextMonth.from}&to=${nextMonth.to}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
+          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
         >
           →
         </Link>

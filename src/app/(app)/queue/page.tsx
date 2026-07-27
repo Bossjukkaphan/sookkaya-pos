@@ -88,7 +88,7 @@ export default async function QueuePage({
         <div className="flex gap-1">
           <Link
             href={`/queue?date=${shiftDate(boardDate, -1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
             aria-label="วันก่อนหน้า"
           >
             ←
@@ -100,7 +100,7 @@ export default async function QueuePage({
           )}
           <Link
             href={`/queue?date=${shiftDate(boardDate, 1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
             aria-label="วันถัดไป"
           >
             →

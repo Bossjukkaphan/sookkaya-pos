@@ -229,13 +229,13 @@ export default async function OverviewPage({
         <div className="flex gap-1">
           <Link
             href={`/overview?month=${shiftMonth(month, -1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
           >
             ←
           </Link>
           <Link
             href={`/overview?month=${shiftMonth(month, 1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
+            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
           >
             →
           </Link>
