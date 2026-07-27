@@ -291,7 +291,8 @@ export function QueueBell() {
         }
         aria-expanded={open}
         className={cn(
-          "relative flex size-9 items-center justify-center rounded-full transition-colors",
+          // size-10 = 40px — เป้าแตะขั้นต่ำที่นิ้วกดโดน (เดิม size-9 = 36px)
+          "relative flex size-10 items-center justify-center rounded-full transition-colors",
           open ? "bg-[#FFF0D1]/70 text-[#664343]" : "text-slate-500 hover:bg-slate-100"
         )}
       >

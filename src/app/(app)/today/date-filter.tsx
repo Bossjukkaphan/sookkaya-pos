@@ -33,7 +33,14 @@ export function DateFilter({
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => shiftWindow(-1)} aria-label="วันก่อนหน้า">
+        {/* ปุ่มเลื่อนวันต้องกดโดนด้วยนิ้ว — เดิม 35x28px เล็กกว่าปลายนิ้วที่กว้างราว 45px */}
+        <Button
+          variant="outline"
+          size="sm"
+          className="size-10 shrink-0"
+          onClick={() => shiftWindow(-1)}
+          aria-label="วันก่อนหน้า"
+        >
           ←
         </Button>
         <Input
@@ -53,7 +60,13 @@ export function DateFilter({
           className="h-9"
           aria-label="ถึงวันที่"
         />
-        <Button variant="outline" size="sm" onClick={() => shiftWindow(1)} aria-label="วันถัดไป">
+        <Button
+          variant="outline"
+          size="sm"
+          className="size-10 shrink-0"
+          onClick={() => shiftWindow(1)}
+          aria-label="วันถัดไป"
+        >
           →
         </Button>
       </div>

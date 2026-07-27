@@ -71,7 +71,7 @@ export default async function ShiftsPage({
       <div className="flex items-center justify-center gap-2">
         <Link
           href={`/shifts?month=${shiftMonth(month, -1)}`}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-slate-100"
+          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
         >
           ←
         </Link>
@@ -80,7 +80,7 @@ export default async function ShiftsPage({
         </span>
         <Link
           href={`/shifts?month=${shiftMonth(month, 1)}`}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-slate-100"
+          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
         >
           →
         </Link>

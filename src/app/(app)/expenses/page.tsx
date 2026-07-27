@@ -92,14 +92,14 @@ export default async function ExpensesPage({
           <div className="flex items-center justify-center gap-2">
             <Link
               href={`/expenses?month=${shiftMonth(month, -1)}`}
-              className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100"
+              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
             >
               ←
             </Link>
             <span className="min-w-36 text-center text-sm font-semibold">{monthName}</span>
             <Link
               href={`/expenses?month=${shiftMonth(month, 1)}`}
-              className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100"
+              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border text-sm hover:bg-slate-100"
             >
               →
             </Link>
