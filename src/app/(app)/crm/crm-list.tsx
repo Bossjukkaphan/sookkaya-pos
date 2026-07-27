@@ -86,9 +86,11 @@ export function CrmList({
                 <div className="min-w-0">
                   {/* กดชื่อเข้าโปรไฟล์ลูกค้า — ประวัติการติดต่อกับประวัติการใช้บริการอยู่ที่นั่น
                       พนักงานจะได้รู้ว่าเคยคุยอะไรไว้และเขาชอบนวดอะไร ก่อนกดโทร */}
+                  {/* flex + min-h-10 ให้เป้าแตะกินทั้งบรรทัดและสูงพอสำหรับนิ้ว
+                      เดิมครอบแค่ตัวอักษร ชื่อเล่นสั้นอย่าง "ตี๋" เลยได้เป้าแค่ 9x21px แตะไม่โดน */}
                   <Link
                     href={`/customers/${row.customerId}`}
-                    className="font-medium underline decoration-slate-300 underline-offset-2 hover:decoration-slate-600"
+                    className="flex min-h-10 items-center font-medium underline decoration-slate-300 underline-offset-2 hover:decoration-slate-600"
                   >
                     {row.name}
                     {row.nickname && (
