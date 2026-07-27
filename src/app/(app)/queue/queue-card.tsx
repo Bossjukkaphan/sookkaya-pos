@@ -281,10 +281,11 @@ export function QueueCard({
   // วันที่ผ่านมา = เสร็จหมดแล้ว · วันหน้า = ยังไม่เริ่ม · เฉพาะวันนี้ใช้เวลาจริง
   const statusNow = isToday ? nowMin : boardDateIsPast ? 24 * 60 * 2 : -1
   const derived = deriveCardStatus(entry, statusNow)
+  // ป้ายสั้นเพราะการ์ด 60 นาทีกว้างแค่ 120px — สีคือตัวสื่อความหมายหลัก
   const SERVICE_CHIP: Record<string, { label: string; cls: string }> = {
-    waiting: { label: "รอเริ่ม", cls: "border-slate-300 bg-white text-slate-600" },
-    in_service: { label: "กำลังนวด", cls: "border-violet-300 bg-violet-100 text-violet-700" },
-    done: { label: "เสร็จสิ้น", cls: "border-emerald-300 bg-emerald-100 text-emerald-700" },
+    waiting: { label: "รอ", cls: "border-slate-300 bg-white text-slate-600" },
+    in_service: { label: "นวดอยู่", cls: "border-violet-300 bg-violet-100 text-violet-700" },
+    done: { label: "เสร็จ", cls: "border-emerald-300 bg-emerald-100 text-emerald-700" },
   }
 
   function changeStatus(status: string) {
@@ -360,7 +361,10 @@ export function QueueCard({
           )}
           {entry.service_name}
         </p>
-        <p className="truncate text-slate-500">
+        {/* บรรทัด 2 = ข้อความที่ตัดได้ + ชิพสถานะที่ห้ามตัด (shrink-0)
+            เดิมชิพต่อท้ายอยู่ในบรรทัด truncate เดียวกัน เลยหายทุกการ์ดที่แคบ */}
+        <span className="flex items-center gap-1">
+        <p className="min-w-0 flex-1 truncate text-slate-500">
           {groupSize > 1 && (
             <span className="mr-1 rounded border border-sky-200 bg-sky-50 px-1 text-[10px] font-medium text-sky-700">
               กลุ่ม {groupSize} คน
@@ -382,28 +386,30 @@ export function QueueCard({
               ห้องสปา
             </span>
           )}
-          {/* 2 ชิพอิสระตามภาพ: สถานะนวด + สถานะจ่าย */}
-          {entry.status !== "pending" && (
-            <>
+        </p>
+        {entry.status !== "pending" && (
+          <span className="flex shrink-0 gap-0.5">
+            <span
+              className={`rounded border px-1 text-[10px] font-medium ${SERVICE_CHIP[derived.service].cls}`}
+            >
+              {SERVICE_CHIP[derived.service].label}
+            </span>
+            {/* ชิพจ่ายเงินโชว์เฉพาะตอนมีความหมาย — "ยังไม่ชำระ" ของคิวที่ยังไม่เริ่ม
+                เป็นค่าปกติอยู่แล้ว ตัดออกเพื่อเหลือที่ให้ชื่อลูกค้าบนการ์ดแคบ */}
+            {(derived.paid || derived.awaitingPayment) && (
               <span
-                className={`ml-1 rounded border px-1 text-[10px] font-medium ${SERVICE_CHIP[derived.service].cls}`}
-              >
-                {SERVICE_CHIP[derived.service].label}
-              </span>
-              <span
-                className={`ml-1 rounded border px-1 text-[10px] font-medium ${
+                className={`rounded border px-1 text-[10px] font-medium ${
                   derived.paid
                     ? "border-emerald-300 bg-emerald-100 text-emerald-700"
-                    : derived.awaitingPayment
-                      ? "border-amber-400 bg-amber-100 text-amber-800"
-                      : "border-slate-200 bg-slate-50 text-slate-500"
+                    : "border-amber-400 bg-amber-100 text-amber-800"
                 }`}
               >
-                {derived.paid ? "ชำระแล้ว" : derived.awaitingPayment ? "รอชำระ" : "ยังไม่ชำระ"}
+                {derived.paid ? "จ่าย" : "ค้างจ่าย"}
               </span>
-            </>
-          )}
-        </p>
+            )}
+          </span>
+        )}
+        </span>
         {/* จับเวลาสดมุมการ์ด (เฉพาะวันนี้): เหลือ/เกิน/สาย */}
         {isToday && entry.status !== "pending" && (
           <>

@@ -1,6 +1,6 @@
 "use client"
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 
 import { createClient } from "@/lib/supabase/client"
@@ -438,27 +438,24 @@ export function QueueBoard({
           </div>
 
           {rows.map((row, rowIndex) => (
-            <Fragment key={row.id ?? "none"}>
-              {/* คั่นก่อนกลุ่มหมอที่ไม่ได้เข้างาน — แถวใช้งานจริงจบตรงนี้ */}
-              {rowIndex === workingRowCount && (
-                <div className="flex border-b bg-slate-100">
-                  <div className="sticky left-0 z-20 w-24 shrink-0 border-r bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
-                    ไม่เข้างาน
-                  </div>
-                  <div style={{ width: BOARD_W }} />
-                </div>
-              )}
-              <div className="flex border-b last:border-b-0">
-              <div className="sticky left-0 z-20 flex w-24 shrink-0 items-center gap-1.5 border-r bg-white px-2 text-sm font-medium">
-                {/* วงแหวนเช็คอินแบบภาพตัวอย่าง: เขียว=มา แดง=ไม่มา (เฉพาะวันที่มีข้อมูลติ๊กแล้ว) */}
-                {row.id !== null && hasCheckinData && (
-                  <span
-                    className={`h-2.5 w-2.5 shrink-0 rounded-full border-[3px] ${
-                      checkedIn.has(row.id) ? "border-emerald-500" : "border-red-400"
-                    }`}
-                  />
+            <div key={row.id ?? "none"} className="flex border-b last:border-b-0">
+              <div className="sticky left-0 z-20 flex w-24 shrink-0 flex-col justify-center border-r bg-white px-2 text-sm font-medium">
+                {/* ป้ายกลุ่ม "ไม่เข้างาน" อยู่ในช่องชื่อ ไม่ใช่แถวแยก — แถวแยกจะกินความสูง
+                    ทำให้พิกัดที่ใช้คำนวณตอนลากการ์ดเพี้ยนจากที่ตาเห็น (เคยพลาดมาแล้ว) */}
+                {rowIndex === workingRowCount && (
+                  <span className="text-[10px] font-normal text-slate-400">ไม่เข้างาน</span>
                 )}
-                <span className="truncate">{row.name}</span>
+                <span className="flex items-center gap-1.5">
+                  {/* วงแหวนเช็คอินแบบภาพตัวอย่าง: เขียว=มา แดง=ไม่มา (เฉพาะวันที่มีข้อมูลติ๊กแล้ว) */}
+                  {row.id !== null && hasCheckinData && (
+                    <span
+                      className={`h-2.5 w-2.5 shrink-0 rounded-full border-[3px] ${
+                        checkedIn.has(row.id) ? "border-emerald-500" : "border-red-400"
+                      }`}
+                    />
+                  )}
+                  <span className="truncate">{row.name}</span>
+                </span>
               </div>
               <div
                 className={`relative ${
@@ -550,8 +547,7 @@ export function QueueBoard({
                     />
                   ))}
               </div>
-              </div>
-            </Fragment>
+            </div>
           ))}
         </div>
       </div>
