@@ -371,8 +371,11 @@ export function QueueBoard({
               {hours.map((h) => (
                 <span
                   key={h}
-                  className="absolute top-1.5 -translate-x-1/2 text-xs text-slate-500"
-                  style={{ left: minToX(h * 60) }}
+                  // ตัวแรกห้ามกึ่งกลาง — ครึ่งซ้ายจะมุดใต้คอลัมน์ชื่อหมอที่ลอยทับอยู่ (เลข 10:00 เคยโดนบัง)
+                  className={`absolute top-1.5 text-xs text-slate-500 ${
+                    h * 60 === BOARD_START_MIN ? "" : "-translate-x-1/2"
+                  }`}
+                  style={{ left: minToX(h * 60) + (h * 60 === BOARD_START_MIN ? 4 : 0) }}
                 >
                   {h}:00
                 </span>
