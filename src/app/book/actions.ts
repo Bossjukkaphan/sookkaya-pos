@@ -236,6 +236,21 @@ export async function createBookingRequest(
       }
   }
 
+  // แผนวันหยุดล่วงหน้า (หน้า /shifts): หมอที่วางแผนหยุด/ลาวันนั้น รับรีเควสไม่ได้
+  // ครอบคลุมวันอนาคตที่ยังไม่มีการเช็คอิน — ลูกค้าไม่ต้องมาถูกยกเลิกทีหลัง
+  if (therapistIds.length > 0) {
+    const { data: dayPlans } = await db
+      .from("shift_plans")
+      .select("therapist_id")
+      .eq("work_date", input.date)
+      .in("therapist_id", therapistIds)
+    if ((dayPlans ?? []).length > 0)
+      return {
+        ok: false,
+        error: "หมอที่เลือกหยุดวันนั้นค่ะ เลือกหมอท่านอื่นหรือให้ร้านจัดให้นะคะ",
+      }
+  }
+
   const maxDuration = Math.max(
     ...input.people.map((p) => serviceById.get(p.serviceId)!.duration_min ?? 60))
   const validSlots = computeSlots({ date: input.date, today, nowMin: nowMin(), durationMin: maxDuration })

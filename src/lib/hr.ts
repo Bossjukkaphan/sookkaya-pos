@@ -38,6 +38,8 @@ export type PersonSummary = {
   requestPct: number
   /** ลูกค้าที่กลับมาหาคนนี้ซ้ำ (≥2 ครั้งในช่วง) */
   repeatCustomers: number
+  /** วันหยุดตามแผน/ลา ในช่วงที่ดู (เฟส 2) — แยกจากขาดงาน */
+  daysPlannedOff: number
 }
 
 const round1 = (n: number) => Math.round(n * 10) / 10
@@ -108,6 +110,7 @@ export function summarizeWorkdays({
       requests,
       requestPct: mySales.length > 0 ? Math.round((requests / mySales.length) * 100) : 0,
       repeatCustomers: [...visitsByCustomer.values()].filter((v) => v >= 2).length,
+      daysPlannedOff: plannedOff.size,
     }
   })
 }

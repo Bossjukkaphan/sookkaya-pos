@@ -55,8 +55,13 @@ export default async function TeamPage({
   const isMonthView = from.endsWith("-01") && to === monthRange(from).to
 
   const supabase = await createClient()
-  const [{ data: therapists }, { data: staff }, { data: attendanceRows }, { data: salesRows }] =
-    await Promise.all([
+  const [
+    { data: therapists },
+    { data: staff },
+    { data: attendanceRows },
+    { data: salesRows },
+    { data: planRows },
+  ] = await Promise.all([
       supabase.from("therapists").select("id, name, status").order("name"),
       supabase.from("staff_members").select("id, name, role").order("sort").order("name"),
       supabase
@@ -69,6 +74,11 @@ export default async function TeamPage({
         .select("sale_date, therapist_id, commission, net_amount, is_request, customer_id")
         .gte("sale_date", from)
         .lte("sale_date", to),
+      supabase
+        .from("shift_plans")
+        .select("work_date, therapist_id, staff_id")
+        .gte("work_date", from)
+        .lte("work_date", to),
     ])
 
   const attendance: AttendanceInput[] = (attendanceRows ?? []).map((a) => ({
@@ -91,11 +101,19 @@ export default async function TeamPage({
   // วันที่ร้านเปิด = วันที่มีบิล (ใช้เป็นฐานคำนวณ "ขาดงาน")
   const openDays = [...new Set((salesRows ?? []).map((s) => s.sale_date))].sort()
 
+  // วันหยุดตามแผน (หน้า /shifts) — ไม่นับเป็นขาดงาน
+  const plannedOffDays: Record<string, string[]> = {}
+  for (const p of planRows ?? []) {
+    const key = (p.therapist_id ?? p.staff_id)!
+    ;(plannedOffDays[key] ??= []).push(p.work_date)
+  }
+
   const therapistRows = summarizeWorkdays({
     people: (therapists ?? []).map((t) => ({ id: t.id, name: t.name })),
     attendance,
     sales,
     openDays,
+    plannedOffDays,
   })
     // ตัดคนที่ไม่มีความเคลื่อนไหวในช่วงนี้ออก (เช่น หมอที่ลาออกไปนานแล้ว)
     .filter((r) => r.daysWorked > 0 || r.bills > 0)
@@ -106,6 +124,7 @@ export default async function TeamPage({
     attendance,
     sales: [],
     openDays,
+    plannedOffDays,
   }).sort((a, b) => b.daysWorked - a.daysWorked)
 
   const stars = pickStars(therapistRows)

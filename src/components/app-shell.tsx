@@ -77,6 +77,7 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
       { href: "/overview", label: "ภาพรวม", icon: LayoutDashboard, minRole: "manager" },
       { href: "/reports", label: "รายงาน", icon: FileBarChart, minRole: "manager" },
       { href: "/team", label: "ทีมงาน", icon: UserCheck, minRole: "manager" },
+      { href: "/shifts", label: "จัดวันหยุด", icon: CalendarClock, minRole: "manager" },
       { href: "/finance", label: "การเงิน", icon: PiggyBank, minRole: "admin" },
       { href: "/insights/heatmap", label: "ชั่วโมงคนแน่น", icon: CalendarClock, minRole: "manager" },
       { href: "/insights/promotions", label: "ROI ส่วนลด", icon: BadgePercent, minRole: "manager" },

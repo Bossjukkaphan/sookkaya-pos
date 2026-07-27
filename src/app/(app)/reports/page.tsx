@@ -44,12 +44,24 @@ export default async function ReportsPage({
   const params = await searchParams
   const today = todayInShopTz()
 
-  // ช่วงสำเร็จรูปแบบ Thai Hand: วันนี้ / เมื่อวาน / 7 วัน / เดือนนี้ + กำหนดเอง
+  // เดือนที่แล้วเต็มเดือน (ปุ่มลัดเทียบยอดเดือนต่อเดือน)
+  const [ty, tm] = today.split("-").map(Number)
+  const prevM = new Date(Date.UTC(ty, tm - 2, 1))
+  const prevMonth = `${prevM.getUTCFullYear()}-${String(prevM.getUTCMonth() + 1).padStart(2, "0")}`
+  const prevMonthEnd = new Date(Date.UTC(ty, tm - 1, 0)).getUTCDate()
+
+  // ช่วงสำเร็จรูปแบบ Thai Hand: วันนี้ / เมื่อวาน / 7 วัน / เดือนนี้ / เดือนที่แล้ว + กำหนดเอง
   const presets = [
     { key: "today", label: "วันนี้", from: today, to: today },
     { key: "yesterday", label: "เมื่อวาน", from: shiftDate(today, -1), to: shiftDate(today, -1) },
     { key: "7d", label: "7 วันล่าสุด", from: shiftDate(today, -6), to: today },
     { key: "month", label: "เดือนนี้", from: `${today.slice(0, 7)}-01`, to: today },
+    {
+      key: "lastMonth",
+      label: "เดือนที่แล้ว",
+      from: `${prevMonth}-01`,
+      to: `${prevMonth}-${String(prevMonthEnd).padStart(2, "0")}`,
+    },
   ] as const
 
   const isDate = (s: string | undefined): s is string =>

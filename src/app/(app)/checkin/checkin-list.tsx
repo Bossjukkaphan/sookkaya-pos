@@ -31,12 +31,15 @@ export function CheckinList({
   staff,
   attendance,
   monthCount,
+  planOf = {},
 }: {
   workDate: string
   therapists: Person[]
   staff: Person[]
   attendance: AttendanceRow[]
   monthCount: Record<string, number>
+  /** แผนวันหยุดของวันนี้จากหน้า /shifts — "off" | "leave" ต่อคน */
+  planOf?: Record<string, string>
 }) {
   const router = useRouter()
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -88,13 +91,19 @@ export function CheckinList({
   function renderRow(person: Person, kind: "therapist" | "staff") {
     const row = kind === "therapist" ? byTherapist.get(person.id) : byStaff.get(person.id)
     const days = monthCount[person.id] ?? 0
+    // วางแผนหยุดไว้ (หน้า /shifts) — ไม่ต้องติ๊ก แต่ถ้ามาจริงก็ยังเช็คอินทับได้
+    const plan = planOf[person.id]
     return (
       <li key={person.id} className="flex items-center justify-between gap-2 px-4 py-2.5 sm:px-6">
         <div className="flex min-w-0 items-center gap-3">
           {/* วงแหวนเขียว/แดงแบบเดียวกับบอร์ดคิว */}
           <span
             className={`h-4 w-4 shrink-0 rounded-full border-4 ${
-              row ? "border-emerald-500" : "border-red-300"
+              row
+                ? "border-emerald-500"
+                : plan
+                  ? "border-slate-300"
+                  : "border-red-300"
             }`}
           />
           <div className="min-w-0">
@@ -107,7 +116,11 @@ export function CheckinList({
             <p className="text-xs text-slate-500">
               {row
                 ? `เข้า ${timeOf(row.checked_in_at)}${row.checked_out_at ? ` · ออก ${timeOf(row.checked_out_at)}` : ""}`
-                : "ยังไม่เช็คอิน"}
+                : plan
+                  ? plan === "leave"
+                    ? "🏖️ ลา (ตามแผน)"
+                    : "😴 หยุดตามแผน"
+                  : "ยังไม่เช็คอิน"}
               {days > 0 && ` · เดือนนี้มา ${days} วัน`}
             </p>
           </div>

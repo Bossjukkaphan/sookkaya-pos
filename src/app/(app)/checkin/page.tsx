@@ -24,8 +24,13 @@ export default async function CheckinPage({
   const monthStart = workDate.slice(0, 8) + "01"
 
   const supabase = await createClient()
-  const [{ data: therapists }, { data: staff }, { data: attendance }, { data: monthRows }] =
-    await Promise.all([
+  const [
+    { data: therapists },
+    { data: staff },
+    { data: attendance },
+    { data: monthRows },
+    { data: dayPlans },
+  ] = await Promise.all([
       supabase
         .from("therapists")
         .select("id, name")
@@ -46,6 +51,10 @@ export default async function CheckinPage({
         .select("therapist_id, staff_id")
         .gte("work_date", monthStart)
         .lte("work_date", workDate.slice(0, 8) + "31"),
+      supabase
+        .from("shift_plans")
+        .select("therapist_id, staff_id, plan")
+        .eq("work_date", workDate),
     ])
 
   // นับวันทำงานเดือนนี้ต่อคน — ฐานข้อมูลค่าแรง/OT ในอนาคต
@@ -114,6 +123,9 @@ export default async function CheckinPage({
         staff={staff ?? []}
         attendance={attendance ?? []}
         monthCount={Object.fromEntries(monthCount)}
+        planOf={Object.fromEntries(
+          (dayPlans ?? []).map((p) => [(p.therapist_id ?? p.staff_id)!, p.plan])
+        )}
       />
     </div>
   )

@@ -9,6 +9,7 @@ type SortKey = keyof Pick<
   PersonSummary,
   | "name"
   | "daysWorked"
+  | "daysPlannedOff"
   | "daysAbsent"
   | "hours"
   | "bills"
@@ -78,6 +79,7 @@ export function TeamTable({
               ชื่อ{sort?.key === "name" && (sort.desc ? " ▾" : " ▴")}
             </th>
             <Th k="daysWorked">วันทำงาน</Th>
+            <Th k="daysPlannedOff">หยุด/ลา</Th>
             <Th k="daysAbsent">ขาด</Th>
             <Th k="hours">ชั่วโมง</Th>
             {showMoney && MONEY_COLS.map((c) => <Th key={c.key} k={c.key}>{c.label}</Th>)}
@@ -90,6 +92,9 @@ export function TeamTable({
             <tr key={r.personId} className="hover:bg-slate-50">
               <td className="px-4 py-2 font-medium whitespace-nowrap sm:px-6">{r.name}</td>
               <td className="px-2 py-2 text-right">{r.daysWorked}</td>
+              <td className="px-2 py-2 text-right text-slate-500">
+                {r.daysPlannedOff > 0 ? r.daysPlannedOff : <span className="text-slate-300">0</span>}
+              </td>
               <td
                 className={`px-2 py-2 text-right ${r.daysAbsent > 0 ? "font-medium text-red-600" : "text-slate-400"}`}
               >

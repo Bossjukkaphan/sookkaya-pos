@@ -881,6 +881,39 @@ export type Database = {
           },
         ]
       }
+      shift_plans: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          note: string | null
+          plan: string
+          staff_id: string | null
+          therapist_id: string | null
+          work_date: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          plan: string
+          staff_id?: string | null
+          therapist_id?: string | null
+          work_date: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          note?: string | null
+          plan?: string
+          staff_id?: string | null
+          therapist_id?: string | null
+          work_date?: string
+        }
+        Relationships: []
+      }
       staff_members: {
         Row: {
           created_at: string

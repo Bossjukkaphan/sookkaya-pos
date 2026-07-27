@@ -224,3 +224,18 @@ describe("pickStars — ดาวเด่นประจำช่วง", () =>
     expect(stars.mostDiligent).toBeNull()
   })
 })
+
+describe("summarizeWorkdays — วันหยุดตามแผน (เฟส 2)", () => {
+  it("นับวันหยุดตามแผนแยกจากขาดงาน", () => {
+    const rows = summarizeWorkdays({
+      people,
+      attendance: [att("t1", "2026-07-01"), att("t1", "2026-07-03")],
+      sales: [],
+      openDays,
+      plannedOffDays: { t1: ["2026-07-02"] },
+    })
+    const t1 = rows.find((r) => r.personId === "t1")!
+    expect(t1.daysPlannedOff).toBe(1)
+    expect(t1.daysAbsent).toBe(0)
+  })
+})

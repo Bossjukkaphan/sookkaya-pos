@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
@@ -20,10 +22,32 @@ const FALLBACK_CATEGORIES = [
   "อื่นๆ",
 ]
 
-export default async function ExpensesPage() {
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+]
+
+function shiftMonth(yearMonth: string, delta: number) {
+  const [y, m] = yearMonth.split("-").map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`
+}
+
+export default async function ExpensesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string }>
+}) {
   const supabase = await createClient()
   const today = todayInShopTz()
-  const monthStart = `${today.slice(0, 7)}-01`
+  const params = await searchParams
+  // เลือกดูเดือนอื่นได้ผ่าน ?month=YYYY-MM — ค่าเริ่มต้นเดือนปัจจุบัน
+  const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : today.slice(0, 7)
+  const isCurrentMonth = month === today.slice(0, 7)
+  const [my, mm] = month.split("-").map(Number)
+  const monthStart = `${month}-01`
+  const monthEnd = `${month}-${String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2, "0")}`
+  const monthName = `${THAI_MONTHS[mm - 1]} ${my + 543}`
 
   const [{ data: setting }, { data: expenses }] = await Promise.all([
     supabase
@@ -35,8 +59,9 @@ export default async function ExpensesPage() {
       .from("expenses")
       .select("*")
       .gte("expense_date", monthStart)
+      .lte("expense_date", monthEnd)
       .order("expense_date", { ascending: false })
-      .limit(100),
+      .limit(300),
   ])
 
   const categories = setting?.value
@@ -61,7 +86,7 @@ export default async function ExpensesPage() {
             บันทึกรายจ่าย
           </TabsTrigger>
           <TabsTrigger value="list" className="flex-1">
-            เดือนนี้
+            {isCurrentMonth ? "เดือนนี้" : monthName}
           </TabsTrigger>
         </TabsList>
 
@@ -70,9 +95,33 @@ export default async function ExpensesPage() {
         </TabsContent>
 
         <TabsContent value="list" className="space-y-3 pt-4">
+          {/* เลื่อนดูเดือนอื่น */}
+          <div className="flex items-center justify-center gap-2">
+            <Link
+              href={`/expenses?month=${shiftMonth(month, -1)}`}
+              className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100"
+            >
+              ←
+            </Link>
+            <span className="min-w-36 text-center text-sm font-semibold">{monthName}</span>
+            <Link
+              href={`/expenses?month=${shiftMonth(month, 1)}`}
+              className="rounded-md border px-3 py-1.5 text-sm hover:bg-slate-100"
+            >
+              →
+            </Link>
+            {!isCurrentMonth && (
+              <Link href="/expenses" className="text-xs text-slate-500 underline">
+                กลับเดือนนี้
+              </Link>
+            )}
+          </div>
+
           <Card className="border-red-200 bg-red-50">
             <CardContent className="flex items-baseline justify-between py-4">
-              <span className="text-sm font-medium">รายจ่ายเดือนนี้</span>
+              <span className="text-sm font-medium">
+                รายจ่าย{isCurrentMonth ? "เดือนนี้" : monthName}
+              </span>
               <span className="text-2xl font-bold text-red-800">
                 {formatBaht(monthTotal)} ฿
               </span>
