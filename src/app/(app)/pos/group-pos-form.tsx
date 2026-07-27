@@ -14,6 +14,7 @@ import {
   promoKey,
 } from "@/lib/promo"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Time24Field } from "@/components/time24-field"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -298,13 +299,13 @@ export function GroupPosForm({
                         (เว้นว่าง = เวลาบันทึก)
                       </span>
                     </label>
-                    <Input
-                      id={`g_time_${i}`}
-                      type="time"
+                    {/* dropdown 24 ชม. — จุดสุดท้ายที่ยังเป็น input type=time (AM/PM หลอกตา) */}
+                    <Time24Field
                       value={p.serviceTime}
-                      onChange={(e) => setPerson(i, { serviceTime: e.target.value })}
-                      className="h-11"
-                      aria-label={`เวลาใช้บริการคนที่ ${i + 1}`}
+                      onChange={(v) => setPerson(i, { serviceTime: v })}
+                      startHour={10}
+                      endHour={23}
+                      ariaLabel={`เวลาใช้บริการคนที่ ${i + 1}`}
                     />
                   </div>
 
