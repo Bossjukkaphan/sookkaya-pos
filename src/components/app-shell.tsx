@@ -80,6 +80,7 @@ const SECTIONS: { title: string; links: NavLink[] }[] = [
       { href: "/shifts", label: "จัดวันหยุด", icon: CalendarClock, minRole: "manager" },
       { href: "/finance", label: "การเงิน", icon: PiggyBank, minRole: "admin" },
       { href: "/insights/heatmap", label: "ชั่วโมงคนแน่น", icon: CalendarClock, minRole: "manager" },
+      { href: "/insights/expenses", label: "วิเคราะห์รายจ่าย", icon: Wallet, minRole: "manager" },
       { href: "/insights/promotions", label: "ROI ส่วนลด", icon: BadgePercent, minRole: "manager" },
       { href: "/insights/customers", label: "ลูกค้าและคนที่หายไป", icon: Users, minRole: "manager" },
     ],

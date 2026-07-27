@@ -3,14 +3,17 @@ import { getMyProfile } from "@/lib/auth"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
 import { formatBaht } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
-import { daysInMonth, monthLabel, shiftMonth } from "@/lib/month"
+import { daysInMonth, monthLabel, monthShortLabel, shiftMonth } from "@/lib/month"
 import {
   compareRange,
   detectAnomalies,
+  monthlySeries,
+  projectMonthEnd,
   type CategoryDelta,
   type ExpenseRow,
 } from "@/lib/expense-analytics"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { LineChart } from "@/components/charts/line-chart"
 import Link from "next/link"
 
 export const metadata = { title: "วิเคราะห์รายจ่าย · สุขกายา POS" }
@@ -75,6 +78,41 @@ export default async function ExpenseInsightsPage({
     throughDay,
     monthClosed: !isCurrentMonth,
   })
+
+  const revenueByMonth = new Map<string, number>()
+  for (const [date, value] of revenueByDate) {
+    const m = date.slice(0, 7)
+    revenueByMonth.set(m, (revenueByMonth.get(m) ?? 0) + value)
+  }
+
+  const series = monthlySeries({ rows, revenueByMonth, currentMonth: today.slice(0, 7) })
+  const projection = projectMonthEnd({ rows, month, throughDay })
+
+  // กราฟเส้นเอาเฉพาะเดือนที่ปิดแล้ว — เดือนที่ยังไม่จบมีแต่รายจ่ายที่คีย์ทันแล้ว
+  // (เงินเดือน ค่าเช่า และงวดค่ามือท้ายเดือนยังไม่เข้า) ถ้าต่อท้ายกราฟ เส้นจะดิ่งลง
+  // ทุกเดือนเหมือนต้นทุนลดฮวบ ทั้งที่ยังไม่มีอะไรเกิดขึ้นจริง
+  const costPoints = series.months
+    .map((m, i) => ({ month: m, value: series.costPer100Revenue[i] }))
+    .filter((p) => p.month < today.slice(0, 7))
+    .map((p) => ({
+      label: monthShortLabel(p.month),
+      value: Math.round(p.value * 10) / 10,
+    }))
+
+  const latestClosed = series.months.filter((m) => m < today.slice(0, 7)).slice(-1)[0]
+  const latestIndex = latestClosed ? series.months.indexOf(latestClosed) : -1
+  const latestRevenue = latestClosed ? (revenueByMonth.get(latestClosed) ?? 0) : 0
+  const shareRows =
+    latestIndex < 0 || latestRevenue <= 0
+      ? []
+      : series.byCategory
+          .map((c) => ({
+            category: c.category,
+            per100: (c.amounts[latestIndex] / latestRevenue) * 100,
+          }))
+          .filter((c) => c.per100 > 0)
+          .sort((a, b) => b.per100 - a.per100)
+  const profitPer100 = 100 - shareRows.reduce((s, c) => s + c.per100, 0)
 
   const expenseDelta = cmp.current.expense - cmp.previous.expense
   const revenueDelta = cmp.current.revenue - cmp.previous.revenue
@@ -206,6 +244,104 @@ export default async function ExpenseInsightsPage({
                 .join(" · ")}
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      {/* บล็อก 3 — ขายได้ 100 บาท หายไปไหน */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            ขายได้ 100 บาท หายไปไหน{latestClosed ? ` · ${monthLabel(latestClosed)}` : ""}
+          </CardTitle>
+          <p className="text-xs text-slate-500">
+            ใช้เดือนที่ปิดแล้วล่าสุด เพราะเดือนที่ยังไม่จบยอดยังไม่ครบ
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {shareRows.length === 0 ? (
+            <p className="py-2 text-center text-sm text-slate-500">ยังไม่มีเดือนที่ปิดแล้ว</p>
+          ) : (
+            <>
+              <div className="space-y-1.5">
+                {shareRows.map((c) => (
+                  <div key={c.category} className="flex items-center gap-2 text-sm">
+                    <span className="w-40 shrink-0 truncate text-slate-600">{c.category}</span>
+                    <span
+                      className="h-2 rounded-full bg-orange-400"
+                      style={{ width: `${Math.min(c.per100, 100)}%` }}
+                    />
+                    <span className="ml-auto shrink-0 font-medium">{c.per100.toFixed(1)}</span>
+                  </div>
+                ))}
+                <div className="flex justify-between border-t pt-1.5 text-sm font-semibold">
+                  <span>เหลือเป็นกำไร</span>
+                  <span className={profitPer100 >= 0 ? "text-emerald-700" : "text-red-700"}>
+                    {profitPer100.toFixed(1)} บาท
+                  </span>
+                </div>
+              </div>
+              <div className="border-t pt-3">
+                <p className="mb-1 text-xs font-semibold text-slate-600">
+                  ต้นทุนรวมต่อรายได้ 100 บาท — ต่ำกว่า 100 คือมีกำไร
+                </p>
+                <LineChart points={costPoints} unit=" บาท" color="#ea580c" />
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* บล็อก 4 — ตารางวางงบ */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">รายจ่ายรายเดือนแยกหมวด</CardTitle>
+        </CardHeader>
+        <CardContent className="px-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-y bg-slate-50 text-xs text-slate-600">
+                <tr>
+                  <th className="px-4 py-2 text-left whitespace-nowrap">หมวด</th>
+                  {series.months.map((m) => (
+                    <th key={m} className="px-2 py-2 text-right whitespace-nowrap">
+                      {monthShortLabel(m)}
+                      {m === today.slice(0, 7) && <span className="text-amber-600"> *</span>}
+                    </th>
+                  ))}
+                  <th className="px-2 py-2 text-right whitespace-nowrap">ค่าปกติ</th>
+                  <th className="px-2 py-2 text-right">แนวโน้ม</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {series.byCategory.map((c) => (
+                  <tr key={c.category}>
+                    <td className="px-4 py-2 whitespace-nowrap">{c.category}</td>
+                    {c.amounts.map((a, i) => (
+                      <td key={series.months[i]} className="px-2 py-2 text-right">
+                        {a === 0 ? "—" : formatBaht(a)}
+                      </td>
+                    ))}
+                    <td className="px-2 py-2 text-right text-slate-500">
+                      {c.median3 === null ? "—" : formatBaht(c.median3)}
+                    </td>
+                    <td className="px-2 py-2 text-right">
+                      {c.trend === "up" ? "↗" : c.trend === "down" ? "↘" : c.trend === "flat" ? "→" : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="space-y-1 px-4 pt-3 text-xs text-slate-500">
+            <p>* เดือนนี้ยังไม่จบ ยอดยังไม่ครบ · ลูกศรแนวโน้มคิดจากเดือนที่ปิดแล้ว 3 เดือนล่าสุด</p>
+            {isCurrentMonth && (
+              <p className="font-medium text-slate-700">
+                ประมาณการรายจ่าย {monthLabel(month)} ทั้งเดือน ≈ {formatBaht(projection.total)} ฿
+                {projection.assumedCategories.length > 0 &&
+                  ` (เดาจากค่าปกติของ ${projection.assumedCategories.join(" · ")})`}
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>
