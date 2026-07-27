@@ -107,6 +107,9 @@ export function QueueFormDialog({
   const [customerName, setCustomerName] = useState(entry?.customer_name ?? "")
   const [customerPhone, setCustomerPhone] = useState(entry?.customer_phone ?? "")
   // รีเควสหมอบันทึกตั้งแต่ตอนจอง — ตอนกดเก็บเงินระบบจะติ๊ก +40 ให้เอง ไม่ตกหล่น
+  // รหัสประจำการเปิดฟอร์มครั้งนี้ — กดรัว/เน็ต retry ใช้รหัสเดิม (server กันซ้ำ)
+  // เปิดฟอร์มใหม่ = รหัสใหม่ → เพิ่มคิวหน้าตาเหมือนกันติดๆ กันได้เสมอ
+  const [clientKey] = useState(() => crypto.randomUUID())
   const [isRequest, setIsRequest] = useState(entry?.is_request ?? false)
   // ห้องสปาส่วนตัว +100฿ (ลูกค้าจ่าย) — เก็บตั้งแต่ตอนจอง ตอนเก็บเงินระบบติ๊กบวกให้เอง
   const [privateRoom, setPrivateRoom] = useState(entry?.private_room ?? false)
@@ -168,6 +171,7 @@ export function QueueFormDialog({
           <input type="hidden" name="source" value={source} />
           <input type="hidden" name="booking_channel" value={bookingChannel} />
           <input type="hidden" name="bed_id" value={bedId} />
+          <input type="hidden" name="client_key" value={clientKey} />
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">ลูกค้ามาจาก</legend>

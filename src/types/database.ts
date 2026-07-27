@@ -493,6 +493,7 @@ export type Database = {
           customer_phone: string | null
           is_request: boolean
           private_room: boolean
+          client_key: string | null
           duration_min: number
           id: string
           line_user_id: string | null
@@ -519,6 +520,7 @@ export type Database = {
           customer_phone?: string | null
           is_request?: boolean
           private_room?: boolean
+          client_key?: string | null
           duration_min: number
           id?: string
           line_user_id?: string | null
@@ -545,6 +547,7 @@ export type Database = {
           customer_phone?: string | null
           is_request?: boolean
           private_room?: boolean
+          client_key?: string | null
           duration_min?: number
           id?: string
           line_user_id?: string | null
@@ -599,6 +602,7 @@ export type Database = {
           group_id: string | null
           is_request: boolean
           private_room: boolean
+          client_key: string | null
           member_status: string | null
           net_amount: number
           notes: string | null
@@ -636,6 +640,7 @@ export type Database = {
           group_id?: string | null
           is_request?: boolean
           private_room?: boolean
+          client_key?: string | null
           member_status?: string | null
           net_amount: number
           notes?: string | null
@@ -673,6 +678,7 @@ export type Database = {
           group_id?: string | null
           is_request?: boolean
           private_room?: boolean
+          client_key?: string | null
           member_status?: string | null
           net_amount?: number
           notes?: string | null
