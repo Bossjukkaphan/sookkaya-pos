@@ -11,7 +11,14 @@ import {
   isBookingChannel,
   isCustomerSource,
 } from "@/lib/customer-source"
-import { PX_PER_MIN, bedStartMin, minToX, overlaps, timeToMin } from "@/lib/queue"
+import {
+  PX_PER_MIN,
+  bedStartMin,
+  clampStart,
+  minToX,
+  overlaps,
+  timeToMin,
+} from "@/lib/queue"
 import {
   approveBooking,
   rejectBooking,
@@ -293,7 +300,9 @@ export function QueueCard({
           dragging ? "z-30 opacity-80 ring-2 ring-violet-400" : "z-[5]"
         }`}
         style={{
-          left: minToX(startMin),
+          // clamp: การ์ดเวลานอกช่วงบอร์ด (ข้อมูลเก่า/คีย์ผิด) ต้องยังโผล่ริมขอบให้กดแก้ได้
+          // — เคยล่องหนจนพนักงานคีย์ซ้ำ (server กันคีย์ใหม่นอกเวลาทำการแล้ว)
+          left: minToX(clampStart(startMin, entry.duration_min)),
           top: laneTop + 6,
           height: 52, // ROW_H 64 - ระยะขอบบนล่างเท่าเดิม (top-1.5/bottom-1.5)
           width: entry.duration_min * PX_PER_MIN,

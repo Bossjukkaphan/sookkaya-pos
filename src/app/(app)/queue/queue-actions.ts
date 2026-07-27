@@ -6,7 +6,14 @@ import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
-import { bedStartMin, minToTime, overlaps, timeToMin } from "@/lib/queue"
+import {
+  BOARD_END_MIN,
+  BOARD_START_MIN,
+  bedStartMin,
+  minToTime,
+  overlaps,
+  timeToMin,
+} from "@/lib/queue"
 import { pushLineMessage } from "@/lib/line"
 import { pushAssistantMessage } from "@/lib/line-assistant"
 import {
@@ -144,6 +151,15 @@ async function therapistConflictError(
     : null
 }
 
+/** เวลาทำการของบอร์ด 10:00–22:00 — คิวนอกช่วงนี้เคยถูกวาดตกขอบจนมองไม่เห็น
+ * (เคสจริง: คีย์ 00:30 แทน 12:30 → การ์ดล่องหน พนักงานคีย์ซ้ำอีกชุด) */
+function startTimeError(startTime: string): string | null {
+  const m = timeToMin(startTime)
+  if (m < BOARD_START_MIN || m >= BOARD_END_MIN)
+    return `เวลาเริ่ม ${startTime} อยู่นอกเวลาทำการ (10:00–22:00) — เช็ค AM/PM อีกทีนะ`
+  return null
+}
+
 export async function createQueueEntry(form: FormData): Promise<Result> {
   const supabase = await createClient()
   const serviceId = String(form.get("service_id") ?? "")
@@ -174,6 +190,10 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   if (!serviceId) return { ok: false, error: "เลือกเมนูก่อน" }
   if (!/^\d{2}:\d{2}$/.test(startTime))
     return { ok: false, error: "เวลาเริ่มไม่ถูกต้อง" }
+  {
+    const timeErr = startTimeError(startTime)
+    if (timeErr) return { ok: false, error: timeErr }
+  }
   if (durationMin < 15 || durationMin > 240)
     return { ok: false, error: "ระยะเวลาไม่ถูกต้อง" }
   if (!isCustomerSource(source))
@@ -301,6 +321,10 @@ export async function createQueueGroup(
 
   if (!/^\d{2}:\d{2}$/.test(startTime))
     return { ok: false, error: "เวลาเริ่มไม่ถูกต้อง" }
+  {
+    const timeErr = startTimeError(startTime)
+    if (timeErr) return { ok: false, error: timeErr }
+  }
   if (!isCustomerSource(source))
     return { ok: false, error: "ที่มาลูกค้าไม่ถูกต้อง" }
 
@@ -354,6 +378,9 @@ export async function createQueueGroup(
   // เตียงและหมอมีจำกัด — เช็คชนกับคิวที่มีอยู่ และชนกันเองในกลุ่มเดียวกัน
   // (สองคนเลือกเตียง/หมอเดียวกันเวลาทับกัน — รายการต่อเวลาไม่ชนเพราะเวลาเรียงต่อกัน)
   for (const [i, row] of rows.entries()) {
+    // รายการต่อเวลาเริ่มต่อจากใบก่อนหน้า — เวลาอาจไหลเลยเวลาปิดร้าน
+    const rowTimeErr = startTimeError(row.start_time)
+    if (rowTimeErr) return { ok: false, error: `คนที่ ${i + 1}: ${rowTimeErr}` }
     const startMin = timeToMin(row.start_time)
     if (row.bed_id) {
       const bedError = await bedConflictError(
@@ -451,6 +478,10 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
   if (!serviceId) return { ok: false, error: "เลือกเมนูก่อน" }
   if (!/^\d{2}:\d{2}$/.test(startTime))
     return { ok: false, error: "เวลาเริ่มไม่ถูกต้อง" }
+  {
+    const timeErr = startTimeError(startTime)
+    if (timeErr) return { ok: false, error: timeErr }
+  }
   if (durationMin < 15 || durationMin > 240)
     return { ok: false, error: "ระยะเวลาไม่ถูกต้อง" }
   if (!isCustomerSource(source))
@@ -523,6 +554,10 @@ export async function moveQueueEntry(
 ): Promise<Result> {
   if (!/^\d{2}:\d{2}$/.test(startTime))
     return { ok: false, error: "เวลาไม่ถูกต้อง" }
+  {
+    const timeErr = startTimeError(startTime)
+    if (timeErr) return { ok: false, error: timeErr }
+  }
   const supabase = await createClient()
 
   // ลากเลื่อนเวลา/ย้ายช่องหมอ — เตียงเดิมและหมอปลายทางต้องไม่ชนคิวใบอื่น
