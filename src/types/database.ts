@@ -492,6 +492,7 @@ export type Database = {
           group_id: string | null
           customer_phone: string | null
           is_request: boolean
+          private_room: boolean
           duration_min: number
           id: string
           line_user_id: string | null
@@ -517,6 +518,7 @@ export type Database = {
           group_id?: string | null
           customer_phone?: string | null
           is_request?: boolean
+          private_room?: boolean
           duration_min: number
           id?: string
           line_user_id?: string | null
@@ -542,6 +544,7 @@ export type Database = {
           group_id?: string | null
           customer_phone?: string | null
           is_request?: boolean
+          private_room?: boolean
           duration_min?: number
           id?: string
           line_user_id?: string | null
@@ -595,6 +598,7 @@ export type Database = {
           id: string
           group_id: string | null
           is_request: boolean
+          private_room: boolean
           member_status: string | null
           net_amount: number
           notes: string | null
@@ -602,6 +606,7 @@ export type Database = {
           price_normal: number
           receipt_no: string | null
           request_fee: number
+          room_fee: number
           revenue_recognize: number | null
           sale_date: string
           sale_time: string | null
@@ -630,6 +635,7 @@ export type Database = {
           id?: string
           group_id?: string | null
           is_request?: boolean
+          private_room?: boolean
           member_status?: string | null
           net_amount: number
           notes?: string | null
@@ -637,6 +643,7 @@ export type Database = {
           price_normal: number
           receipt_no?: string | null
           request_fee?: number
+          room_fee?: number
           revenue_recognize?: number | null
           sale_date: string
           sale_time?: string | null
@@ -665,6 +672,7 @@ export type Database = {
           id?: string
           group_id?: string | null
           is_request?: boolean
+          private_room?: boolean
           member_status?: string | null
           net_amount?: number
           notes?: string | null
@@ -672,6 +680,7 @@ export type Database = {
           price_normal?: number
           receipt_no?: string | null
           request_fee?: number
+          room_fee?: number
           revenue_recognize?: number | null
           sale_date?: string
           sale_time?: string | null
@@ -791,6 +800,7 @@ export type Database = {
           net_commission: number | null
           notes: string | null
           request_fee: number
+          room_fee: number
           status: string | null
           therapist_id: string
           total_commission: number
@@ -804,6 +814,7 @@ export type Database = {
           net_commission?: number | null
           notes?: string | null
           request_fee?: number
+          room_fee?: number
           status?: string | null
           therapist_id: string
           total_commission?: number
@@ -817,6 +828,7 @@ export type Database = {
           net_commission?: number | null
           notes?: string | null
           request_fee?: number
+          room_fee?: number
           status?: string | null
           therapist_id?: string
           total_commission?: number

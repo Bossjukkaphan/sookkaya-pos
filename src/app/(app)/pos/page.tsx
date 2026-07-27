@@ -87,6 +87,7 @@ export default async function PosPage({
         customerName: customer?.name ?? e.customer_name ?? "",
         customerPhone: customer?.phone ?? e.customer_phone ?? "",
         isRequest: e.is_request,
+        privateRoom: e.private_room,
         serviceTime: e.started_at
           ? toShopTime(e.started_at)
           : (e.start_time?.slice(0, 5) ?? ""),
@@ -157,6 +158,7 @@ export default async function PosPage({
           customerName: queueCustomer?.name ?? queueEntry.customer_name ?? "",
           customerPhone: queueCustomer?.phone ?? queueEntry.customer_phone ?? "",
           isRequest: queueEntry.is_request,
+          privateRoom: queueEntry.private_room,
           source: queueEntry.source,
           bedId: queueEntry.bed_id ?? "",
           bookingChannel: queueEntry.booking_channel ?? "",

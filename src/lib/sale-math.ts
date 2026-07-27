@@ -8,6 +8,8 @@ export type SaleInput = {
   gowabiNet: number | null
   isRequest: boolean
   requestFee: number
+  /** ค่าห้องสปาส่วนตัว (0 = ไม่ใช้) — ลูกค้าจ่าย บวกเข้ายอดบิลตรงๆ */
+  roomFee: number
   serviceCommission: number
   /** cash_paid / credit_granted ของสมาชิก · null = ไม่ได้จ่ายด้วยเครดิต */
   memberRatio: number | null
@@ -18,6 +20,7 @@ export type SaleAmounts = {
   discount: number
   commission: number
   requestFee: number
+  roomFee: number
   creditUsed: number
   bonusUsed: number
   revenueRecognize: number
@@ -36,12 +39,16 @@ export function computeSaleAmounts(input: SaleInput): SaleAmounts {
   const isGowabi = input.paymentMethod === GOWABI_METHOD
   const isMemberCredit = input.paymentMethod === MEMBER_CREDIT_METHOD
 
+  // ค่าห้องสปา: ลูกค้าจ่ายจริง บวกทับยอดบริการหลักเสมอ (ส่วนลดไม่แตะค่าห้อง)
+  const roomFee = Math.max(0, input.roomFee)
   // Gowabi จ่ายตามดีลของเขา ยอดรับจริงจึงกรอกเอง และส่วนลดคือส่วนต่างจากราคาปกติ
-  const netAmount = isGowabi
+  // (ยอดนวดล้วนก่อนบวกค่าห้อง — ค่าห้องเก็บเพิ่มจากลูกค้าหน้าร้าน)
+  const baseNet = isGowabi
     ? Math.max(0, input.gowabiNet ?? input.priceNormal)
     : input.priceNormal - input.discount
+  const netAmount = baseNet + roomFee
 
-  const discount = isGowabi ? input.priceNormal - netAmount : input.discount
+  const discount = isGowabi ? input.priceNormal - baseNet : input.discount
   const requestFee = input.isRequest ? Math.max(0, input.requestFee) : 0
 
   if (!isMemberCredit) {
@@ -50,6 +57,7 @@ export function computeSaleAmounts(input: SaleInput): SaleAmounts {
       discount,
       commission: input.serviceCommission,
       requestFee,
+      roomFee,
       creditUsed: 0,
       bonusUsed: 0,
       revenueRecognize: netAmount,
@@ -66,6 +74,7 @@ export function computeSaleAmounts(input: SaleInput): SaleAmounts {
     discount,
     commission: input.serviceCommission,
     requestFee,
+    roomFee,
     creditUsed: netAmount,
     bonusUsed: round2(netAmount - revenueRecognize),
     revenueRecognize,

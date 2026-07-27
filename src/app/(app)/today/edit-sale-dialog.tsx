@@ -12,7 +12,7 @@ import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
   PAYMENT_METHODS,
-  REQUEST_FEE,
+  PRIVATE_ROOM_FEE, REQUEST_FEE,
   formatBaht,
 } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
@@ -59,6 +59,7 @@ export type EditableSale = {
   payment_method: string
   is_request: boolean
   request_fee: number
+  room_fee: number
   credit_used: number
   revenue_recognize: number
   notes: string | null
@@ -158,6 +159,7 @@ function EditSaleForm({
     sale.payment_method === GOWABI_METHOD ? String(sale.net_amount) : ""
   )
   const [isRequest, setIsRequest] = useState(sale.is_request)
+  const [privateRoom, setPrivateRoom] = useState(sale.room_fee > 0)
   const [customerId, setCustomerId] = useState(sale.customer_id ?? "")
   const [customerName, setCustomerName] = useState(sale.customer_name ?? "")
   const [customerPhone, setCustomerPhone] = useState(sale.customer_phone ?? "")
@@ -216,6 +218,7 @@ function EditSaleForm({
         gowabiNet: isGowabi ? Math.max(0, Number(gowabiNet) || 0) : null,
         isRequest,
         requestFee: REQUEST_FEE,
+        roomFee: privateRoom ? PRIVATE_ROOM_FEE : 0,
         serviceCommission: service?.commission ?? 0,
         memberRatio: isMemberCredit ? ratio : null,
       }),
@@ -226,6 +229,7 @@ function EditSaleForm({
       gowabiNet,
       isGowabi,
       isRequest,
+      privateRoom,
       isMemberCredit,
       ratio,
     ]
@@ -447,6 +451,23 @@ function EditSaleForm({
             <input type="hidden" name="request_fee" value={REQUEST_FEE} />
             <span className="font-semibold text-emerald-700">+{REQUEST_FEE} ฿</span>
           </>
+        )}
+      </div>
+
+      {/* ห้องสปาส่วนตัว — ลูกค้าจ่ายเพิ่ม บวกเข้ายอดบิล (ราคาล็อกฝั่ง server) */}
+      <div className="flex items-center gap-3 rounded-lg border p-3">
+        <Checkbox
+          id={uid("private_room")}
+          name="private_room"
+          checked={privateRoom}
+          onCheckedChange={(v) => setPrivateRoom(v === true)}
+        />
+        <Label htmlFor={uid("private_room")} className="flex-1 cursor-pointer">
+          ห้องสปาส่วนตัว{" "}
+          <span className="font-normal text-slate-500">(+{PRIVATE_ROOM_FEE} ฿)</span>
+        </Label>
+        {privateRoom && (
+          <span className="font-semibold text-emerald-700">+{PRIVATE_ROOM_FEE} ฿</span>
         )}
       </div>
 

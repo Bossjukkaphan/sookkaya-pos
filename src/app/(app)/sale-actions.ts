@@ -5,7 +5,12 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
-import { GOWABI_METHOD, MEMBER_CREDIT_METHOD, PAYMENT_METHODS } from "@/lib/constants"
+import {
+  GOWABI_METHOD,
+  MEMBER_CREDIT_METHOD,
+  PAYMENT_METHODS,
+  PRIVATE_ROOM_FEE,
+} from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
 import { earnsPoints, pointExpiryDate, pointsForBaht } from "@/lib/points"
 
@@ -85,6 +90,9 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
   const priceNormal = service.price
   const isRequest = formData.get("is_request") === "on"
+  // ห้องสปาส่วนตัว: ราคาล็อกตายตัวฝั่ง server — ไม่เชื่อตัวเลขจากฟอร์ม (กันคีย์ผิด/ปลอมค่า)
+  const privateRoom = formData.get("private_room") === "on"
+  const roomFee = privateRoom ? PRIVATE_ROOM_FEE : 0
   const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount")))) // กันเศษสตางค์หลุดเข้าบิล
 
   const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
@@ -133,7 +141,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     memberRatio = granted > 0 ? (balance?.cash_paid ?? 0) / granted : 1
 
     const credit = balance?.credit_balance ?? 0
-    const wanted = priceNormal - discountInput
+    const wanted = priceNormal - discountInput + roomFee
     if (credit < wanted) {
       return {
         ok: false,
@@ -153,6 +161,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
         : null,
     isRequest,
     requestFee: toNumber(formData.get("request_fee")),
+    roomFee,
     serviceCommission: service.commission,
     memberRatio,
   })
@@ -205,6 +214,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       payment_method: paymentMethod,
       is_request: isRequest,
       request_fee: amounts.requestFee,
+      room_fee: amounts.roomFee,
       member_status: paymentMethod === MEMBER_CREDIT_METHOD ? "💳 Member" : null,
       credit_used: amounts.creditUsed,
       credit_after: creditAfter,
@@ -295,6 +305,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       customer_name: String(formData.get("customer_name") ?? "").trim() || null,
       customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
       is_request: isRequest,
+      private_room: privateRoom,
       start_time: saleTime,
       status: "paid",
       sale_id: inserted.id,
@@ -499,7 +510,10 @@ export async function updateSale(
       Number(balance?.credit_balance ?? 0) +
       (sameCustomer ? Number(existing.credit_used ?? 0) : 0)
 
-    const wanted = service.price - discountInput
+    const wanted =
+      service.price -
+      discountInput +
+      (formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0)
     if (headroom < wanted) {
       return {
         ok: false,
@@ -518,6 +532,7 @@ export async function updateSale(
         : null,
     isRequest: formData.get("is_request") === "on",
     requestFee: toNumber(formData.get("request_fee")),
+    roomFee: formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0,
     serviceCommission: service.commission,
     memberRatio,
   })
@@ -546,6 +561,7 @@ export async function updateSale(
       payment_method: paymentMethod,
       is_request: formData.get("is_request") === "on",
       request_fee: amounts.requestFee,
+      room_fee: amounts.roomFee,
       member_status: paymentMethod === MEMBER_CREDIT_METHOD ? "💳 Member" : null,
       credit_used: amounts.creditUsed,
       bonus_used: amounts.bonusUsed,
@@ -592,6 +608,7 @@ export async function updateSale(
       customer_name: String(formData.get("customer_name") ?? "").trim() || null,
       customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
       is_request: formData.get("is_request") === "on",
+      private_room: formData.get("private_room") === "on",
       updated_at: new Date().toISOString(),
     })
     .eq("sale_id", id)

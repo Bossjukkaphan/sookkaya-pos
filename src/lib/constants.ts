@@ -34,6 +34,13 @@ export const DEFAULT_MIN_COMMISSION = 500
  */
 export const REQUEST_FEE = 40
 
+/**
+ * ค่าห้องสปาส่วนตัว — บริการเสริมผูกกับบริการหลัก ราคาเดียวตายตัว ลูกค้าเป็นคนจ่าย
+ * เข้า net_amount (รายได้ร้าน · เข้าแต้ม/ตัดเครดิต/งบอัตโนมัติ)
+ * ต่างจาก REQUEST_FEE ที่ร้านจ่ายให้หมอเอง ลูกค้าไม่จ่าย — ห้ามปนกัน
+ */
+export const PRIVATE_ROOM_FEE = 100
+
 export function formatBaht(amount: number): string {
   return new Intl.NumberFormat("th-TH", {
     minimumFractionDigits: 0,

@@ -158,6 +158,7 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     String(form.get("customer_phone_new") ?? "").trim() ||
     null
   const isRequest = form.get("is_request") === "on"
+  const privateRoom = form.get("private_room") === "on"
   const queueDateInput = String(form.get("queue_date") ?? "")
   const queueDate = /^\d{4}-\d{2}-\d{2}$/.test(queueDateInput)
     ? queueDateInput
@@ -242,6 +243,7 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     customer_name: customerName,
     customer_phone: customerPhone,
     is_request: isRequest,
+    private_room: privateRoom,
     start_time: startTime,
     source,
     bed_id: bedId,
@@ -259,6 +261,8 @@ export type GroupPerson = {
   serviceId: string
   bedId: string | null
   isRequest?: boolean
+  /** ห้องสปาส่วนตัว +100฿ (ลูกค้าจ่าย คิดตอนเก็บเงิน) */
+  privateRoom?: boolean
   /** รายการต่อเวลาของลูกค้าคนเดิม (บิลชุด) — เริ่มต่อจากรายการก่อนหน้าจบ ไม่ใช่พร้อมกัน */
   sequential?: boolean
 }
@@ -335,6 +339,7 @@ export async function createQueueGroup(
       customer_name: customerName,
       customer_phone: customerPhone,
       is_request: p.isRequest ?? false,
+      private_room: p.privateRoom ?? false,
       start_time: minToTime(startMin),
       source,
       bed_id: p.bedId || null,
@@ -433,6 +438,7 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
     String(form.get("customer_phone_new") ?? "").trim() ||
     null
   const isRequest = form.get("is_request") === "on"
+  const privateRoom = form.get("private_room") === "on"
   const bedId = String(form.get("bed_id") ?? "") || null
   const notes = String(form.get("notes") ?? "").trim() || null
   const source = String(form.get("source") ?? "walk_in")
@@ -492,6 +498,7 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
       customer_name: customerName,
       customer_phone: customerPhone,
       is_request: isRequest,
+      private_room: privateRoom,
       start_time: startTime,
       source,
       bed_id: bedId,

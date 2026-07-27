@@ -9,7 +9,7 @@ import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
   PAYMENT_METHODS,
-  REQUEST_FEE,
+  PRIVATE_ROOM_FEE, REQUEST_FEE,
   formatBaht,
 } from "@/lib/constants"
 import {
@@ -55,6 +55,7 @@ type ExtraItem = {
   couponPromo: string
   discount: string
   isRequest: boolean
+  privateRoom: boolean
 }
 
 const BLANK_EXTRA: ExtraItem = {
@@ -63,6 +64,7 @@ const BLANK_EXTRA: ExtraItem = {
   couponPromo: "",
   discount: "",
   isRequest: false,
+  privateRoom: false,
 }
 
 /** ค่ากรอกล่วงหน้าจากการ์ดคิว — เก็บเงินจากบอร์ดคิวไม่ต้องกรอกซ้ำ */
@@ -81,6 +83,8 @@ export type PosInitial = {
   serviceTime: string
   /** รีเควสหมอที่ติ๊กไว้ตั้งแต่ตอนจองคิว — ติ๊กให้เลย +40 อัตโนมัติ */
   isRequest: boolean
+  /** ห้องสปาส่วนตัวจากคิว — ติ๊กให้เลย +100 (ลูกค้าจ่าย) */
+  privateRoom: boolean
 }
 
 export function PosForm({
@@ -103,6 +107,7 @@ export function PosForm({
   const [gowabiNet, setGowabiNet] = useState("")
   // มาจากคิวที่ติ๊กรีเควสไว้ → ติ๊กให้เลย ไม่ต้องจำมากรอกซ้ำ
   const [isRequest, setIsRequest] = useState(initial?.isRequest ?? false)
+  const [privateRoom, setPrivateRoom] = useState(initial?.privateRoom ?? false)
   const [customerId, setCustomerId] = useState(initial?.customerId ?? "")
   const [customerName, setCustomerName] = useState(initial?.customerName ?? "")
   const [customerPhone, setCustomerPhone] = useState(initial?.customerPhone ?? "")
@@ -206,14 +211,19 @@ export function PosForm({
   function extraNet(x: ExtraItem): number {
     const svc = services.find((s) => s.id === x.serviceId)
     if (!svc) return 0
-    return Math.max(0, svc.price - (Number(x.discount) || 0))
+    return (
+      Math.max(0, svc.price - (Number(x.discount) || 0)) +
+      (x.privateRoom ? PRIVATE_ROOM_FEE : 0)
+    )
   }
 
   const netAmount = useMemo(() => {
     if (!service) return 0
-    if (isGowabi) return Math.max(0, Number(gowabiNet) || 0)
-    return Math.max(0, service.price - (Number(discount) || 0))
-  }, [service, discount, gowabiNet, isGowabi])
+    // ค่าห้องสปาลูกค้าจ่ายจริง บวกทับทุกวิธีจ่าย (สูตรเดียวกับ server)
+    const room = privateRoom ? PRIVATE_ROOM_FEE : 0
+    if (isGowabi) return Math.max(0, Number(gowabiNet) || 0) + room
+    return Math.max(0, service.price - (Number(discount) || 0)) + room
+  }, [service, discount, gowabiNet, isGowabi, privateRoom])
 
   function resetForm() {
     setTherapistId("")
@@ -222,6 +232,7 @@ export function PosForm({
     setDiscount("")
     setGowabiNet("")
     setIsRequest(false)
+    setPrivateRoom(false)
     setCustomerId("")
     setCustomerName("")
     setCustomerPhone("")
@@ -292,6 +303,7 @@ export function PosForm({
           fd.set("is_request", "on")
           fd.set("request_fee", String(REQUEST_FEE))
         }
+        if (x.privateRoom) fd.set("private_room", "on")
         const r = await createSale(fd)
         if (r.ok) {
           okCount++
@@ -670,6 +682,23 @@ export function PosForm({
         )}
       </div>
 
+      {/* ห้องสปาส่วนตัว — ลูกค้าจ่ายเพิ่ม บวกเข้ายอดบิล (ราคาล็อกฝั่ง server) */}
+      <div className="flex items-center gap-3 rounded-lg border p-3">
+        <Checkbox
+          id="private_room"
+          name="private_room"
+          checked={privateRoom}
+          onCheckedChange={(v) => setPrivateRoom(v === true)}
+        />
+        <Label htmlFor="private_room" className="flex-1 cursor-pointer">
+          ห้องสปาส่วนตัว{" "}
+          <span className="font-normal text-slate-500">(+{PRIVATE_ROOM_FEE} ฿)</span>
+        </Label>
+        {privateRoom && (
+          <span className="font-semibold text-emerald-700">+{PRIVATE_ROOM_FEE} ฿</span>
+        )}
+      </div>
+
       {/* บิลชุด: รายการที่ 2+ ของลูกค้าคนเดิม จ่ายรวมครั้งเดียว (Gowabi ไม่รองรับ) */}
       {!isGowabi && (
         <fieldset className="space-y-3">
@@ -754,6 +783,13 @@ export function PosForm({
                     onCheckedChange={(v) => setExtra(i, { isRequest: v === true })}
                   />
                   รีเควส (+{REQUEST_FEE} ฿)
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={x.privateRoom}
+                    onCheckedChange={(v) => setExtra(i, { privateRoom: v === true })}
+                  />
+                  ห้องสปา (+{PRIVATE_ROOM_FEE} ฿)
                 </label>
                 {x.serviceId && (
                   <span className="ml-auto text-sm font-medium text-slate-700">

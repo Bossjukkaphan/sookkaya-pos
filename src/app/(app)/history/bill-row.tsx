@@ -35,6 +35,7 @@ export type BillRecord = {
   net_amount: number
   commission: number
   request_fee: number
+  room_fee: number
   is_request: boolean
   payment_method: string
   credit_used: number
@@ -199,6 +200,8 @@ export function BillRow({ bill }: { bill: BillRecord }) {
               label="ค่ามือหมอ"
               value={`${formatBaht(bill.commission)} ฿${
                 bill.is_request ? ` · รีเควส +${formatBaht(bill.request_fee)} ฿` : ""
+              }${
+                bill.room_fee > 0 ? ` · ห้องสปา +${formatBaht(bill.room_fee)} ฿` : ""
               }`}
             />
             <Row label="หมายเหตุ" value={bill.notes} />

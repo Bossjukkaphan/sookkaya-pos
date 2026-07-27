@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
-import { REQUEST_FEE, formatBaht } from "@/lib/constants"
+import { PRIVATE_ROOM_FEE, REQUEST_FEE, formatBaht } from "@/lib/constants"
 import {
   HAPPY_HOUR_KEY,
   happyHourDiscountBaht,
@@ -41,6 +41,8 @@ export type GroupPerson = {
   notes: string
   /** รีเควสหมอจากคิว — คิดค่าตายตัวตอนบันทึก */
   isRequest: boolean
+  /** ห้องสปาส่วนตัวจากคิว — +100 ลูกค้าจ่าย */
+  privateRoom: boolean
 }
 
 /**
@@ -68,6 +70,7 @@ function blankPerson(groupId: string): GroupPerson {
     bookingChannel: "",
     notes: "",
     isRequest: false,
+    privateRoom: false,
   }
 }
 
@@ -109,7 +112,11 @@ export function GroupPosForm({
 
   const nets = people.map((p) => {
     const price = serviceById.get(p.serviceId)?.price ?? 0
-    return Math.max(0, price - (Number(p.discount) || 0))
+    // ค่าห้องสปาลูกค้าจ่ายจริง — บวกให้ตรงกับที่ server คิด
+    return (
+      Math.max(0, price - (Number(p.discount) || 0)) +
+      (p.privateRoom ? PRIVATE_ROOM_FEE : 0)
+    )
   })
   const total = nets.reduce((s, n) => s + n, 0)
 
@@ -174,6 +181,7 @@ export function GroupPosForm({
         fd.set("is_request", "on")
         fd.set("request_fee", String(REQUEST_FEE))
       }
+      if (p.privateRoom) fd.set("private_room", "on")
 
       const r = await createSale(fd)
       if (!r.ok) {
@@ -345,10 +353,21 @@ export function GroupPosForm({
                     <span className="text-slate-500">(+{REQUEST_FEE} ฿)</span>
                   </label>
 
+                  <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700">
+                    <Checkbox
+                      checked={p.privateRoom}
+                      onCheckedChange={(v) => setPerson(i, { privateRoom: v === true })}
+                      aria-label={`ห้องสปาคนที่ ${i + 1}`}
+                    />
+                    ห้องสปาส่วนตัว{" "}
+                    <span className="text-slate-500">(+{PRIVATE_ROOM_FEE} ฿)</span>
+                  </label>
+
                   {service && (
                     <p className="text-xs text-slate-500">
                       ราคาปกติ {formatBaht(service.price)} ฿
                       {p.isRequest ? ` · รีเควส +${REQUEST_FEE} ฿` : ""}
+                      {p.privateRoom ? ` · ห้องสปา +${PRIVATE_ROOM_FEE} ฿` : ""}
                       {p.serviceTime ? ` · เวลาใช้บริการ ${p.serviceTime}` : ""}
                     </p>
                   )}

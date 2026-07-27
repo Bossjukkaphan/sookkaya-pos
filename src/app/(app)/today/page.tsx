@@ -627,6 +627,7 @@ type SaleRecord = {
   net_amount: number | string | null
   commission: number | string | null
   request_fee: number | string | null
+  room_fee: number | string | null
   payment_method: string
   is_request: boolean | null
   member_status: string | null
@@ -658,6 +659,7 @@ function SaleRow({
   const netAmount = Number(s.net_amount ?? 0)
   const commission = Number(s.commission ?? 0)
   const requestFee = Number(s.request_fee ?? 0)
+  const roomFee = Number(s.room_fee ?? 0)
 
   // numeric ของ postgres มาเป็น string — แปลงให้ครบก่อนส่งเข้าฟอร์ม
   // ไม่งั้นการบวกในกล่องแก้ไขจะกลายเป็นการต่อสตริง
@@ -677,6 +679,7 @@ function SaleRow({
     payment_method: s.payment_method,
     is_request: s.is_request ?? false,
     request_fee: requestFee,
+    room_fee: roomFee,
     credit_used: Number(s.credit_used ?? 0),
     revenue_recognize: Number(s.revenue_recognize ?? 0),
     notes: s.notes,

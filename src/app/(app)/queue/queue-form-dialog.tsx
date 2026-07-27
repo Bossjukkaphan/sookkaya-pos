@@ -31,7 +31,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { ServiceCombobox } from "@/components/service-combobox"
-import { REQUEST_FEE } from "@/lib/constants"
+import { PRIVATE_ROOM_FEE, REQUEST_FEE } from "@/lib/constants"
 
 const DURATIONS = [30, 45, 60, 90, 120]
 
@@ -108,6 +108,8 @@ export function QueueFormDialog({
   const [customerPhone, setCustomerPhone] = useState(entry?.customer_phone ?? "")
   // รีเควสหมอบันทึกตั้งแต่ตอนจอง — ตอนกดเก็บเงินระบบจะติ๊ก +40 ให้เอง ไม่ตกหล่น
   const [isRequest, setIsRequest] = useState(entry?.is_request ?? false)
+  // ห้องสปาส่วนตัว +100฿ (ลูกค้าจ่าย) — เก็บตั้งแต่ตอนจอง ตอนเก็บเงินระบบติ๊กบวกให้เอง
+  const [privateRoom, setPrivateRoom] = useState(entry?.private_room ?? false)
   // ลูกค้ามาเป็นครอบครัว/กลุ่ม: คนแรกใช้ช่องหลักด้านบน คนต่อไปเพิ่มเป็นแถวย่อย
   // (เวลา·ลูกค้าผู้ติดต่อ·ที่มา·หมายเหตุ ใช้ร่วมกันทั้งกลุ่ม)
   const [extraPeople, setExtraPeople] = useState<GroupPerson[]>([])
@@ -131,6 +133,7 @@ export function QueueFormDialog({
                 serviceId,
                 bedId: bedId || null,
                 isRequest,
+                privateRoom,
               },
               ...extraPeople,
             ])
@@ -350,6 +353,22 @@ export function QueueFormDialog({
             </Label>
           </div>
 
+          {/* ห้องสปาส่วนตัว — บริการเสริมผูกกับบริการหลัก ลูกค้าจ่ายเพิ่มตอนเก็บเงิน */}
+          <div className="flex items-center gap-3 rounded-lg border p-3">
+            <Checkbox
+              id="q_private_room"
+              name="private_room"
+              checked={privateRoom}
+              onCheckedChange={(v) => setPrivateRoom(v === true)}
+            />
+            <Label htmlFor="q_private_room" className="flex-1 cursor-pointer">
+              ห้องสปาส่วนตัว{" "}
+              <span className="font-normal text-slate-500">
+                (+{PRIVATE_ROOM_FEE} ฿ คิดตอนเก็บเงิน)
+              </span>
+            </Label>
+          </div>
+
           {/* จองเป็นกลุ่ม: คนแรกคือช่องหลักด้านบน คนต่อไปเพิ่มแถวตรงนี้
               ทั้งกลุ่มเริ่มเวลาเดียวกัน ใช้ลูกค้าผู้ติดต่อ/ที่มา/หมายเหตุร่วมกัน */}
           {!isEdit && (
@@ -381,6 +400,20 @@ export function QueueFormDialog({
                           aria-label={`รีเควสหมอคนที่ ${i + 2}`}
                         />
                         รีเควส
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-1 text-xs text-slate-600">
+                        <Checkbox
+                          checked={p.privateRoom ?? false}
+                          onCheckedChange={(v) =>
+                            setExtraPeople((arr) =>
+                              arr.map((x, j) =>
+                                j === i ? { ...x, privateRoom: v === true } : x
+                              )
+                            )
+                          }
+                          aria-label={`ห้องสปาคนที่ ${i + 2}`}
+                        />
+                        ห้องสปา
                       </label>
                       <Button
                         type="button"

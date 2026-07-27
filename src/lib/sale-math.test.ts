@@ -8,6 +8,7 @@ const base = {
   gowabiNet: null,
   isRequest: false,
   requestFee: 0,
+  roomFee: 0,
   serviceCommission: 240,
   memberRatio: null,
 }
@@ -70,5 +71,36 @@ describe("computeSaleAmounts", () => {
   it("ส่วนลดมากกว่าราคา — คืนยอดติดลบให้ผู้เรียกปฏิเสธ ไม่ปัดเป็นศูนย์เงียบๆ", () => {
     const a = computeSaleAmounts({ ...base, discount: 800 })
     expect(a.netAmount).toBeLessThan(0)
+  })
+})
+
+describe("ค่าห้องสปาส่วนตัว (ลูกค้าจ่าย บวกเข้ายอดบิล)", () => {
+  it("ขายปกติ + ห้องสปา — ยอดสุทธิรวมค่าห้อง ส่วนลดไม่แตะค่าห้อง", () => {
+    const a = computeSaleAmounts({ ...base, discount: 160, roomFee: 100 })
+    expect(a.netAmount).toBe(590) // 650 - 160 + 100
+    expect(a.discount).toBe(160)
+    expect(a.roomFee).toBe(100)
+    expect(a.revenueRecognize).toBe(590) // เข้ารายได้ร้านเต็ม
+    expect(a.commission).toBe(240) // ค่ามือหมอไม่เพิ่ม — เงินห้องเป็นของร้าน
+  })
+  it("Gowabi + ห้องสปา — ค่าห้องบวกทับยอดที่ Gowabi จ่าย ส่วนลดคิดจากยอดนวดล้วน", () => {
+    const a = computeSaleAmounts({
+      ...base, paymentMethod: "Gowabi", gowabiNet: 390, roomFee: 100,
+    })
+    expect(a.netAmount).toBe(490)
+    expect(a.discount).toBe(260) // 650 - 390 ไม่เกี่ยวค่าห้อง
+  })
+  it("Member Credit + ห้องสปา — เครดิตถูกตัดรวมค่าห้อง ตามสัดส่วนรับรู้", () => {
+    const a = computeSaleAmounts({
+      ...base, priceNormal: 690, paymentMethod: "Member Credit",
+      memberRatio: 5000 / 6000, roomFee: 100,
+    })
+    expect(a.creditUsed).toBe(790)
+    expect(a.creditUsed).toBe(a.revenueRecognize + a.bonusUsed)
+  })
+  it("ไม่ติ๊กห้องสปา (roomFee 0) — ทุกอย่างเท่าเดิมเป๊ะ", () => {
+    const a = computeSaleAmounts({ ...base, discount: 160 })
+    expect(a.netAmount).toBe(490)
+    expect(a.roomFee).toBe(0)
   })
 })

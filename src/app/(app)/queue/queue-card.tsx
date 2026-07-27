@@ -336,6 +336,11 @@ export function QueueCard({
               รีเควส
             </span>
           )}
+          {entry.private_room && (
+            <span className="ml-1 rounded border border-teal-200 bg-teal-50 px-1 text-[10px] font-medium text-teal-700">
+              ห้องสปา
+            </span>
+          )}
         </p>
       </button>
 
@@ -396,6 +401,9 @@ export function QueueCard({
             {entry.customer_phone && <p>เบอร์โทร: {entry.customer_phone}</p>}
             {entry.is_request && (
               <p className="text-amber-700">รีเควสหมอ (+40 ฿ คิดตอนเก็บเงิน)</p>
+            )}
+            {entry.private_room && (
+              <p className="text-teal-700">ห้องสปาส่วนตัว (+100 ฿ ลูกค้าจ่ายตอนเก็บเงิน)</p>
             )}
             {entry.notes && <p>หมายเหตุ: {entry.notes}</p>}
             <p>สถานะ: {STATUS_LABEL[entry.status]}</p>

@@ -91,6 +91,7 @@ export default async function HistoryPage({
     net_amount: n(s.net_amount),
     commission: n(s.commission),
     request_fee: n(s.request_fee),
+    room_fee: n(s.room_fee),
     is_request: s.is_request ?? false,
     payment_method: s.payment_method,
     credit_used: n(s.credit_used),
