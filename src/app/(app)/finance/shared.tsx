@@ -1,33 +1,12 @@
 import Link from "next/link"
 
+import { monthLabel, monthShortLabel, shiftMonth } from "@/lib/month"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 
-const THAI_MONTHS = [
-  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
-]
-
-const THAI_MONTHS_SHORT = [
-  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
-]
-
-export function monthLabel(ym: string): string {
-  const [y, m] = ym.split("-").map(Number)
-  return `${THAI_MONTHS[m - 1]} ${y + 543}`
-}
-
-export function monthShortLabel(ym: string): string {
-  const [y, m] = ym.split("-").map(Number)
-  return `${THAI_MONTHS_SHORT[m - 1]} ${(y + 543) % 100}`
-}
-
-export function shiftMonth(ym: string, delta: number): string {
-  const [y, m] = ym.split("-").map(Number)
-  const d = new Date(Date.UTC(y, m - 1 + delta, 1))
-  return d.toISOString().slice(0, 7)
-}
+// ไฟล์อื่นเคย import ชื่อพวกนี้จากที่นี่ — ส่งต่อให้ ไม่ต้องไล่แก้ทุก import
+// (import แล้ว export ต่อ ไม่ใช่ `export ... from` เพราะจะซ้ำกับ import ข้างบนแล้ว eslint ฟ้อง)
+export { monthLabel, monthShortLabel, shiftMonth }
 
 /** ส่วนหัวหน้าการเงิน พร้อมปุ่มเลื่อนเดือน — ใช้ร่วมกันทั้งหน้า /finance และ /finance/unit-economics */
 export function FinanceMonthHeader({

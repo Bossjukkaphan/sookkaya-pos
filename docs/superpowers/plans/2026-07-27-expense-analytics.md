@@ -84,14 +84,20 @@ group by work_date;
 ```sql
 select
  (select count(*) from v_commission_daily) as days,
- (select sum(commission)::int from v_commission_daily
-    where work_date between '2026-07-01' and '2026-07-27') as jul_1_27,
+ -- เทียบ view กับต้นทางโดยตรง — ค่าต้องเท่ากันเสมอไม่ว่าร้านจะขายเพิ่มระหว่างวันหรือไม่
+ (select sum(commission)::int from v_commission_daily) as via_view,
+ (select sum(total_income)::int from v_therapist_daily) as via_source,
  (select count(*) from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
     where n.nspname='public' and c.relkind='v'
       and c.reloptions is distinct from array['security_invoker=true']::text[]) as views_without_invoker;
 ```
-คาดหวัง: `jul_1_27` = **131035** และ `views_without_invoker` = **0**
+คาดหวัง: `via_view` = `via_source` (เท่ากันเป๊ะ) และ `views_without_invoker` = **0**
+
+**ห้ามตรึงยอดของเดือนที่ยังไม่จบไว้เป็นเกณฑ์ตรวจ** — ร้านขายทุกวัน ยอดค่ามือของเดือนปัจจุบัน
+ขยับตลอด เกณฑ์ที่ถูกคือ "view ตรงกับต้นทาง" ซึ่งเป็นจริงเสมอ
+(บทเรียนจริง 27/7/2569: แผนเคยตรึงไว้ 131,035 แล้วอีก 3 ชั่วโมงต่อมากลายเป็น 131,260
+เพราะร้านขายต่ออีก 19 บิล — subagent หยุดงานเพราะนึกว่า view ผิด)
 
 - [ ] **Step 4: สร้าง types ใหม่**
 
@@ -417,7 +423,7 @@ export function median(values: number[]): number {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 11 เคส
+คาดหวัง: PASS 10 เคส (เทสรวมทั้งชุด 224 → 234)
 
 - [ ] **Step 5: Commit**
 
@@ -622,7 +628,7 @@ export function compareRange(input: {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 17 เคส
+คาดหวัง: PASS 16 เคสในไฟล์นี้ (เทสรวมทั้งชุด 234 → 240)
 
 - [ ] **Step 5: Commit**
 
@@ -947,7 +953,7 @@ export function detectAnomalies(input: {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 28 เคส · เคส "เงินเดือนประจำโต 32.8%" คือหลักฐานว่าค่ากลางทำงานถูก
+คาดหวัง: PASS 27 เคสในไฟล์นี้ (เทสรวมทั้งชุด 240 → 251) · เคส "เงินเดือนประจำโต 32.8%" คือหลักฐานว่าค่ากลางทำงานถูก
 
 - [ ] **Step 5: Commit**
 
@@ -1186,7 +1192,7 @@ export function projectMonthEnd(input: {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 35 เคส
+คาดหวัง: PASS 34 เคสในไฟล์นี้ (เทสรวมทั้งชุด 251 → 258)
 
 - [ ] **Step 5: Gate + commit**
 
@@ -1534,10 +1540,16 @@ import { monthShortLabel } from "@/lib/month"
   const series = monthlySeries({ rows, revenueByMonth, currentMonth: today.slice(0, 7) })
   const projection = projectMonthEnd({ rows, month, throughDay })
 
-  const costPoints = series.months.map((m, i) => ({
-    label: monthShortLabel(m),
-    value: Math.round(series.costPer100Revenue[i] * 10) / 10,
-  }))
+  // กราฟเส้นเอาเฉพาะเดือนที่ปิดแล้ว — เดือนที่ยังไม่จบมีแต่รายจ่ายที่คีย์ทันแล้ว
+  // (เงินเดือน ค่าเช่า และงวดค่ามือท้ายเดือนยังไม่เข้า) ถ้าต่อท้ายกราฟ เส้นจะดิ่งลง
+  // ทุกเดือนเหมือนต้นทุนลดฮวบ ทั้งที่ยังไม่มีอะไรเกิดขึ้นจริง
+  const costPoints = series.months
+    .map((m, i) => ({ month: m, value: series.costPer100Revenue[i] }))
+    .filter((p) => p.month < today.slice(0, 7))
+    .map((p) => ({
+      label: monthShortLabel(p.month),
+      value: Math.round(p.value * 10) / 10,
+    }))
 
   const latestClosed = series.months.filter((m) => m < today.slice(0, 7)).slice(-1)[0]
   const latestIndex = latestClosed ? series.months.indexOf(latestClosed) : -1
@@ -1701,12 +1713,23 @@ git push origin main
 เปิด `https://sookkaya-pos.vercel.app/insights/expenses` ด้วย claude-in-chrome
 (หน้า sookkaya-pos ถูกบล็อกใน Claude_Browser pane ต้องใช้ claude-in-chrome เท่านั้น)
 
-ตรวจว่าตัวเลขตรงกับที่ยืนยันไว้ตอนออกแบบ:
-- เดือน ก.ค. ช่วง 1–27: รายจ่าย **118,562** · รายได้ **322,242**
-- ส่วนต่างรายจ่ายเทียบ มิ.ย. ช่วงเดียวกัน: **−25,379**
-- หมวดที่ต่างมากสุดคือ **อื่นๆ −21,625**
-- เปลี่ยนไปเดือน มิ.ย. (`?month=2026-06`) ต้องเห็นการ์ดแดง **เงินเดือนพนักงานประจำ +32.8%**
-  และต้องไม่มีการ์ดของค่าเช่าหรือค่าน้ำค่าไฟ
+**เดือนที่ปิดแล้วเท่านั้นที่ตรึงตัวเลขได้** — ไปที่ `?month=2026-06` แล้วต้องเห็น:
+- การ์ดแดง **เงินเดือนพนักงานประจำ +32.8%** (52,450 เทียบค่าปกติ 39,500)
+- **ไม่มี**การ์ดของค่าเช่าสถานที่ และ**ไม่มี**การ์ดของค่าน้ำ/ค่าไฟ
+  (ถ้าโผล่มา แปลว่าโค้ดกลับไปใช้ค่าเฉลี่ยแทนค่ากลาง)
+- รายจ่ายเต็มเดือน **300,962** · รายได้ **347,018**
+
+**เดือนปัจจุบันห้ามตรึงตัวเลข** เพราะร้านขายทุกวัน ให้รัน SQL นี้ ณ เวลาที่เปิดหน้าเว็บ
+แล้วเทียบกับที่หน้าเว็บแสดง (ต้องตรงกัน):
+```sql
+select
+ (select coalesce(sum(amount),0)::int from expenses
+    where expense_date between date_trunc('month', current_date at time zone 'Asia/Bangkok')
+      and (current_date at time zone 'Asia/Bangkok')) as expense_mtd,
+ (select coalesce(sum(net_revenue),0)::int from v_daily_summary
+    where sale_date between date_trunc('month', current_date at time zone 'Asia/Bangkok')
+      and (current_date at time zone 'Asia/Bangkok')) as revenue_mtd;
+```
 
 - [ ] **Step 3: ตรวจสิทธิ์**
 
