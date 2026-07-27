@@ -423,7 +423,7 @@ export function median(values: number[]): number {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 11 เคส
+คาดหวัง: PASS 10 เคส (เทสรวมทั้งชุด 224 → 234)
 
 - [ ] **Step 5: Commit**
 
@@ -628,7 +628,7 @@ export function compareRange(input: {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 17 เคส
+คาดหวัง: PASS 16 เคสในไฟล์นี้ (เทสรวมทั้งชุด 234 → 240)
 
 - [ ] **Step 5: Commit**
 
@@ -953,7 +953,7 @@ export function detectAnomalies(input: {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 28 เคส · เคส "เงินเดือนประจำโต 32.8%" คือหลักฐานว่าค่ากลางทำงานถูก
+คาดหวัง: PASS 27 เคสในไฟล์นี้ (เทสรวมทั้งชุด 240 → 251) · เคส "เงินเดือนประจำโต 32.8%" คือหลักฐานว่าค่ากลางทำงานถูก
 
 - [ ] **Step 5: Commit**
 
@@ -1192,7 +1192,7 @@ export function projectMonthEnd(input: {
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 npx vitest run src/lib/expense-analytics.test.ts
 ```
-คาดหวัง: PASS 35 เคส
+คาดหวัง: PASS 34 เคสในไฟล์นี้ (เทสรวมทั้งชุด 251 → 258)
 
 - [ ] **Step 5: Gate + commit**
 
