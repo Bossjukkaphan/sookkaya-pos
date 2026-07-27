@@ -22,13 +22,16 @@ with expected(check_name, expected_value) as (values
   ('member_credit_used',  209410),
   ('commission_2026_06',  140415),
   ('expenses_fixed_06',   104648),
-  ('expenses_variable_06',125059),
+  -- Excel เดิมไม่มีงวด "ค่ามือพนักงานนวด 1-10/6/69" 42,935 บาท — เจ้าของร้านยืนยัน
+  -- 27/7/2569 ว่าจ่ายจริง ฐานข้อมูลถูก Excel ตกหล่น: variable_06 และกำไร มิ.ย.
+  -- จึงต่างจากชีท 42,935 พอดี (125,059 → 167,994 · กำไร 88,991 → 46,056)
+  ('expenses_variable_06',167994),
   ('expenses_onetime_06',  28320),
   -- เฟส 2: กำไรสุทธิแบบ Excel (รายได้ที่รับรู้ − รายจ่ายที่จ่ายจริงทั้งหมด)
   ('profit_cash_2026_03', -107695),
   ('profit_cash_2026_04',  -70428),
   ('profit_cash_2026_05',  -27606),
-  ('profit_cash_2026_06',   88991),
+  ('profit_cash_2026_06',   46056),
   -- เฟส 3: การจับคู่ชื่อโปรโมชั่น — ตรวจเฉพาะข้อมูลถึง 19 ก.ค. ซึ่งเป็นข้อมูลที่ import มา
   -- ถ้าตัวเลขเหล่านี้ตก แปลว่า alias หลุดหรือ promo_key เปลี่ยนพฤติกรรม
   -- Happy Hours เคยรายงานได้แค่ 38 เพราะพนักงานพิมพ์ชื่อไว้ 8 แบบ
@@ -38,7 +41,8 @@ with expected(check_name, expected_value) as (values
   ('promo_unmatched_rows',       20),
   -- รอบ 1 หน้าภาพรวม: ยอดสะสมต้นปีถึง มิ.ย. (ก.ค. ยังขยับทุกวัน จึงไม่เอามาตรวจ)
   ('ytd_net_revenue_2026_06',  1124141),
-  ('ytd_profit_cash_2026_06',  -116739),
+  -- ตามงวดค่ามือ 42,935 ที่ Excel ตกหล่น (ดูหมายเหตุ expenses_variable_06)
+  ('ytd_profit_cash_2026_06',  -159674),
   -- ข้อนี้ไม่ใช่ตัวเลขเงิน แต่เป็นกับดักที่เคยติดมาแล้ว:
   -- `create or replace view` ล้าง reloptions ทิ้ง ทำให้ security_invoker หลุด
   -- view กลับเป็น SECURITY DEFINER แล้วพนักงาน staff ยิง REST API อ่านกำไรทั้งร้านได้
