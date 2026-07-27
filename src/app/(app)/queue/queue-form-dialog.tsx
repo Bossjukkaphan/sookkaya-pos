@@ -352,7 +352,7 @@ export function QueueFormDialog({
             <Label htmlFor="q_is_request" className="flex-1 cursor-pointer">
               ลูกค้ารีเควสหมอ{" "}
               <span className="font-normal text-slate-500">
-                (+{REQUEST_FEE} ฿ คิดตอนเก็บเงิน)
+                (หมอได้ +{REQUEST_FEE} ฿ — ร้านจ่ายให้ ไม่บวกเงินลูกค้า)
               </span>
             </Label>
           </div>

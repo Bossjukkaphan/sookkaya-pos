@@ -350,7 +350,9 @@ export function GroupPosForm({
                       aria-label={`รีเควสหมอคนที่ ${i + 1}`}
                     />
                     รีเควสหมอ{" "}
-                    <span className="text-slate-500">(+{REQUEST_FEE} ฿)</span>
+                    <span className="text-slate-500">
+                      (หมอได้ +{REQUEST_FEE} ฿ — ร้านจ่าย)
+                    </span>
                   </label>
 
                   <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700">
@@ -366,7 +368,7 @@ export function GroupPosForm({
                   {service && (
                     <p className="text-xs text-slate-500">
                       ราคาปกติ {formatBaht(service.price)} ฿
-                      {p.isRequest ? ` · รีเควส +${REQUEST_FEE} ฿` : ""}
+                      {p.isRequest ? ` · รีเควสหมอ (ร้านจ่าย +${REQUEST_FEE} ฿)` : ""}
                       {p.privateRoom ? ` · ห้องสปา +${PRIVATE_ROOM_FEE} ฿` : ""}
                       {p.serviceTime ? ` · เวลาใช้บริการ ${p.serviceTime}` : ""}
                     </p>

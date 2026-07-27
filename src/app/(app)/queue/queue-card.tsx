@@ -400,7 +400,7 @@ export function QueueCard({
             )}
             {entry.customer_phone && <p>เบอร์โทร: {entry.customer_phone}</p>}
             {entry.is_request && (
-              <p className="text-amber-700">รีเควสหมอ (+40 ฿ คิดตอนเก็บเงิน)</p>
+              <p className="text-amber-700">รีเควสหมอ (หมอได้ +40 ฿ — ร้านจ่าย ไม่บวกเงินลูกค้า)</p>
             )}
             {entry.private_room && (
               <p className="text-teal-700">ห้องสปาส่วนตัว (+100 ฿ ลูกค้าจ่ายตอนเก็บเงิน)</p>

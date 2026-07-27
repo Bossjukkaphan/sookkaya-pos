@@ -199,7 +199,7 @@ export function BillRow({ bill }: { bill: BillRecord }) {
             <Row
               label="ค่ามือหมอ"
               value={`${formatBaht(bill.commission)} ฿${
-                bill.is_request ? ` · รีเควส +${formatBaht(bill.request_fee)} ฿` : ""
+                bill.is_request ? ` · รีเควสหมอ (ร้านจ่าย +${formatBaht(bill.request_fee)} ฿)` : ""
               }${
                 bill.room_fee > 0 ? ` · ห้องสปา +${formatBaht(bill.room_fee)} ฿` : ""
               }`}

@@ -444,12 +444,12 @@ function EditSaleForm({
         />
         <Label htmlFor={uid("is_request")} className="flex-1 cursor-pointer">
           ลูกค้ารีเควสหมอ{" "}
-          <span className="font-normal text-slate-500">(+{REQUEST_FEE} ฿)</span>
+          <span className="font-normal text-slate-500">(หมอได้ +{REQUEST_FEE} ฿ — ร้านจ่าย)</span>
         </Label>
         {isRequest && (
           <>
             <input type="hidden" name="request_fee" value={REQUEST_FEE} />
-            <span className="font-semibold text-emerald-700">+{REQUEST_FEE} ฿</span>
+            <span className="text-sm text-slate-500">หมอ +{REQUEST_FEE} ฿</span>
           </>
         )}
       </div>

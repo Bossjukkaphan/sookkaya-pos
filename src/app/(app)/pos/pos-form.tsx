@@ -672,12 +672,14 @@ export function PosForm({
         />
         <Label htmlFor="is_request" className="flex-1 cursor-pointer">
           ลูกค้ารีเควสหมอ{" "}
-          <span className="font-normal text-slate-500">(+{REQUEST_FEE} ฿)</span>
+          <span className="font-normal text-slate-500">
+            (หมอได้ +{REQUEST_FEE} ฿ — ร้านจ่าย ไม่บวกเงินลูกค้า)
+          </span>
         </Label>
         {isRequest && (
           <>
             <input type="hidden" name="request_fee" value={REQUEST_FEE} />
-            <span className="font-semibold text-emerald-700">+{REQUEST_FEE} ฿</span>
+            <span className="text-sm text-slate-500">หมอ +{REQUEST_FEE} ฿</span>
           </>
         )}
       </div>
@@ -782,7 +784,7 @@ export function PosForm({
                     checked={x.isRequest}
                     onCheckedChange={(v) => setExtra(i, { isRequest: v === true })}
                   />
-                  รีเควส (+{REQUEST_FEE} ฿)
+                  รีเควส (หมอ +{REQUEST_FEE} ฿ ร้านจ่าย)
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <Checkbox
