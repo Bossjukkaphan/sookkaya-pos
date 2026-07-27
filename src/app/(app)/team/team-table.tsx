@@ -27,6 +27,28 @@ const MONEY_COLS: { key: SortKey; label: string; render: (r: PersonSummary) => s
   { key: "commissionPerDay", label: "ค่ามือ/วัน", render: (r) => formatBaht(r.commissionPerDay) },
 ]
 
+function SortableTh({
+  k,
+  sort,
+  onToggle,
+  children,
+}: {
+  k: SortKey
+  sort: { key: SortKey; desc: boolean } | null
+  onToggle: (k: SortKey) => void
+  children: React.ReactNode
+}) {
+  return (
+    <th
+      className="cursor-pointer px-2 py-2 text-right whitespace-nowrap select-none hover:text-emerald-700"
+      onClick={() => onToggle(k)}
+    >
+      {children}
+      {sort?.key === k && (sort.desc ? " ▾" : " ▴")}
+    </th>
+  )
+}
+
 /** ตารางสรุปทีม — กดหัวคอลัมน์เรียงได้ (ค่าเริ่มต้นมาจากลำดับที่ page ส่งมา) */
 export function TeamTable({
   rows,
@@ -53,14 +75,11 @@ export function TeamTable({
     setSort((s) => (s?.key === key ? { key, desc: !s.desc } : { key, desc: true }))
   }
 
-  const Th = ({ k, children }: { k: SortKey; children: React.ReactNode }) => (
-    <th
-      className="cursor-pointer px-2 py-2 text-right whitespace-nowrap select-none hover:text-emerald-700"
-      onClick={() => toggle(k)}
-    >
-      {children}
-      {sort?.key === k && (sort.desc ? " ▾" : " ▴")}
-    </th>
+  // หัวคอลัมน์กดเรียงได้ — ต้องประกาศนอก component (Th ที่สร้างตอน render จะรีเซ็ต state ทุกครั้ง)
+  const th = (k: SortKey, label: React.ReactNode) => (
+    <SortableTh key={k} k={k} sort={sort} onToggle={toggle}>
+      {label}
+    </SortableTh>
   )
 
   if (rows.length === 0) {
@@ -78,13 +97,13 @@ export function TeamTable({
             >
               ชื่อ{sort?.key === "name" && (sort.desc ? " ▾" : " ▴")}
             </th>
-            <Th k="daysWorked">วันทำงาน</Th>
-            <Th k="daysPlannedOff">หยุด/ลา</Th>
-            <Th k="daysAbsent">ขาด</Th>
-            <Th k="hours">ชั่วโมง</Th>
-            {showMoney && MONEY_COLS.map((c) => <Th key={c.key} k={c.key}>{c.label}</Th>)}
-            {showMoney && <Th k="requests">💖 รีเควส</Th>}
-            {showMoney && <Th k="repeatCustomers">🔁 ลูกค้าซ้ำ</Th>}
+            {th("daysWorked", "วันทำงาน")}
+            {th("daysPlannedOff", "หยุด/ลา")}
+            {th("daysAbsent", "ขาด")}
+            {th("hours", "ชั่วโมง")}
+            {showMoney && MONEY_COLS.map((c) => th(c.key, c.label))}
+            {showMoney && th("requests", "💖 รีเควส")}
+            {showMoney && th("repeatCustomers", "🔁 ลูกค้าซ้ำ")}
           </tr>
         </thead>
         <tbody className="divide-y">

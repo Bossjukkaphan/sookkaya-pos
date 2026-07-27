@@ -73,14 +73,25 @@ export function DeleteSaleButton({
   // ค่าเริ่มต้น: ยกเลิกคิวที่ผูกด้วย — เคสส่วนใหญ่ลบบิลเพราะยกเลิกทั้งรายการ
   const [cancelQueue, setCancelQueue] = useState(true)
   // ผลกระทบต่อแต้มลูกค้า — เช็คตอนเปิด dialog เพื่อเตือนก่อนกดลบ ไม่ใช่หลังลบไปแล้ว
-  const [impact, setImpact] = useState<SalePointsImpact | null>(null)
+  // ผูกผลลัพธ์กับ id ที่ขอไป — ไม่ต้อง setImpact(null) ล้างค่าใน effect
+  // (การล้างค่าแบบนั้นทำให้ render ซ้อนกันรอบพิเศษ และ React Compiler ห้าม)
+  const [fetched, setFetched] = useState<{
+    id: string
+    impact: SalePointsImpact | null
+  } | null>(null)
+  const impact = fetched?.id === id ? fetched.impact : null
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
   useEffect(() => {
     if (!open) return
-    setImpact(null)
-    getSalePointsImpact(id).then(setImpact)
+    let cancelled = false
+    getSalePointsImpact(id).then((r) => {
+      if (!cancelled) setFetched({ id, impact: r })
+    })
+    return () => {
+      cancelled = true
+    }
   }, [open, id])
 
   function handleDelete() {

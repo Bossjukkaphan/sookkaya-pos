@@ -24,7 +24,10 @@ export default async function CrmPage({
   const supabase = await createClient()
   const today = todayInShopTz()
 
-  const cooldownSince = new Date(Date.now() - CONTACT_COOLDOWN_DAYS * 86400000).toISOString()
+  // นับถอยจากวันที่ของร้าน ไม่ใช่ Date.now() — ค่าคงที่ตลอดการ render หนึ่งครั้ง
+  const cooldownSince = new Date(
+    Date.parse(`${today}T00:00:00Z`) - CONTACT_COOLDOWN_DAYS * 86400000
+  ).toISOString()
   const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }] =
     await Promise.all([
       supabase
