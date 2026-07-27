@@ -1,105 +1,61 @@
 import Link from "next/link"
-import {
-  BadgePercent,
-  CalendarClock,
-  CreditCard,
-  FileBarChart,
-  PiggyBank,
-  Settings,
-  TrendingUp,
-  Users,
-  Wallet,
-} from "lucide-react"
 
+import { getMyProfile } from "@/lib/auth"
+import { MOBILE_PRIMARY_HREFS, NAV_SECTIONS, canSeeNav } from "@/lib/nav"
 import { Card, CardContent } from "@/components/ui/card"
 
 export const metadata = { title: "เพิ่มเติม · สุขกายา POS" }
 
-// เรียงหมวดเดียวกับแถบซ้ายจอกว้าง: หน้าร้าน → ข้อมูล → ผู้บริหาร → ระบบ
-const ITEMS = [
-  {
-    href: "/members",
-    label: "ระบบสมาชิก",
-    description: "เติมเงิน ดูเครดิตคงเหลือ และประวัติ",
-    icon: CreditCard,
-  },
-  {
-    href: "/history",
-    label: "ประวัติบิล",
-    description: "ค้นหาบิลด้วยชื่อ เบอร์ เลขบิล และ export",
-    icon: TrendingUp,
-  },
-  {
-    href: "/customers",
-    label: "ลูกค้า",
-    description: "รายชื่อ ค้นหา และโปรไฟล์ลูกค้า",
-    icon: Users,
-  },
-  {
-    href: "/expenses",
-    label: "รายจ่าย",
-    description: "บันทึกและดูรายจ่ายรายเดือน",
-    icon: Wallet,
-  },
-  {
-    href: "/reports",
-    label: "รายงาน",
-    description: "เลือกช่วงได้ ยอดขาย ค่ามือ กราฟ และ export CSV",
-    icon: FileBarChart,
-  },
-  {
-    href: "/finance",
-    label: "การเงิน",
-    description: "กำไรรายเดือน กระแสเงินสด จุดคุ้มทุน",
-    icon: PiggyBank,
-  },
-  {
-    href: "/insights/heatmap",
-    label: "ชั่วโมงคนแน่น",
-    description: "ดูว่าวันไหนเวลาไหนลูกค้าเยอะที่สุด",
-    icon: CalendarClock,
-  },
-  {
-    href: "/insights/promotions",
-    label: "ROI ส่วนลด",
-    description: "โปรฯ ไหนคุ้ม โปรฯ ไหนแค่แจกส่วนลด",
-    icon: BadgePercent,
-  },
-  {
-    href: "/insights/customers",
-    label: "ลูกค้าและคนที่หายไป",
-    description: "ยอดสะสมรายคน และคนที่ควรตามกลับ",
-    icon: Users,
-  },
-  {
-    href: "/settings",
-    label: "ตั้งค่า",
-    description: "หมอนวด เมนูและราคา ผู้ใช้ และค่าประกันมือ",
-    icon: Settings,
-  },
-]
+/**
+ * หน้ารวมเมนูของมือถือ — อ่านจาก NAV_SECTIONS ที่เดียวกับแถบข้างของจอกว้าง
+ *
+ * เดิมหน้านี้มีลิสต์เมนูของตัวเองแยกต่างหาก พอเพิ่มหน้าใหม่แล้วลืมมาเติมที่นี่
+ * มือถือจึงเข้าไม่ถึง 6 หน้า (เข้างาน · ดูแลลูกค้า · ภาพรวม · ทีมงาน · จัดวันหยุด ·
+ * วิเคราะห์รายจ่าย) ทั้งที่จอคอมเห็นครบ — เจอเมื่อ 28/7/2569
+ *
+ * เดิมยังไม่กรองตามสิทธิ์ด้วย พนักงานจึงเห็นเมนู "การเงิน" ที่กดเข้าไปแล้วโดนปฏิเสธ
+ */
+export default async function MorePage() {
+  const profile = await getMyProfile()
+  const role = profile?.role ?? "staff"
 
-export default function MorePage() {
+  // ไม่โชว์ซ้ำกับแถบล่างที่อยู่บนจอเดียวกันอยู่แล้ว — ลิงก์ที่ถูกกรองด้วยสิทธิ์
+  // ก็หายจากแถบล่างเหมือนกัน จึงไม่มีหน้าไหนกลายเป็นเข้าไม่ถึง
+  const sections = NAV_SECTIONS.map((s) => ({
+    ...s,
+    links: s.links.filter(
+      (l) => canSeeNav(l, role) && !MOBILE_PRIMARY_HREFS.includes(l.href)
+    ),
+  })).filter((s) => s.links.length > 0)
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <h1 className="text-xl font-bold">เพิ่มเติม</h1>
-      <ul className="space-y-2">
-        {ITEMS.map(({ href, label, description, icon: Icon }) => (
-          <li key={href}>
-            <Link href={href}>
-              <Card className="transition-colors hover:bg-slate-50">
-                <CardContent className="flex items-center gap-4 py-4">
-                  <Icon className="size-6 shrink-0 text-emerald-700" aria-hidden />
-                  <div>
-                    <p className="font-medium">{label}</p>
-                    <p className="text-sm text-slate-600">{description}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            </Link>
-          </li>
-        ))}
-      </ul>
+
+      {sections.map((section) => (
+        <section key={section.title} className="space-y-2">
+          <h2 className="text-xs font-semibold tracking-wide text-[#795757]/80 uppercase">
+            {section.title}
+          </h2>
+          <ul className="space-y-2">
+            {section.links.map(({ href, label, description, icon: Icon }) => (
+              <li key={href}>
+                <Link href={href}>
+                  <Card className="transition-colors hover:bg-slate-50">
+                    <CardContent className="flex items-center gap-4 py-4">
+                      <Icon className="size-6 shrink-0 text-emerald-700" aria-hidden />
+                      <div className="min-w-0">
+                        <p className="font-medium">{label}</p>
+                        <p className="text-sm text-slate-600">{description}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
     </div>
   )
 }

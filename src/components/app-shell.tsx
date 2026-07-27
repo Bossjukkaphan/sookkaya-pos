@@ -3,104 +3,16 @@
 import { Fragment } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import {
-  BadgePercent,
-  BarChart3,
-  HeartHandshake,
-  CalendarClock,
-  Clock4,
-  CreditCard,
-  FileBarChart,
-  HandCoins,
-  LayoutDashboard,
-  MoreHorizontal,
-  PiggyBank,
-  ScrollText,
-  Settings,
-  UserCheck,
-  Users,
-  Wallet,
-  type LucideIcon,
-} from "lucide-react"
+import { MoreHorizontal } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { usePendingQueue } from "@/components/queue-notifications"
+import { MOBILE_PRIMARY_HREFS, NAV_SECTIONS, allNavLinks, canSeeNav } from "@/lib/nav"
 
-type NavLink = {
-  href: string
-  label: string
-  icon: LucideIcon
-  /** ต่ำสุดที่เห็นลิงก์นี้ · ไม่ใส่ = ทุกคนเห็น */
-  minRole?: "manager" | "admin"
-}
-
-/**
- * แถบล่างมือถือ (สูงสุด 5 ปุ่ม + เพิ่มเติม) — เรียงตามงานที่กดบ่อยสุด
- * พนักงานเห็น 4 ปุ่ม (ไม่มีรายงาน) · ผู้จัดการขึ้นไปได้ปุ่มรายงานเพิ่มเป็น 5
- * ภาพรวมย้ายไป "เพิ่มเติม" เพราะซ้อนกับยอดวันนี้+รายงาน และแถบมีที่จำกัด
- */
-const PRIMARY: NavLink[] = [
-  { href: "/queue", label: "คิววันนี้", icon: Clock4 },
-  { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
-  { href: "/reports", label: "รายงาน", icon: FileBarChart, minRole: "manager" },
-  { href: "/commission", label: "ค่ามือ", icon: HandCoins },
-]
-
-/**
- * แถบซ้ายจอกว้าง จัดเป็นหมวดตามการใช้งาน:
- * หน้าร้าน (ทำทุกวัน) → ข้อมูล (ค้นหา) → ผู้บริหาร (วิเคราะห์) → ระบบ
- * เรียงในหมวดตามความถี่การใช้ — งานที่ทำบ่อยสุดอยู่บนสุด
- */
-const SECTIONS: { title: string; links: NavLink[] }[] = [
-  {
-    title: "หน้าร้าน",
-    links: [
-      { href: "/queue", label: "คิววันนี้", icon: Clock4 },
-      { href: "/checkin", label: "เข้างาน", icon: UserCheck },
-      { href: "/today", label: "ยอดวันนี้", icon: BarChart3 },
-      { href: "/commission", label: "ค่ามือ", icon: HandCoins },
-      { href: "/members", label: "ระบบสมาชิก", icon: CreditCard },
-    ],
-  },
-  {
-    title: "ข้อมูล",
-    links: [
-      { href: "/history", label: "ประวัติบิล", icon: ScrollText },
-      { href: "/customers", label: "ลูกค้า", icon: Users },
-      { href: "/crm", label: "ดูแลลูกค้า", icon: HeartHandshake },
-      { href: "/expenses", label: "รายจ่าย", icon: Wallet },
-    ],
-  },
-  {
-    title: "ผู้บริหาร",
-    links: [
-      { href: "/overview", label: "ภาพรวม", icon: LayoutDashboard, minRole: "manager" },
-      { href: "/reports", label: "รายงาน", icon: FileBarChart, minRole: "manager" },
-      { href: "/team", label: "ทีมงาน", icon: UserCheck, minRole: "manager" },
-      { href: "/shifts", label: "จัดวันหยุด", icon: CalendarClock, minRole: "manager" },
-      { href: "/finance", label: "การเงิน", icon: PiggyBank, minRole: "admin" },
-      { href: "/insights/heatmap", label: "ชั่วโมงคนแน่น", icon: CalendarClock, minRole: "manager" },
-      { href: "/insights/expenses", label: "วิเคราะห์รายจ่าย", icon: Wallet, minRole: "manager" },
-      { href: "/insights/promotions", label: "ROI ส่วนลด", icon: BadgePercent, minRole: "manager" },
-      { href: "/insights/customers", label: "ลูกค้าและคนที่หายไป", icon: Users, minRole: "manager" },
-    ],
-  },
-  {
-    title: "ระบบ",
-    links: [{ href: "/settings", label: "ตั้งค่า", icon: Settings }],
-  },
-]
-
-const MORE_LINK: NavLink = {
+const MORE_LINK = {
   href: "/more",
   label: "เพิ่มเติม",
   icon: MoreHorizontal,
-}
-
-function allowed(link: NavLink, role: string): boolean {
-  if (link.minRole === "admin") return role === "admin"
-  if (link.minRole === "manager") return role === "admin" || role === "manager"
-  return true
 }
 
 export function AppShell({
@@ -117,10 +29,15 @@ export function AppShell({
   const live = usePendingQueue()
   const pendingCount = live ? live.pendingCount : initialPendingCount
 
-  const primary = PRIMARY.filter((l) => allowed(l, role))
-  const sections = SECTIONS.map((s) => ({
+  // แถบล่างมือถือหยิบจาก NAV_SECTIONS ด้วย href — ชื่อกับไอคอนจึงมาจากที่เดียว
+  const links = allNavLinks()
+  const primary = MOBILE_PRIMARY_HREFS.flatMap((h) => {
+    const link = links.find((l) => l.href === h)
+    return link && canSeeNav(link, role) ? [link] : []
+  })
+  const sections = NAV_SECTIONS.map((s) => ({
     ...s,
-    links: s.links.filter((l) => allowed(l, role)),
+    links: s.links.filter((l) => canSeeNav(l, role)),
   })).filter((s) => s.links.length > 0)
 
   function isActive(href: string): boolean {
