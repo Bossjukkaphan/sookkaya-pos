@@ -21,6 +21,7 @@ import { InsightsAccessDenied, canSeeInsights } from "../insights/shared"
 import { monthLabel, monthShortLabel, shiftMonth } from "../finance/shared"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "ภาพรวม · สุขกายา POS" }
 
@@ -227,18 +228,8 @@ export default async function OverviewPage({
           <p className="text-sm text-slate-600">{monthLabel(month)}</p>
         </div>
         <div className="flex gap-1">
-          <Link
-            href={`/overview?month=${shiftMonth(month, -1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-          >
-            ←
-          </Link>
-          <Link
-            href={`/overview?month=${shiftMonth(month, 1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-          >
-            →
-          </Link>
+          <PagerLink href={`/overview?month=${shiftMonth(month, -1)}`}>←</PagerLink>
+          <PagerLink href={`/overview?month=${shiftMonth(month, 1)}`}>→</PagerLink>
         </div>
       </div>
 

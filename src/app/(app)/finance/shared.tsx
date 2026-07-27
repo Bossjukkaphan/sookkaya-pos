@@ -3,6 +3,7 @@ import Link from "next/link"
 import { monthLabel, monthShortLabel, shiftMonth } from "@/lib/month"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { PagerLink } from "@/components/pager-link"
 
 // ไฟล์อื่นเคย import ชื่อพวกนี้จากที่นี่ — ส่งต่อให้ ไม่ต้องไล่แก้ทุก import
 // (import แล้ว export ต่อ ไม่ใช่ `export ... from` เพราะจะซ้ำกับ import ข้างบนแล้ว eslint ฟ้อง)
@@ -27,18 +28,8 @@ export function FinanceMonthHeader({
         <p className="text-sm text-slate-600">{subtitle ?? monthLabel(month)}</p>
       </div>
       <div className="flex gap-1">
-        <Link
-          href={`${basePath}?month=${shiftMonth(month, -1)}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-        >
-          ←
-        </Link>
-        <Link
-          href={`${basePath}?month=${shiftMonth(month, 1)}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-        >
-          →
-        </Link>
+        <PagerLink href={`${basePath}?month=${shiftMonth(month, -1)}`}>←</PagerLink>
+        <PagerLink href={`${basePath}?month=${shiftMonth(month, 1)}`}>→</PagerLink>
       </div>
     </div>
   )

@@ -7,6 +7,7 @@ import { PayToggle } from "./pay-toggle"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "ค่ามือรายวัน · สุขกายา POS" }
 
@@ -89,18 +90,8 @@ export default async function CommissionPage({
           <p className="text-sm text-slate-600">{formatThaiDate(workDate)}</p>
         </div>
         <div className="flex gap-1">
-          <Link
-            href={`/commission?date=${shiftDate(workDate, -1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-          >
-            ← ก่อนหน้า
-          </Link>
-          <Link
-            href={`/commission?date=${shiftDate(workDate, 1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-          >
-            ถัดไป →
-          </Link>
+          <PagerLink href={`/commission?date=${shiftDate(workDate, -1)}`}>← ก่อนหน้า</PagerLink>
+          <PagerLink href={`/commission?date=${shiftDate(workDate, 1)}`}>ถัดไป →</PagerLink>
           <Button asChild size="sm" variant="outline">
             <Link href="/commission/summary">ดูสรุปข้ามวัน</Link>
           </Button>

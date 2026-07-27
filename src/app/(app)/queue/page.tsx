@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { QueueBoard } from "./queue-board"
+import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "คิววันนี้ · สุขกายา POS" }
 
@@ -86,25 +87,13 @@ export default async function QueuePage({
           </p>
         </div>
         <div className="flex gap-1">
-          <Link
-            href={`/queue?date=${shiftDate(boardDate, -1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-            aria-label="วันก่อนหน้า"
-          >
-            ←
-          </Link>
+          <PagerLink href={`/queue?date=${shiftDate(boardDate, -1)}`} aria-label="วันก่อนหน้า">←</PagerLink>
           {!isToday && (
             <Button asChild size="sm" variant="outline" className="h-auto">
               <Link href="/queue">วันนี้</Link>
             </Button>
           )}
-          <Link
-            href={`/queue?date=${shiftDate(boardDate, 1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-            aria-label="วันถัดไป"
-          >
-            →
-          </Link>
+          <PagerLink href={`/queue?date=${shiftDate(boardDate, 1)}`} aria-label="วันถัดไป">→</PagerLink>
         </div>
       </div>
       <QueueBoard

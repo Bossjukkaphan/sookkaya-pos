@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { todayInShopTz } from "@/lib/datetime"
 import { ShiftGrid } from "./shift-grid"
+import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "จัดวันหยุด · สุขกายา POS" }
 
@@ -69,21 +70,11 @@ export default async function ShiftsPage({
       </div>
 
       <div className="flex items-center justify-center gap-2">
-        <Link
-          href={`/shifts?month=${shiftMonth(month, -1)}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-        >
-          ←
-        </Link>
+        <PagerLink href={`/shifts?month=${shiftMonth(month, -1)}`}>←</PagerLink>
         <span className="min-w-40 text-center font-semibold">
           {THAI_MONTHS[m - 1]} {y + 543}
         </span>
-        <Link
-          href={`/shifts?month=${shiftMonth(month, 1)}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-        >
-          →
-        </Link>
+        <PagerLink href={`/shifts?month=${shiftMonth(month, 1)}`}>→</PagerLink>
       </div>
 
       <ShiftGrid

@@ -9,6 +9,7 @@ import { ExpenseRowActions } from "./expense-row-actions"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "รายจ่าย · สุขกายา POS" }
 
@@ -90,19 +91,9 @@ export default async function ExpensesPage({
         <TabsContent value="list" className="space-y-3 pt-4">
           {/* เลื่อนดูเดือนอื่น */}
           <div className="flex items-center justify-center gap-2">
-            <Link
-              href={`/expenses?month=${shiftMonth(month, -1)}`}
-              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-            >
-              ←
-            </Link>
+            <PagerLink href={`/expenses?month=${shiftMonth(month, -1)}`}>←</PagerLink>
             <span className="min-w-36 text-center text-sm font-semibold">{monthName}</span>
-            <Link
-              href={`/expenses?month=${shiftMonth(month, 1)}`}
-              className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-            >
-              →
-            </Link>
+            <PagerLink href={`/expenses?month=${shiftMonth(month, 1)}`}>→</PagerLink>
             {!isCurrentMonth && (
               <Link href="/expenses" className="text-xs text-slate-500 underline">
                 กลับเดือนนี้

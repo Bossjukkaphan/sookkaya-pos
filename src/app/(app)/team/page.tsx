@@ -9,6 +9,7 @@ import { pickStars, summarizeWorkdays, type AttendanceInput, type SaleInput } fr
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { StatCard } from "@/components/stat-card"
 import { TeamTable } from "./team-table"
+import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "ทีมงาน · สุขกายา POS" }
 
@@ -196,21 +197,11 @@ export default async function TeamPage({
 
       {/* เลือกช่วง: เดือนปัจจุบันเป็นค่าตั้งต้น เลื่อนเดือนหรือกรอกช่วงเองได้ */}
       <div className="flex flex-wrap items-center gap-2">
-        <Link
-          href={`/team?from=${prevMonth.from}&to=${prevMonth.to}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-        >
-          ←
-        </Link>
+        <PagerLink href={`/team?from=${prevMonth.from}&to=${prevMonth.to}`}>←</PagerLink>
         <span className="min-w-40 text-center font-medium">
           {isMonthView ? monthLabel(from) : `${formatThaiDate(from)} – ${formatThaiDate(to)}`}
         </span>
-        <Link
-          href={`/team?from=${nextMonth.from}&to=${nextMonth.to}`}
-          className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-        >
-          →
-        </Link>
+        <PagerLink href={`/team?from=${nextMonth.from}&to=${nextMonth.to}`}>→</PagerLink>
         <form className="flex items-center gap-1.5" action="/team">
           <input
             type="date"

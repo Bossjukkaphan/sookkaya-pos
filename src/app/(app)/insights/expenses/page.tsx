@@ -14,7 +14,7 @@ import {
 } from "@/lib/expense-analytics"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LineChart } from "@/components/charts/line-chart"
-import Link from "next/link"
+import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "วิเคราะห์รายจ่าย · สุขกายา POS" }
 
@@ -158,18 +158,8 @@ export default async function ExpenseInsightsPage({
           </p>
         </div>
         <div className="flex gap-1">
-          <Link
-            href={`/insights/expenses?month=${shiftMonth(month, -1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-          >
-            ←
-          </Link>
-          <Link
-            href={`/insights/expenses?month=${shiftMonth(month, 1)}`}
-            className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-md border px-3 text-sm hover:bg-slate-100"
-          >
-            →
-          </Link>
+          <PagerLink href={`/insights/expenses?month=${shiftMonth(month, -1)}`}>←</PagerLink>
+          <PagerLink href={`/insights/expenses?month=${shiftMonth(month, 1)}`}>→</PagerLink>
         </div>
       </div>
 
