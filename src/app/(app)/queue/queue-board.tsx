@@ -12,7 +12,6 @@ import {
   ROW_H,
   bedStartMin,
   clampStart,
-  countFreeTherapists,
   minToTime,
   minToX,
   overlaps,
@@ -35,7 +34,7 @@ import type { Bed } from "@/lib/beds"
 import { todayInShopTz } from "@/lib/datetime"
 export type { Bed }
 
-const BOARD_W =(BOARD_END_MIN - BOARD_START_MIN) * PX_PER_MIN
+const BOARD_W = (BOARD_END_MIN - BOARD_START_MIN) * PX_PER_MIN
 
 /**
  * จัดคิวที่เวลาชนกันในแถวเดียวกันให้แยก "เลน" เรียงลงมา ไม่ทับกัน —
@@ -321,11 +320,6 @@ export function QueueBoard({
     }, 150)
   }
 
-  const freeCount = countFreeTherapists(
-    therapists.map((t) => t.id),
-    entries,
-    nowMin
-  )
   const waitingCount = entries.filter((e) => e.status === "waiting").length
   // เสียง "ติ๊ง" ตอนมีคำขอใหม่ย้ายไปตัวแจ้งเตือนรวม (components/queue-notifications
   // — mount ใน (app)/layout อยู่ทุกหน้ารวมหน้านี้) ถ้าดังเองที่นี่ด้วยจะซ้อนสองรอบ
@@ -339,15 +333,9 @@ export function QueueBoard({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
+        {/* "ว่างตอนนี้" อยู่ในกล่องสรุปข้างล่างที่เดียว — เคยมีสองที่แล้วเลขไม่ตรงกัน
+            (ตัวเก่านับหมอที่ปิดบิลแล้วว่าว่างทั้งที่ยังนวดอยู่ และไม่สนว่าเช็คอินหรือยัง) */}
         <p className="text-sm text-slate-600">
-          {/* "ว่างตอนนี้" มีความหมายเฉพาะวันนี้ — วันอื่นบอกจำนวนคิวพอ */}
-          {isToday && (
-            <>
-              ว่างตอนนี้{" "}
-              <span className="font-semibold text-emerald-700">{freeCount} คน</span>
-              {" · "}
-            </>
-          )}
           คิวรอ <span className="font-semibold">{waitingCount}</span>
           {" · "}ทั้งหมด <span className="font-semibold">{entries.length}</span>
         </p>
