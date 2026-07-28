@@ -269,6 +269,13 @@ export type Database = {
             foreignKeyName: "crm_contacts_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
+            referencedRelation: "v_customer_issues"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "crm_contacts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
             referencedRelation: "v_customer_ltv"
             referencedColumns: ["customer_id"]
           },
@@ -423,6 +430,13 @@ export type Database = {
             foreignKeyName: "line_accounts_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
+            referencedRelation: "v_customer_issues"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "line_accounts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
             referencedRelation: "v_customer_ltv"
             referencedColumns: ["customer_id"]
           },
@@ -505,6 +519,13 @@ export type Database = {
             foreignKeyName: "member_topups_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
+            referencedRelation: "v_customer_issues"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "member_topups_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
             referencedRelation: "v_customer_ltv"
             referencedColumns: ["customer_id"]
           },
@@ -566,6 +587,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_redemptions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_issues"
             referencedColumns: ["customer_id"]
           },
           {
@@ -679,6 +707,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_issues"
             referencedColumns: ["customer_id"]
           },
           {
@@ -906,6 +941,13 @@ export type Database = {
             foreignKeyName: "queue_entries_customer_id_fkey"
             columns: ["customer_id"]
             isOneToOne: false
+            referencedRelation: "v_customer_issues"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "queue_entries_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
             referencedRelation: "v_customer_ltv"
             referencedColumns: ["customer_id"]
           },
@@ -1076,6 +1118,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "sales_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_issues"
             referencedColumns: ["customer_id"]
           },
           {
@@ -1350,6 +1399,24 @@ export type Database = {
         }
         Relationships: []
       }
+      v_customer_issues: {
+        Row: {
+          bad_phone: boolean | null
+          credit_balance: number | null
+          customer_id: string | null
+          customer_type: string | null
+          dup_phone: boolean | null
+          last_visit: string | null
+          name: string | null
+          negative_credit: boolean | null
+          negative_points: boolean | null
+          nickname: string | null
+          no_phone: boolean | null
+          phone: string | null
+          visits: number | null
+        }
+        Relationships: []
+      }
       v_customer_ltv: {
         Row: {
           avg_ticket: number | null
@@ -1434,6 +1501,13 @@ export type Database = {
             columns: ["customer_id"]
             isOneToOne: false
             referencedRelation: "member_balances"
+            referencedColumns: ["customer_id"]
+          },
+          {
+            foreignKeyName: "point_transactions_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "v_customer_issues"
             referencedColumns: ["customer_id"]
           },
           {
