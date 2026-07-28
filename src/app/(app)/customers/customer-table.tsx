@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { formatBaht } from "@/lib/constants"
+import { formatThaiDate } from "@/lib/datetime"
 import { type CustomerIssueRow, issueBadgeClass, issuesOf } from "@/lib/customer-issues"
 import { Badge } from "@/components/ui/badge"
 
@@ -17,15 +18,8 @@ const HEADS: { key: string; label: string; right?: boolean }[] = [
   { key: "type", label: "ประเภท" },
   { key: "balance", label: "เครดิต", right: true },
   { key: "visits", label: "มาแล้ว", right: true },
-  { key: "recent", label: "มาล่าสุด" },
+  { key: "last_visit", label: "มาล่าสุด" },
 ]
-
-function thaiDate(iso: string | null): string {
-  if (!iso) return "—"
-  const [y, m, d] = iso.slice(0, 10).split("-")
-  const months = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."]
-  return `${Number(d)} ${months[Number(m) - 1]} ${(Number(y) + 543) % 100}`
-}
 
 function IssueBadges({ row }: { row: CustomerIssueRow }) {
   const issues = issuesOf(row)
@@ -54,6 +48,28 @@ function NameCell({ row }: { row: CustomerIssueRow }) {
         <span className="font-normal text-slate-500"> ({row.nickname})</span>
       )}
     </>
+  )
+}
+
+/** ป้ายสมาชิก — สีม่วงชุดเดียวกับ Member Credit ทุกหน้าในระบบ */
+function MemberBadge({ row }: { row: CustomerIssueRow }) {
+  if (row.customer_type !== "สมาชิก") return null
+  return (
+    <Badge variant="outline" className="shrink-0 border-violet-200 bg-violet-100 text-violet-700">
+      สมาชิก
+    </Badge>
+  )
+}
+
+/** ยอดเครดิต — ที่เดียวที่ตัดสินสีและรูปแบบ ไม่งั้นตารางกับการ์ดโชว์ไม่เหมือนกัน
+ *  (เคยเพี้ยนมาแล้ว: ตารางไม่มีสัญลักษณ์บาท การ์ดมี) */
+function CreditAmount({ balance }: { balance: number | null }) {
+  const n = balance ?? 0
+  if (n === 0) return <span className="text-slate-300">—</span>
+  return (
+    <span className={`font-semibold whitespace-nowrap ${n < 0 ? "text-red-600" : "text-emerald-700"}`}>
+      {formatBaht(n)} ฿
+    </span>
   )
 }
 
@@ -142,31 +158,21 @@ export function CustomerTable({
                   {r.phone || <span className="text-slate-300">ไม่มีเบอร์</span>}
                 </td>
                 <td className="px-2 py-2">
-                  {r.customer_type === "สมาชิก" ? (
-                    <Badge
-                      variant="outline"
-                      className="border-violet-200 bg-violet-100 text-violet-700"
-                    >
-                      สมาชิก
-                    </Badge>
-                  ) : (
+                  <MemberBadge row={r} />
+                  {r.customer_type !== "สมาชิก" && (
                     <span className="text-slate-400">ทั่วไป</span>
                   )}
                 </td>
-                <td
-                  className={`px-2 py-2 text-right font-semibold whitespace-nowrap ${
-                    (r.credit_balance ?? 0) < 0
-                      ? "text-red-600"
-                      : (r.credit_balance ?? 0) > 0
-                        ? "text-emerald-700"
-                        : "text-slate-300"
-                  }`}
-                >
-                  {(r.credit_balance ?? 0) === 0 ? "—" : formatBaht(r.credit_balance ?? 0)}
+                <td className="px-2 py-2 text-right">
+                  <CreditAmount balance={r.credit_balance} />
                 </td>
                 <td className="px-2 py-2 text-right text-slate-600">{r.visits ?? 0}</td>
                 <td className="px-2 py-2 whitespace-nowrap text-slate-600">
-                  {thaiDate(r.last_visit)}
+                  {r.last_visit ? (
+                    formatThaiDate(r.last_visit)
+                  ) : (
+                    <span className="text-slate-300">—</span>
+                  )}
                 </td>
                 <td className="px-2 py-2">
                   <IssueBadges row={r} />
@@ -186,17 +192,12 @@ export function CustomerTable({
               className="flex items-start justify-between gap-3 rounded-lg border p-3 hover:bg-slate-50"
             >
               <div className="min-w-0">
-                <p className="truncate font-medium">
-                  <NameCell row={r} />
-                  {r.customer_type === "สมาชิก" && (
-                    <Badge
-                      variant="outline"
-                      className="ml-2 border-violet-200 bg-violet-100 text-violet-700"
-                    >
-                      สมาชิก
-                    </Badge>
-                  )}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate font-medium">
+                    <NameCell row={r} />
+                  </p>
+                  <MemberBadge row={r} />
+                </div>
                 <p className="text-sm text-slate-500">
                   {r.phone || "ไม่มีเบอร์"} · มาแล้ว {r.visits ?? 0} ครั้ง
                 </p>
@@ -206,12 +207,8 @@ export function CustomerTable({
               </div>
               {(r.credit_balance ?? 0) !== 0 && (
                 <div className="shrink-0 text-right">
-                  <p
-                    className={`text-base font-bold whitespace-nowrap ${
-                      (r.credit_balance ?? 0) < 0 ? "text-red-600" : "text-emerald-700"
-                    }`}
-                  >
-                    {formatBaht(r.credit_balance ?? 0)} ฿
+                  <p className="text-base font-bold">
+                    <CreditAmount balance={r.credit_balance} />
                   </p>
                   <p className="text-[10px] text-slate-400">เครดิตเหลือ</p>
                 </div>
