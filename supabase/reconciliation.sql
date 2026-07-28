@@ -56,7 +56,28 @@ with expected(check_name, expected_value) as (values
   -- การ์ดคิวที่จ่ายเงินแล้วต้องมีหมอ/เตียงตรงกับบิลเสมอ
   -- (28/7/2569 การกดชำระจากการ์ดไม่ได้เขียนสองช่องนี้กลับ การ์ดเลยค้างแถว "ยังไม่ระบุหมอ"
   --  ทุกวันตั้งแต่เปิดใช้กระดาน โดยไม่มีอะไรจับได้เพราะเงินยังถูก)
-  ('paid_queue_missing_therapist_or_bed', 0)
+  ('paid_queue_missing_therapist_or_bed', 0),
+  -- ข้อบนจับได้แค่ "ช่องว่าง" ข้อนี้จับ "ค่าไม่ตรง" ซึ่งเงียบกว่ามาก
+  -- (28/7/2569 ชวน 25/7 บิลแก้เป็น 120 นาที การ์ดค้าง 90 · ใบใบ 27/7 บิลห้องสปา 2 การ์ดห้องสปา 3
+  --  ทุกห้องมีเตียงชื่อ "เตียง 1" หน้าจอเลยดูเหมือนตรงกัน)
+  -- แก้ที่รากแล้วด้วย queueMirrorFromSale() — ที่เดียวที่บอกว่าการ์ดมิเรอร์อะไรจากบิลบ้าง
+  ('paid_queue_mismatch_with_sale', 0),
+
+  -- เครดิตสมาชิกห้ามติดลบ (คู่กับ points_negative_customers ที่มีอยู่แล้ว)
+  -- ตอนนี้ยังเป็น 2 ไม่ใช่ 0 เพราะเป็นลูกค้าคนเดียวที่มีสองระเบียน แพ็กอยู่ระเบียนหนึ่ง
+  -- บิลไปลงอีกระเบียน ทั้งสี่บิลเข้ามาทาง import ไม่ได้ผ่านด่านของแอป (ด่านทำงานถูก):
+  --   · สงกรานต์ (ใช้ 2,380) กับ กล้วย (แพ็ก 7,000) — เบอร์ 0818509463 เดียวกันเป๊ะ
+  --   · เดียร์ (ใช้ 1,300) กับ เดียร์22 (แพ็ก 7,000) — คนละเบอร์ รอเจ้าของร้านยืนยันว่าคนเดียวกันไหม
+  -- พอรวมลูกค้าซ้ำเสร็จ ต้องแก้เลขนี้เป็น 0 · ถ้าขึ้นเป็น 3 = มีเคสใหม่ ต้องสืบทันที
+  ('member_credit_negative_customers', 2),
+
+  -- คนหรือเตียงถูกจองซ้อนกันเกิน 20 นาที = เป็นไปไม่ได้จริง มีบิลกรอกผิดแน่นอน
+  -- (เผื่อ 20 นาทีไว้ให้คิวต่อกันแบบชนขอบเล็กน้อย ซึ่งเกิดปกติเวลาคีย์เวลาคร่าวๆ)
+  -- ค้างอยู่อย่างละ 1 รอพนักงานยืนยันว่าใบไหนผิด:
+  --   · 26/7 หมอบีบี — รุ 14:20 (120 น.) ทับ เมย์ ปียา 15:30 (60 น.)
+  --   · 28/7 ห้องนวดไทย เตียง 1 — จิราพิชญ์ 12:15 ทับ กอล์ฟ นิติพนธ์ 13:00 (คนละหมอ ชน 75 นาที)
+  ('bed_double_booked', 1),
+  ('therapist_double_booked', 1)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -150,6 +171,43 @@ actual(check_name, actual_value) as (
   where q.status = 'paid'
     and ((q.therapist_id is null and s.therapist_id is not null)
       or (q.bed_id is null and s.bed_id is not null))
+
+  union all
+  select 'paid_queue_mismatch_with_sale', count(*)
+  from public.queue_entries q
+  join public.sales s on s.id = q.sale_id
+  where q.status = 'paid'
+    and (q.service_id   is distinct from s.service_id
+      or q.bed_id       is distinct from coalesce(s.bed_id, q.bed_id)
+      or q.therapist_id is distinct from coalesce(s.therapist_id, q.therapist_id))
+
+  union all
+  select 'member_credit_negative_customers', count(*)
+  from public.member_balances where credit_balance < 0
+
+  union all
+  select 'bed_double_booked', count(*)
+  from public.queue_entries a
+  join public.queue_entries b
+    on b.id > a.id and b.queue_date = a.queue_date and b.bed_id = a.bed_id
+  where a.bed_id is not null
+    and a.status not in ('cancelled','rejected')
+    and b.status not in ('cancelled','rejected')
+    and least(a.start_time + make_interval(mins => a.duration_min),
+              b.start_time + make_interval(mins => b.duration_min))
+      - greatest(a.start_time, b.start_time) > interval '20 min'
+
+  union all
+  select 'therapist_double_booked', count(*)
+  from public.queue_entries a
+  join public.queue_entries b
+    on b.id > a.id and b.queue_date = a.queue_date and b.therapist_id = a.therapist_id
+  where a.therapist_id is not null
+    and a.status not in ('cancelled','rejected')
+    and b.status not in ('cancelled','rejected')
+    and least(a.start_time + make_interval(mins => a.duration_min),
+              b.start_time + make_interval(mins => b.duration_min))
+      - greatest(a.start_time, b.start_time) > interval '20 min'
 
   union all
   select 'points_negative_customers', count(*)

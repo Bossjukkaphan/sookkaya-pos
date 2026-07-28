@@ -11,6 +11,7 @@ import {
   minToTime,
   minToX,
   overlaps,
+  queueMirrorFromSale,
   snapMin,
   timeToMin,
 } from "./queue"
@@ -123,5 +124,54 @@ describe("busyTherapistIds", () => {
     expect(busyTherapistIds(entries, 630, 30)).toEqual(new Set(["t1"]))
     expect(busyTherapistIds(entries, 720, 30)).toEqual(new Set(["t3"])) // 12:00 ยังติด (เริ่มช้า)
     expect(busyTherapistIds(entries, 660, 15)).toEqual(new Set()) // 11:00–11:15 ว่าง (t3 ยังไม่เริ่ม)
+  })
+})
+
+describe("queueMirrorFromSale", () => {
+  const service = { name: "นวดไทยด้วยบาล์ม หรือน้ำมัน 120 นาที", duration_min: 120 }
+
+  function fd(entries: Record<string, string>) {
+    const f = new FormData()
+    for (const [k, v] of Object.entries(entries)) f.set(k, v)
+    return f
+  }
+
+  it("การ์ดเดินตามบิลครบทุกช่อง — เมนู ความยาวเวลา หมอ เตียง", () => {
+    const out = queueMirrorFromSale(
+      fd({ bed_id: "bed-2", customer_name: " ชวน ", customer_phone: "0812345678" }),
+      "svc-120",
+      service,
+      "th-jang"
+    )
+    expect(out.service_id).toBe("svc-120")
+    expect(out.service_name).toBe(service.name)
+    expect(out.duration_min).toBe(120)
+    expect(out.therapist_id).toBe("th-jang")
+    expect(out.bed_id).toBe("bed-2")
+    expect(out.customer_name).toBe("ชวน")
+  })
+
+  // เคสจริง 25/7/2569: บิลถูกแก้ 90→120 นาที แต่การ์ดค้าง 90
+  // บล็อกบนบอร์ดสั้นกว่าจริงครึ่งชั่วโมง เสี่ยงจัดคิวทับ
+  it("เปลี่ยนเมนูแล้วความยาวเวลาบนการ์ดต้องเปลี่ยนตาม", () => {
+    const out = queueMirrorFromSale(fd({}), "svc-90", { name: "x", duration_min: 90 }, "t1")
+    expect(out.duration_min).toBe(90)
+  })
+
+  // ฟอร์มแก้บิลไม่มีช่องเตียงเลย ถ้าเผลอเขียน null ทับ
+  // เตียงที่พนักงานเลือกไว้ตอนกดชำระจะหายทันทีที่มีคนแก้บิล
+  it("ไม่มีคีย์เตียงมาเลย = ไม่แตะเตียงเดิมของการ์ด", () => {
+    const out = queueMirrorFromSale(fd({ customer_name: "ก" }), "s", service, "t")
+    expect("bed_id" in out).toBe(false)
+  })
+
+  it("มีคีย์เตียงแต่ค่าว่าง = ตั้งใจเอาเตียงออก", () => {
+    const out = queueMirrorFromSale(fd({ bed_id: "" }), "s", service, "t")
+    expect(out.bed_id).toBeNull()
+  })
+
+  it("เมนูที่ไม่ได้ตั้งความยาวเวลาไว้ ใช้ 60 นาทีเป็นค่าตั้งต้น", () => {
+    const out = queueMirrorFromSale(fd({}), "s", { name: "x", duration_min: null }, "t")
+    expect(out.duration_min).toBe(60)
   })
 })

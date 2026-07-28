@@ -13,6 +13,7 @@ import {
 } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
 import { earnsPoints, pointExpiryDate, pointsForBaht } from "@/lib/points"
+import { queueMirrorFromSale } from "@/lib/queue"
 
 export type SaleResult =
   | {
@@ -287,17 +288,14 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       .update({
         status: "paid",
         sale_id: inserted.id,
-        // การ์ดต้องมิเรอร์หมอกับเตียงจากบิลด้วย ไม่ใช่แค่ปิดสถานะ — บิลคือความจริงว่า
-        // ใครนวดและใช้เตียงไหน (ค่ามือเดินตามบิล) และพนักงานมักเลือกหมอตอนกดเก็บเงิน
-        // ไม่ใช่ตอนสร้างการ์ด ขาดสองบรรทัดนี้ การ์ดที่จ่ายเงินแล้วจะค้างอยู่แถว
-        // "ยังไม่ระบุหมอ" ทั้งที่บิลมีชื่อหมอถูกต้อง — เจอจริง 28/7/2569 (ลูกค้าจิราพิชญ์ / หมอแจง)
+        // การ์ดต้องเดินตามบิลทุกช่อง ไม่ใช่แค่ปิดสถานะ — พนักงานมักเลือกหมอ/เตียง
+        // และเปลี่ยนเมนูตอนกดเก็บเงิน ไม่ใช่ตอนสร้างการ์ด ขาดตรงนี้การ์ดที่จ่ายเงินแล้ว
+        // จะค้างแถว "ยังไม่ระบุหมอ" หรือค้างเมนูเดิม ทั้งที่บิลถูกต้อง (เจอจริง 28/7/2569)
         //
-        // เขียนทับได้ปลอดภัย เพราะฟอร์มหน้าชำระเงินตั้งค่าเริ่มต้นสองช่องนี้จากการ์ดใบนี้อยู่แล้ว
-        // (pos-form.tsx: useState(initial?.therapistId) / useState(initial?.bedId))
+        // เขียนทับได้ปลอดภัย เพราะฟอร์มหน้าชำระเงินตั้งค่าเริ่มต้นทุกช่องจากการ์ดใบนี้อยู่แล้ว
+        // (pos-form.tsx: useState(initial?.therapistId) / useState(initial?.bedId) ฯลฯ)
         // ถ้าพนักงานไม่แก้ ค่าที่ส่งกลับมาก็คือค่าเดิมของการ์ด
-        therapist_id: therapistId,
-        bed_id: String(formData.get("bed_id") ?? "") || null,
-        updated_at: new Date().toISOString(),
+        ...queueMirrorFromSale(formData, serviceId, service, therapistId),
       })
       .eq("id", queueEntryId)
       .not("status", "in", "(paid,pending,rejected)")
@@ -610,17 +608,7 @@ export async function updateSale(
   // (คิวเป็นผังงานไม่ใช่สมุดเงิน — พลาดก็ไม่กระทบบิล จึงไม่เช็ค error เหมือน createSale)
   await supabase
     .from("queue_entries")
-    .update({
-      service_id: serviceId,
-      service_name: service.name,
-      duration_min: service.duration_min ?? 60,
-      therapist_id: therapistId,
-      customer_name: String(formData.get("customer_name") ?? "").trim() || null,
-      customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
-      is_request: formData.get("is_request") === "on",
-      private_room: formData.get("private_room") === "on",
-      updated_at: new Date().toISOString(),
-    })
+    .update(queueMirrorFromSale(formData, serviceId, service, therapistId))
     .eq("sale_id", id)
 
   // แต้มถูก sync ตามยอดใหม่แล้ว — ถ้ายอดลูกค้าติดลบ (แลกแต้มไปก่อนแล้ว) ต้องบอกพนักงาน

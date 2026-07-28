@@ -140,3 +140,40 @@ export function countFreeTherapists(
   )
   return therapistIds.filter((id) => !busy.has(id)).length
 }
+
+/**
+ * ฟิลด์ที่การ์ดคิว "มิเรอร์" มาจากบิล — ที่เดียวของความจริง
+ *
+ * กติกา: บิลคือความจริงว่าใครนวด เมนูอะไร นานเท่าไร เตียงไหน (ค่ามือเดินตามบิล)
+ * การ์ดคือผังงานบนกระดานที่ต้องเดินตามบิลเสมอ
+ *
+ * เคยเขียนรายชื่อฟิลด์แยกกันสองที่ (ตอนกดชำระใน createSale · ตอนแก้บิลใน updateSale)
+ * แล้วสองชุดค่อยๆ เพี้ยนออกจากกันจนไม่มีทางไหนครบ — ตรวจเจอ 28/7/2569:
+ *   · ชวน 25/7 บิลแก้เป็น 120 นาที การ์ดค้าง 90 → บล็อกบนบอร์ดสั้นกว่าจริง 30 นาที
+ *   · ใบใบ 27/7 บิลอยู่ห้องสปา 2 การ์ดอยู่ห้องสปา 3 (ทุกห้องมี "เตียง 1" เลยไม่มีใครทันสังเกต)
+ * เพิ่มฟิลด์ใหม่ที่การ์ดต้องมิเรอร์ ให้เพิ่มที่นี่ที่เดียว แล้วได้ครบทั้งสองทางพร้อมกัน
+ */
+export function queueMirrorFromSale(
+  formData: FormData,
+  serviceId: string,
+  service: { name: string; duration_min: number | null },
+  therapistId: string,
+) {
+  // ฟอร์มแก้บิลไม่มีช่องเตียง — ถ้าไม่มีคีย์นี้มาเลยต้อง "ไม่แตะ" เตียงของการ์ด
+  // ไม่ใช่เขียน null ทับ (จะลบเตียงที่พนักงานเลือกไว้ตอนกดชำระทิ้ง)
+  // มีคีย์แต่ค่าว่าง = พนักงานตั้งใจเอาออก อันนั้นเขียน null ถูกแล้ว
+  const bed = formData.get("bed_id")
+
+  return {
+    service_id: serviceId,
+    service_name: service.name,
+    duration_min: service.duration_min ?? 60,
+    therapist_id: therapistId,
+    customer_name: String(formData.get("customer_name") ?? "").trim() || null,
+    customer_phone: String(formData.get("customer_phone") ?? "").trim() || null,
+    is_request: formData.get("is_request") === "on",
+    private_room: formData.get("private_room") === "on",
+    ...(bed === null ? {} : { bed_id: String(bed) || null }),
+    updated_at: new Date().toISOString(),
+  }
+}
