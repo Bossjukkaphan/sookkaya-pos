@@ -73,6 +73,9 @@ describe("issuesOf", () => {
       bad_phone: true,
       negative_credit: false,
       negative_points: false,
+      // ตั้ง true ทั้งที่ผลลัพธ์ข้างล่างไม่มี has_line โดยตั้งใจ —
+      // ล็อกกติกาว่า has_line เป็นแค่ป้ายบอกสถานะ ไม่ใช่ปัญหา ห้ามหลุดเข้า ISSUES
+      has_line: true,
     }
     expect(issuesOf(row).map((i) => i.key)).toEqual(["dup_phone", "bad_phone"])
   })

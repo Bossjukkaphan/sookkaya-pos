@@ -1406,6 +1406,7 @@ export type Database = {
           customer_id: string | null
           customer_type: string | null
           dup_phone: boolean | null
+          has_line: boolean | null
           last_visit: string | null
           name: string | null
           negative_credit: boolean | null

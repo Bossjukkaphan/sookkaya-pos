@@ -14,7 +14,7 @@
 -- เพิ่มธงตัวใหม่ที่นี่แล้ว ต้องไปเพิ่ม IssueKey กับ ISSUES ที่ src/lib/customer-issues.ts ด้วย
 -- ไม่มีอะไรบังคับได้อัตโนมัติ — ลืมแล้วธงใหม่จะไม่มีวันโผล่บนหน้าเว็บ โดย build ยังเขียวปกติ
 
-create view public.v_customer_issues with (security_invoker = true) as
+create or replace view public.v_customer_issues with (security_invoker = true) as
 select
   c.id                           as customer_id,
   c.name,
@@ -49,7 +49,13 @@ select
 
   -- กลุ่มเงิน: ตัวเลขไม่ตรง ต้องสืบ
   (coalesce(mb.credit_balance, 0) < 0)                         as negative_credit,
-  (coalesce(pb.balance, 0) < 0)                                as negative_points
+  (coalesce(pb.balance, 0) < 0)                                as negative_points,
+
+  -- ผูกบัญชีไลน์กับร้านแล้วหรือยัง — ไม่ใช่ "ปัญหา" จึงไม่อยู่ในชุด ISSUES
+  -- แต่พนักงานต้องเห็น เพราะลูกค้ากลุ่มนี้จองผ่านไลน์และรับแจ้งเตือนได้
+  -- (ป้ายนี้มีในหน้าเดิมอยู่แล้ว ตอนเปลี่ยนเป็นตารางเคยทำหายไปหนึ่งรอบ)
+  exists (select 1 from public.line_accounts l
+           where l.customer_id = c.id)                          as has_line
 from public.customers c
 left join public.member_balances  mb  on mb.customer_id  = c.id
 left join public.v_customer_ltv   ltv on ltv.customer_id = c.id

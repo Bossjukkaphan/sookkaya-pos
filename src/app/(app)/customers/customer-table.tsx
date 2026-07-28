@@ -61,6 +61,19 @@ function MemberBadge({ row }: { row: CustomerIssueRow }) {
   )
 }
 
+/** ผูกบัญชีไลน์แล้ว — เขียวโทนไลน์ · ลูกค้ากลุ่มนี้จองผ่านไลน์และรับแจ้งเตือนได้ */
+function LineBadge({ row }: { row: CustomerIssueRow }) {
+  if (!row.has_line) return null
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 border-green-300 bg-green-50 font-semibold text-green-700"
+    >
+      LINE ✓
+    </Badge>
+  )
+}
+
 /** ยอดเครดิต — ที่เดียวที่ตัดสินสีและรูปแบบ ไม่งั้นตารางกับการ์ดโชว์ไม่เหมือนกัน
  *  (เคยเพี้ยนมาแล้ว: ตารางไม่มีสัญลักษณ์บาท การ์ดมี) */
 function CreditAmount({ balance }: { balance: number | null }) {
@@ -158,10 +171,13 @@ export function CustomerTable({
                   {r.phone || <span className="text-slate-300">ไม่มีเบอร์</span>}
                 </td>
                 <td className="px-2 py-2">
-                  <MemberBadge row={r} />
-                  {r.customer_type !== "สมาชิก" && (
-                    <span className="text-slate-400">ทั่วไป</span>
-                  )}
+                  <span className="flex flex-wrap items-center gap-1">
+                    <MemberBadge row={r} />
+                    <LineBadge row={r} />
+                    {r.customer_type !== "สมาชิก" && (
+                      <span className="text-slate-400">ทั่วไป</span>
+                    )}
+                  </span>
                 </td>
                 <td className="px-2 py-2 text-right">
                   <CreditAmount balance={r.credit_balance} />
@@ -197,6 +213,7 @@ export function CustomerTable({
                     <NameCell row={r} />
                   </p>
                   <MemberBadge row={r} />
+                  <LineBadge row={r} />
                 </div>
                 <p className="text-sm text-slate-500">
                   {r.phone || "ไม่มีเบอร์"} · มาแล้ว {r.visits ?? 0} ครั้ง
