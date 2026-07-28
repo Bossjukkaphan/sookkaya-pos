@@ -9,7 +9,8 @@ import { pointExpiryDate } from "@/lib/points"
 
 export type CustomerResult =
   | { ok: true; id: string }
-  | { ok: false; error: string }
+  /** duplicatePhone มีค่า = ไม่ใช่ความผิดพลาด แค่ต้องให้พนักงานยืนยันก่อน (ดู saveCustomer) */
+  | { ok: false; error: string; duplicatePhone?: { id: string; name: string } }
 
 function clean(value: FormDataEntryValue | null): string | null {
   const s = String(value ?? "").trim()
@@ -37,6 +38,33 @@ export async function saveCustomer(formData: FormData): Promise<CustomerResult> 
   }
 
   const id = clean(formData.get("id"))
+
+  // เบอร์คือกุญแจกันลูกค้าซ้ำ — ทางสร้างลูกค้าอื่นเช็กเบอร์ก่อนหมดแล้ว (POS · การ์ดคิว · ลงทะเบียนไลน์)
+  // เหลือปุ่มนี้ทางเดียวที่ insert ตรงๆ โดยไม่ถาม จนเกิดลูกค้าซ้ำ 3 คู่ในวันที่ 25-26/7/2569
+  // ทุกคู่หน้าตาเหมือนกัน: ลูกค้าลงทะเบียนไลน์ไว้แล้ว พนักงานมากดเพิ่มใหม่ ระบบไม่ทักสักคำ
+  // (236PPUMM_KA65 กับ Umm · พชรวรรณ กับ Guy · สุกัญญา พึ่งอ่ำ กับ น้ำ สุกัญญา)
+  //
+  // แต่ห้ามบล็อกเด็ดขาด เพราะหนึ่งเบอร์มีสองคนได้จริง — ตรวจ 28/7/2569 เจอ 11 คู่ที่เป็น
+  // คู่รัก/ครอบครัวใช้เบอร์ร่วมกัน (เช่น "อาร์ม/ชาแนล" "ยูมี/แบงค์") ถ้าห้ามจะบันทึกไม่ได้
+  // จึงเตือนแล้วให้ยืนยัน: ปกติพนักงานจะรู้ตัวว่ากดซ้ำ · เคสคู่รักกดยืนยันผ่านไปได้
+  if (payload.phone && formData.get("allow_duplicate_phone") !== "on") {
+    let taken = supabase
+      .from("customers")
+      .select("id, name")
+      .eq("phone", payload.phone)
+      .order("created_at", { ascending: true })
+      .limit(1)
+    // ตอนแก้ข้อมูล ต้องไม่นับตัวเองว่าเป็นเบอร์ซ้ำ
+    if (id) taken = taken.neq("id", id)
+    const { data: owner } = await taken.maybeSingle()
+    if (owner) {
+      return {
+        ok: false,
+        error: `เบอร์ ${payload.phone} เป็นของ "${owner.name}" อยู่แล้ว`,
+        duplicatePhone: { id: owner.id, name: owner.name },
+      }
+    }
+  }
 
   if (id) {
     const { error } = await supabase.from("customers").update(payload).eq("id", id)

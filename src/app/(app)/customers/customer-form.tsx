@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -28,11 +29,11 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
   const [pending, startTransition] = useTransition()
   const [open, setOpen] = useState(!customer)
   const [gender, setGender] = useState(customer?.gender ?? "")
+  // เบอร์ชนกับลูกค้าที่มีอยู่ — เก็บฟอร์มไว้เผื่อพนักงานยืนยันว่าเป็นคนละคนแล้วส่งซ้ำ
+  const [dupPhone, setDupPhone] = useState<{ id: string; name: string } | null>(null)
+  const [pendingForm, setPendingForm] = useState<FormData | null>(null)
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-
+  function submit(formData: FormData) {
     startTransition(async () => {
       const result = await saveCustomer(formData)
       if (result.ok) {
@@ -43,10 +44,27 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
         } else {
           router.push(`/customers/${result.id}`)
         }
+      } else if (result.duplicatePhone) {
+        // ไม่ใช่ error จริง — ถามให้แน่ใจก่อนว่ากดซ้ำ หรือเป็นคนละคนที่ใช้เบอร์เดียวกัน
+        setDupPhone(result.duplicatePhone)
+        setPendingForm(formData)
       } else {
         toast.error(result.error)
       }
     })
+  }
+
+  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    setDupPhone(null)
+    submit(new FormData(event.currentTarget))
+  }
+
+  function confirmDuplicatePhone() {
+    if (!pendingForm) return
+    pendingForm.set("allow_duplicate_phone", "on")
+    setDupPhone(null)
+    submit(pendingForm)
   }
 
   if (customer && !open) {
@@ -60,6 +78,32 @@ export function CustomerForm({ customer }: { customer?: Customer }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {customer && <input type="hidden" name="id" value={customer.id} />}
+
+      {dupPhone && (
+        <div className="space-y-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm">
+          <p className="font-medium text-amber-900">
+            เบอร์นี้เป็นของ &quot;{dupPhone.name}&quot; อยู่แล้ว
+          </p>
+          <p className="text-amber-800">
+            ถ้าเป็นคนเดียวกัน ให้เปิดข้อมูลเดิมแทนการเพิ่มใหม่ — ประวัติ แต้ม
+            และเครดิตจะได้อยู่ที่เดียวกัน
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" type="button">
+              <Link href={`/customers/${dupPhone.id}`}>เปิดข้อมูลของ {dupPhone.name}</Link>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={confirmDuplicatePhone}
+              disabled={pending}
+            >
+              คนละคนที่ใช้เบอร์เดียวกัน · บันทึกต่อ
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="name">ชื่อลูกค้า</Label>
