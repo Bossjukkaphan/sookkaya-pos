@@ -52,7 +52,11 @@ with expected(check_name, expected_value) as (values
   ('bill_id_inconsistent_bills', 0),
   -- แต้มสะสม: ห้ามมีลูกค้าแต้มติดลบ และคูปองที่ used ต้องมีบิลผูกเสมอ
   ('points_negative_customers', 0),
-  ('points_used_coupon_no_sale', 0)
+  ('points_used_coupon_no_sale', 0),
+  -- การ์ดคิวที่จ่ายเงินแล้วต้องมีหมอ/เตียงตรงกับบิลเสมอ
+  -- (28/7/2569 การกดชำระจากการ์ดไม่ได้เขียนสองช่องนี้กลับ การ์ดเลยค้างแถว "ยังไม่ระบุหมอ"
+  --  ทุกวันตั้งแต่เปิดใช้กระดาน โดยไม่มีอะไรจับได้เพราะเงินยังถูก)
+  ('paid_queue_missing_therapist_or_bed', 0)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -138,6 +142,14 @@ actual(check_name, actual_value) as (
         or count(distinct payment_method) > 1
         or count(distinct coalesce(customer_id::text, customer_name, '')) > 1
   ) bad_bills
+
+  union all
+  select 'paid_queue_missing_therapist_or_bed', count(*)
+  from public.queue_entries q
+  join public.sales s on s.id = q.sale_id
+  where q.status = 'paid'
+    and ((q.therapist_id is null and s.therapist_id is not null)
+      or (q.bed_id is null and s.bed_id is not null))
 
   union all
   select 'points_negative_customers', count(*)

@@ -287,6 +287,16 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       .update({
         status: "paid",
         sale_id: inserted.id,
+        // การ์ดต้องมิเรอร์หมอกับเตียงจากบิลด้วย ไม่ใช่แค่ปิดสถานะ — บิลคือความจริงว่า
+        // ใครนวดและใช้เตียงไหน (ค่ามือเดินตามบิล) และพนักงานมักเลือกหมอตอนกดเก็บเงิน
+        // ไม่ใช่ตอนสร้างการ์ด ขาดสองบรรทัดนี้ การ์ดที่จ่ายเงินแล้วจะค้างอยู่แถว
+        // "ยังไม่ระบุหมอ" ทั้งที่บิลมีชื่อหมอถูกต้อง — เจอจริง 28/7/2569 (ลูกค้าจิราพิชญ์ / หมอแจง)
+        //
+        // เขียนทับได้ปลอดภัย เพราะฟอร์มหน้าชำระเงินตั้งค่าเริ่มต้นสองช่องนี้จากการ์ดใบนี้อยู่แล้ว
+        // (pos-form.tsx: useState(initial?.therapistId) / useState(initial?.bedId))
+        // ถ้าพนักงานไม่แก้ ค่าที่ส่งกลับมาก็คือค่าเดิมของการ์ด
+        therapist_id: therapistId,
+        bed_id: String(formData.get("bed_id") ?? "") || null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", queueEntryId)
