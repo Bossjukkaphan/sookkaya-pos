@@ -23,14 +23,26 @@ select
   ltv.last_visit,
 
   -- กลุ่มตัวตน: ระบบระบุตัวลูกค้าผิดคนได้
-  (c.phone is not null and c.phone <> ''
+  --
+  -- ทำไมต้อง btrim: เบอร์ที่ต่างกันแค่ช่องว่างหน้า/หลังคือเบอร์เดียวกัน
+  -- ถ้าเทียบตรงตัวอักษร ' 0812345678' กับ '0812345678' จะกลายเป็นคนละเบอร์
+  -- แล้วคู่ซ้ำหลุดไปเงียบๆ — ซึ่งเป็นรูแบบเดียวกับที่ view นี้ตั้งใจจะปิด
+  -- (ทางเขียนแต่ละทาง normalize ไม่เท่ากัน: book/actions.ts ตัดอักขระที่ไม่ใช่ตัวเลขทิ้ง ทางอื่นแค่ trim)
+  --
+  -- btrim(null) คืน null และ null <> '' คืน null ซึ่ง SQL ถือว่าไม่จริง จึงไม่ต้องเช็ค is not null ซ้ำ
+  (btrim(c.phone) <> ''
      and exists (select 1 from public.customers o
-                  where o.id <> c.id and o.phone = c.phone))   as dup_phone,
-  (c.phone is null or c.phone = '')                            as no_phone,
+                  where o.id <> c.id
+                    and btrim(o.phone) = btrim(c.phone)))      as dup_phone,
+  (c.phone is null or btrim(c.phone) = '')                     as no_phone,
   -- เบอร์ไทยที่ใช้ได้คือ 0 ตามด้วยตัวเลข 8-9 หลัก · นอกนั้นค้นไม่เจอ เท่ากับไม่มีเบอร์
   -- (เจอจริง: "611230256" ของลูกค้าชื่อโอ๋ ขาดเลข 0 หน้า)
-  (c.phone is not null and c.phone <> ''
-     and c.phone !~ '^0[0-9]{8,9}$')                           as bad_phone,
+  -- เบอร์ที่เป็นช่องว่างล้วนจะตกไปเป็น no_phone ไม่ใช่ bad_phone ซึ่งตรงความหมายกว่า
+  --
+  -- ต้อง coalesce เพราะคนไม่มีเบอร์จะได้ null (null and null = null) ไม่ใช่ false
+  -- ธงต้องเป็น true/false เสมอ ไม่งั้นฝั่งเรียกที่กรองด้วย eq(false) จะทิ้ง 73 คนนี้หายไปเงียบๆ
+  coalesce(btrim(c.phone) <> ''
+     and btrim(c.phone) !~ '^0[0-9]{8,9}$', false)             as bad_phone,
 
   -- กลุ่มเงิน: ตัวเลขไม่ตรง ต้องสืบ
   (coalesce(mb.credit_balance, 0) < 0)                         as negative_credit,
