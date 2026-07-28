@@ -3,6 +3,7 @@ import { PAYMENT_METHODS, formatBaht } from "@/lib/constants"
 import { billTotal, groupSalesByBill } from "@/lib/bill"
 import { todayInShopTz } from "@/lib/datetime"
 import { shortBedName } from "@/lib/beds"
+import { ilikeOr } from "@/lib/search"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -51,10 +52,11 @@ export default async function HistoryPage({
     .order("sale_time", { ascending: false })
     .limit(ROW_CAP)
 
+  // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
+  // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
+  // หน้านี้จะขึ้น "ไม่พบบิลตามเงื่อนไข" พร้อมยอดรวม 0 ฿ ซึ่งอ่านเหมือนวันนั้นไม่มีรายได้จริง
   if (q) {
-    query = query.or(
-      `customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,receipt_no.ilike.%${q}%`
-    )
+    query = query.or(ilikeOr(["customer_name", "customer_phone", "receipt_no"], q))
   }
   if (therapist) query = query.eq("therapist_id", therapist)
   if (payment) query = query.eq("payment_method", payment)

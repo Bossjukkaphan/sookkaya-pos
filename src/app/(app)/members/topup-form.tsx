@@ -7,6 +7,7 @@ import { toast } from "sonner"
 import { createTopup } from "./member-actions"
 import { createClient } from "@/lib/supabase/client"
 import { MEMBER_TIERS, formatBaht } from "@/lib/constants"
+import { ilikeOr } from "@/lib/search"
 import { addMonths, formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -41,10 +42,13 @@ export function TopupForm() {
 
     const timer = setTimeout(async () => {
       const supabase = createClient()
+      // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
+      // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
+      // แล้วจะเลือกลูกค้าไม่ได้เลย ทั้งที่ปุ่มบันทึกต้องมี customer_id ถึงจะกดได้
       const { data } = await supabase
         .from("customers")
         .select("id, name, nickname, phone")
-        .or(`name.ilike.%${term}%,nickname.ilike.%${term}%,phone.ilike.%${term}%`)
+        .or(ilikeOr(["name", "nickname", "phone"], term))
         .limit(6)
       if (!cancelled) setMatches(data ?? [])
     }, 250)

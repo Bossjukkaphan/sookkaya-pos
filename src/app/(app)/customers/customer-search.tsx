@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 
 import { createClient } from "@/lib/supabase/client"
+import { ilikeOr } from "@/lib/search"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -19,10 +20,13 @@ export type CustomerMatch = {
 /** ค้นจากชื่อ ชื่อเล่น หรือเบอร์ — เงื่อนไขเดียวกับผลลัพธ์เต็มหน้า จะได้ไม่งงว่าทำไมเด้งแต่ค้นไม่เจอ */
 async function searchCustomers(term: string): Promise<CustomerMatch[]> {
   const supabase = createClient()
+  // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
+  // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
+  // ที่นี่ยิ่งเงียบกว่าที่อื่น เพราะรายการแนะนำที่ว่างเปล่าดูเหมือน "ไม่มีลูกค้าชื่อนี้"
   const { data } = await supabase
     .from("customers")
     .select("id, name, nickname, phone, customer_type")
-    .or(`name.ilike.%${term}%,nickname.ilike.%${term}%,phone.ilike.%${term}%`)
+    .or(ilikeOr(["name", "nickname", "phone"], term))
     .limit(6)
   return data ?? []
 }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { createClient } from "@/lib/supabase/client"
 import { formatBaht } from "@/lib/constants"
+import { ilikeOr } from "@/lib/search"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
@@ -45,10 +46,13 @@ export function CustomerPicker({
 
     const timer = setTimeout(async () => {
       const supabase = createClient()
+      // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
+      // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
+      // ที่หน้าขายยิ่งอันตราย: ไม่มีชื่อเด้ง = พนักงานคิดว่าเป็นลูกค้าใหม่ แล้วสร้างซ้ำทั้งที่มีอยู่แล้ว
       const { data } = await supabase
         .from("customers")
         .select("id, name, nickname, phone")
-        .or(`name.ilike.%${term}%,nickname.ilike.%${term}%,phone.ilike.%${term}%`)
+        .or(ilikeOr(["name", "nickname", "phone"], term))
         .limit(6)
       if (!cancelled) setMatches(data ?? [])
     }, 250)

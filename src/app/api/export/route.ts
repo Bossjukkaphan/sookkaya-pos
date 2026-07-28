@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { createClient } from "@/lib/supabase/server"
 import { todayInShopTz } from "@/lib/datetime"
+import { ilikeOr } from "@/lib/search"
 
 function lastDayOfMonth(ym: string): string {
   const [y, m] = ym.split("-").map(Number)
@@ -91,10 +92,11 @@ export async function GET(request: NextRequest) {
     .order("sale_date")
     .order("sale_time")
   const q = searchParams.get("q")?.trim()
+  // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
+  // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
+  // ที่นี่ร้ายสุด: ได้ไฟล์ CSV ที่มีแต่หัวตาราง หน้าตาเหมือน export สำเร็จแต่ข้อมูลหายหมด
   if (q) {
-    salesQuery = salesQuery.or(
-      `customer_name.ilike.%${q}%,customer_phone.ilike.%${q}%,receipt_no.ilike.%${q}%`
-    )
+    salesQuery = salesQuery.or(ilikeOr(["customer_name", "customer_phone", "receipt_no"], q))
   }
   const therapistFilter = searchParams.get("therapist")
   if (therapistFilter) salesQuery = salesQuery.eq("therapist_id", therapistFilter)
