@@ -64,10 +64,13 @@ export const ISSUES: IssueDef[] = [
   },
 ]
 
-/** แถวจาก v_customer_issues → รายการป้ายที่ต้องแสดง เรียงตาม ISSUES เสมอ */
-export function issuesOf(
-  row: Partial<Record<IssueKey, boolean | null>>
-): IssueDef[] {
+/** แถวจาก v_customer_issues → รายการป้ายที่ต้องแสดง เรียงตาม ISSUES เสมอ
+ *
+ *  รับ Pick<CustomerIssueRow, IssueKey> ไม่ใช่ Partial<Record<...>> โดยตั้งใจ
+ *  เพราะ Pick บังคับให้คีย์ทั้งห้าต้องมีอยู่จริงใน view — ถ้าวันหน้ามีคนเปลี่ยนชื่อ
+ *  หรือลบคอลัมน์ธง tsc จะแดงตรงนี้ทันที แทนที่จะปล่อยให้ป้ายหายจากหน้าเว็บเงียบๆ
+ */
+export function issuesOf(row: Pick<CustomerIssueRow, IssueKey>): IssueDef[] {
   return ISSUES.filter((issue) => row[issue.key] === true)
 }
 

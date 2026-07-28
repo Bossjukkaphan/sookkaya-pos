@@ -10,6 +10,9 @@
 --
 -- security_invoker = true บังคับ RLS ตามสิทธิ์ผู้เรียก — ห้ามลืม
 -- ชุดตรวจ views_without_security_invoker จะ FAIL ทันทีถ้าหลุด
+--
+-- เพิ่มธงตัวใหม่ที่นี่แล้ว ต้องไปเพิ่ม IssueKey กับ ISSUES ที่ src/lib/customer-issues.ts ด้วย
+-- ไม่มีอะไรบังคับได้อัตโนมัติ — ลืมแล้วธงใหม่จะไม่มีวันโผล่บนหน้าเว็บ โดย build ยังเขียวปกติ
 
 create view public.v_customer_issues with (security_invoker = true) as
 select
