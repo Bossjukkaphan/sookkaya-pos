@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
 import { ISSUES, type IssueKey, issueBadgeClass } from "@/lib/customer-issues"
+import { ilikeOr } from "@/lib/search"
 import { StatCard } from "@/components/stat-card"
 import { InfoDot } from "@/components/info-dot"
 import { PagerLink } from "@/components/pager-link"
@@ -70,8 +71,10 @@ export default async function CustomersPage({
    *  ถ้าเขียนแยกกัน วันหนึ่งจะหลุดออกจากกันแล้วเลขบนชิพโกหกโดยไม่มีอะไรเตือน */
   function scopedQuery(head: boolean) {
     let q = supabase.from("v_customer_issues").select("*", { count: "exact", head })
+    // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
+    // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
     if (term) {
-      q = q.or(`name.ilike.%${term}%,nickname.ilike.%${term}%,phone.ilike.%${term}%`)
+      q = q.or(ilikeOr(["name", "nickname", "phone"], term))
     }
     if (type === "member") q = q.eq("customer_type", "สมาชิก")
     if (type === "regular") q = q.eq("customer_type", "ลูกค้าทั่วไป")
@@ -96,11 +99,11 @@ export default async function CustomersPage({
   const issueCountQueries = ISSUES.map((i) => scopedQuery(true).eq(i.key, true))
 
   const [
-    { data: rows, count },
-    { count: totalCustomers },
-    { count: totalMembers },
-    { count: newThisMonth },
-    { data: creditRows },
+    { data: rows, count, error: rowError },
+    { count: totalCustomers, error: totalError },
+    { count: totalMembers, error: memberError },
+    { count: newThisMonth, error: newError },
+    { data: creditRows, error: creditError },
     ...issueCounts
   ] = await Promise.all([
     pageQuery,
@@ -116,6 +119,30 @@ export default async function CustomersPage({
     supabase.from("member_balances").select("credit_balance").gt("credit_balance", 0),
     ...issueCountQueries,
   ])
+
+  /* ทำไมต้อง throw ไม่ใช่แสดงศูนย์:
+     ถ้า query พังแล้วปล่อยผ่าน data/count จะเป็น null → หน้าจะขึ้น "พบ 0 คน"
+     และ "เครดิตคงค้างรวม 0 ฿" ซึ่งหน้าตาเหมือนข้อมูลจริงทุกประการ
+     เจ้าของร้านจะอ่านว่าไม่มีภาระค้าง พนักงานจะอ่านว่าข้อมูลสะอาดแล้ว ทั้งที่ไม่จริง
+     ตัวเลขที่ผิดแบบดูเหมือนถูก อันตรายกว่าหน้าพัง — หน้าพังอย่างน้อยมีคนมาบอก
+     จึงโยนให้ error boundary ของ Next ทำงานแทน */
+  if (rowError) {
+    throw new Error(`โหลดรายชื่อลูกค้าไม่สำเร็จ: ${rowError.message}`)
+  }
+  if (creditError) {
+    throw new Error(`รวมเครดิตคงค้างไม่สำเร็จ: ${creditError.message}`)
+  }
+
+  /* สถิติหัวหน้ากับเลขบนชิพ ถ้าพังปล่อยเป็น 0 ได้ (ไม่ถึงกับทำให้อ่านเงินผิด)
+     แต่ต้องไม่เงียบ — ไม่งั้นไม่มีใครรู้เลยว่ามันพังมาตั้งแต่เมื่อไหร่ */
+  for (const [label, err] of [
+    ["ลูกค้าทั้งหมด", totalError],
+    ["จำนวนสมาชิก", memberError],
+    ["ลูกค้าใหม่เดือนนี้", newError],
+    ...issueCounts.map((r, i) => [`ชิพ ${ISSUES[i].key}`, r.error] as const),
+  ] as const) {
+    if (err) console.error(`[/customers] นับ ${label} ไม่สำเร็จ:`, err.message)
+  }
 
   const totalOutstanding = (creditRows ?? []).reduce(
     (sum, r) => sum + (r.credit_balance ?? 0),
@@ -237,9 +264,27 @@ export default async function CustomersPage({
       </p>
 
       {list.length === 0 ? (
-        <p className="py-8 text-center text-sm text-slate-500">
-          {term || type || issue ? "ไม่พบลูกค้าตามเงื่อนไข" : "ยังไม่มีข้อมูลลูกค้า"}
-        </p>
+        /* หน้าเลยหน้าสุดท้ายต้องแยกข้อความ และต้องมีทางกดกลับ
+           pager ปกติอยู่ในสาขาที่ต้องมีแถว พอไม่มีแถวจะไม่เหลือปุ่มอะไรให้กดเลย
+           เกิดจริงได้: พนักงานส่งลิงก์ ?issue=dup_phone&page=2 ให้กัน
+           พอแก้ข้อมูลไปบางส่วนจนเหลือหน้าเดียว ลิงก์เดิมกลายเป็นหน้าตาย */
+        <div className="py-8 text-center text-sm text-slate-500">
+          {page > 1 ? (
+            <>
+              <p>หน้านี้ไม่มีข้อมูลแล้ว (อาจมีคนแก้ข้อมูลไประหว่างนี้)</p>
+              <p className="mt-3">
+                <Link
+                  href={hrefWith({ page: null })}
+                  className="inline-flex min-h-10 items-center font-medium text-slate-700 underline hover:text-slate-900"
+                >
+                  ← กลับหน้าแรก
+                </Link>
+              </p>
+            </>
+          ) : (
+            <p>{term || type || issue ? "ไม่พบลูกค้าตามเงื่อนไข" : "ยังไม่มีข้อมูลลูกค้า"}</p>
+          )}
+        </div>
       ) : (
         <>
           <CustomerTable

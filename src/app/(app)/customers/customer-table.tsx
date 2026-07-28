@@ -200,12 +200,16 @@ export function CustomerTable({
       </div>
 
       {/* มือถือ — การ์ด */}
+      {/* การ์ดต้องใช้ shade เหมือนตาราง — มือถือคือเครื่องที่พนักงานใช้ไล่แก้เบอร์ซ้ำจริง
+          ถ้าไม่แรเงา จะไม่มีอะไรบอกว่าใบไหนคู่กับใบไหน ซึ่งคือทั้งหมดของฟีเจอร์นี้ */}
       <ul className="grid gap-2 sm:hidden">
-        {rows.map((r) => (
+        {rows.map((r, i) => (
           <li key={r.customer_id}>
             <Link
               href={`/customers/${r.customer_id}`}
-              className="flex items-start justify-between gap-3 rounded-lg border p-3 hover:bg-slate-50"
+              className={`flex items-start justify-between gap-3 rounded-lg border p-3 hover:bg-slate-50 ${
+                shade[i] ? "bg-amber-50/40" : ""
+              }`}
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
