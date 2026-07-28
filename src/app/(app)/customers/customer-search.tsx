@@ -36,12 +36,14 @@ export function CustomerSearch({
   // ตัวกรอง/เรียงลำดับปัจจุบัน — ต้องพกไปด้วยตอนกดค้นหา ไม่งั้นเปลี่ยนช่องค้นหาแล้วตัวกรองหลุด
   type = "",
   sort = "",
+  issue = "",
   // ฉีดฟังก์ชันค้นหาได้ เพื่อพรีวิว/เทสโดยไม่ต้องต่อฐานข้อมูลจริง
   searchFn = searchCustomers,
 }: {
   initialTerm?: string
   type?: string
   sort?: string
+  issue?: string
   searchFn?: (term: string) => Promise<CustomerMatch[]>
 }) {
   const router = useRouter()
@@ -98,6 +100,7 @@ export function CustomerSearch({
     if (term.trim()) qs.set("q", term.trim())
     if (type) qs.set("type", type)
     if (sort) qs.set("sort", sort)
+    if (issue) qs.set("issue", issue)
     const query = qs.toString()
     router.push(query ? `/customers?${query}` : "/customers")
   }
