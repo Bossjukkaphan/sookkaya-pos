@@ -37,7 +37,7 @@ export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
 - Create: `supabase/migrations/20260728220000_v_customer_issues.sql`
 - Modify: `src/types/database.ts` (generate ทับ)
 
-- [ ] **Step 1: เขียนไฟล์ migration**
+- [x] **Step 1: เขียนไฟล์ migration**
 
 สร้าง `supabase/migrations/20260728220000_v_customer_issues.sql`:
 
@@ -85,11 +85,11 @@ left join public.v_customer_ltv   ltv on ltv.customer_id = c.id
 left join public.v_point_balances pb  on pb.customer_id  = c.id;
 ```
 
-- [ ] **Step 2: รัน migration บน production**
+- [x] **Step 2: รัน migration บน production**
 
 ใช้ MCP `apply_migration` ชื่อ `v_customer_issues` เนื้อเดียวกับไฟล์ (ตัดคอมเมนต์ออกได้)
 
-- [ ] **Step 3: ตรวจว่าเลขตรงกับที่คาด**
+- [x] **Step 3: ตรวจว่าเลขตรงกับที่คาด**
 
 รัน SQL นี้:
 
@@ -106,7 +106,7 @@ from public.v_customer_issues;
 Expected: `1046 · 64 · 73 · 18 · 1 · 0`
 (ตัวเลขอาจขยับถ้ามีลูกค้าใหม่ระหว่างวัน แต่ 1,046 ต้องเท่ากับ `select count(*) from customers` เสมอ)
 
-- [ ] **Step 4: ตรวจว่า security_invoker ไม่หลุด**
+- [x] **Step 4: ตรวจว่า security_invoker ไม่หลุด**
 
 ```sql
 select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
@@ -116,7 +116,7 @@ where n.nspname='public' and c.relkind='v'
 
 Expected: `0`
 
-- [ ] **Step 5: generate types**
+- [x] **Step 5: generate types**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -128,7 +128,7 @@ grep -c "v_customer_issues" src/types/database.ts
 ```
 Expected: มากกว่า 0
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/migrations/20260728220000_v_customer_issues.sql src/types/database.ts
@@ -143,7 +143,7 @@ git commit -m "feat(customers): view v_customer_issues บอกปัญหา�
 - Create: `src/lib/customer-issues.ts`
 - Test: `src/lib/customer-issues.test.ts`
 
-- [ ] **Step 1: เขียนเทสที่ต้องแดงก่อน**
+- [x] **Step 1: เขียนเทสที่ต้องแดงก่อน**
 
 สร้าง `src/lib/customer-issues.test.ts`:
 
@@ -214,7 +214,7 @@ describe("issueBadgeClass", () => {
 })
 ```
 
-- [ ] **Step 2: รันให้เห็นว่าแดง**
+- [x] **Step 2: รันให้เห็นว่าแดง**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -222,7 +222,7 @@ npx vitest run src/lib/customer-issues.test.ts
 ```
 Expected: FAIL — `Failed to resolve import "./customer-issues"`
 
-- [ ] **Step 3: เขียน implementation**
+- [x] **Step 3: เขียน implementation**
 
 สร้าง `src/lib/customer-issues.ts`:
 
@@ -308,14 +308,14 @@ export function issueBadgeClass(tone: IssueTone): string {
 }
 ```
 
-- [ ] **Step 4: รันให้เขียว**
+- [x] **Step 4: รันให้เขียว**
 
 ```bash
 npx vitest run src/lib/customer-issues.test.ts
 ```
 Expected: PASS ทั้ง 9 เทส
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/customer-issues.ts src/lib/customer-issues.test.ts
@@ -329,7 +329,7 @@ git commit -m "feat(customers): นิยามป้ายบอกปัญห
 **Files:**
 - Create: `src/app/(app)/customers/customer-table.tsx`
 
-- [ ] **Step 1: เขียน component**
+- [x] **Step 1: เขียน component**
 
 สร้าง `src/app/(app)/customers/customer-table.tsx`:
 
@@ -551,7 +551,7 @@ export function CustomerTable({
 }
 ```
 
-- [ ] **Step 2: ตรวจว่า type ผ่าน**
+- [x] **Step 2: ตรวจว่า type ผ่าน**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -560,7 +560,7 @@ npx tsc --noEmit
 Expected: ไม่มี error
 (ถ้าขึ้น `LayoutRoutes` mismatch ให้ `rm -rf .next/dev` แล้วรันใหม่)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add "src/app/(app)/customers/customer-table.tsx"
@@ -575,7 +575,7 @@ git commit -m "feat(customers): ตารางรายชื่อบนจอ
 - Modify: `src/app/(app)/customers/page.tsx` (เขียนใหม่ทั้งไฟล์)
 - Modify: `src/app/(app)/customers/customer-search.tsx` (เพิ่ม prop `issue`)
 
-- [ ] **Step 1: เขียนหน้าใหม่**
+- [x] **Step 1: เขียนหน้าใหม่**
 
 เขียนทับ `src/app/(app)/customers/page.tsx` ทั้งไฟล์:
 
@@ -829,7 +829,7 @@ export default async function CustomersPage({
 }
 ```
 
-- [ ] **Step 2: ให้ช่องค้นหาพก `issue` ไปด้วย**
+- [x] **Step 2: ให้ช่องค้นหาพก `issue` ไปด้วย**
 
 `CustomerSearch` พก `type` กับ `sort` ไปด้วยตอนกดค้นหาอยู่แล้ว **แต่ยังไม่รู้จัก `issue`**
 ถ้าไม่แก้ พนักงานที่กำลังกรอง "เบอร์ซ้ำ" อยู่แล้วพิมพ์ค้นหา ตัวกรองจะหลุดหายทันที
@@ -866,14 +866,14 @@ export function CustomerSearch({
       <CustomerSearch initialTerm={term} type={type} sort={sort} issue={issue} />
 ```
 
-- [ ] **Step 2b: ตรวจว่าไม่มีหน้าอื่นเรียก CustomerSearch แล้วพัง**
+- [x] **Step 2b: ตรวจว่าไม่มีหน้าอื่นเรียก CustomerSearch แล้วพัง**
 
 ```bash
 grep -rn "CustomerSearch" src | grep -v "customer-search.tsx"
 ```
 Expected: เจอที่ `customers/page.tsx` ที่เดียว (prop ใหม่เป็น optional อยู่แล้ว ไม่พังแม้มีที่อื่น)
 
-- [ ] **Step 3: ตรวจ type + lint**
+- [x] **Step 3: ตรวจ type + lint**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -881,7 +881,7 @@ npx tsc --noEmit && npx eslint src/
 ```
 Expected: ไม่มี error ทั้งคู่
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add "src/app/(app)/customers/page.tsx" "src/app/(app)/customers/customer-search.tsx"
@@ -894,7 +894,7 @@ git commit -m "feat(customers): ชิพกรองปัญหา + ตาร
 
 **Files:** ไม่มีไฟล์ใหม่
 
-- [ ] **Step 1: รันด่านทั้งหมด**
+- [x] **Step 1: รันด่านทั้งหมด**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -902,13 +902,13 @@ npx tsc --noEmit && npx eslint src/ && npx vitest run && npm run build
 ```
 Expected: ผ่านหมด · vitest ต้องได้ 296 เทส (287 เดิม + 9 ใหม่)
 
-- [ ] **Step 2: Deploy**
+- [x] **Step 2: Deploy**
 
 ```bash
 npx vercel deploy --prod --yes && git push origin main
 ```
 
-- [ ] **Step 3: ตรวจหน้าจริงในเบราว์เซอร์**
+- [x] **Step 3: ตรวจหน้าจริงในเบราว์เซอร์**
 
 เปิด `https://sookkaya-pos.vercel.app/customers` แล้วยืนยันทีละข้อ:
 - เลขบนชิพเป็น `เบอร์ซ้ำ 64 · ไม่มีเบอร์ 73 · เบอร์ผิดรูป 18 · เครดิตติดลบ 1 · แต้มติดลบ 0`
@@ -918,19 +918,35 @@ npx vercel deploy --prod --yes && git push origin main
 - กด "เบอร์ซ้ำ" ซ้ำอีกครั้ง = ยกเลิกกรอง กลับมาเห็นทั้ง 1,046 คน
 - ย่อจอเหลือ 375px แล้วตารางต้องกลายเป็นการ์ด และหน้าไม่เลื่อนซ้ายขวา
 
-- [ ] **Step 4: ตรวจว่าไม่มี runtime error**
+- [x] **Step 4: ตรวจว่าไม่มี runtime error**
 
 ใช้ MCP Vercel `get_runtime_errors` (projectId `prj_aIjCLSIX6A5MoonNtjzMiRno5Md3`, teamId `team_aIZvGjaXuArkv1Vku7KHeW9C`, since `1h`)
 Expected: `No runtime errors found`
 
-- [ ] **Step 5: รันชุดตรวจบัญชี**
+- [x] **Step 5: รันชุดตรวจบัญชี**
 
 รัน `supabase/reconciliation.sql` ทั้งไฟล์
 Expected: PASS ทุกข้อ (29 ข้อ) — ข้อสำคัญคือ `views_without_security_invoker = 0` ซึ่งจะจับได้ทันทีถ้า view ใหม่ตั้ง security_invoker ไม่ครบ
 
-- [ ] **Step 6: Commit ปิดงาน (ถ้ามีอะไรค้าง)**
+- [x] **Step 6: Commit ปิดงาน (ถ้ามีอะไรค้าง)**
 
 ```bash
 git add -A && git commit -m "chore(customers): ปิดงานป้ายบอกปัญหาข้อมูลลูกค้า" || echo "ไม่มีอะไรค้าง"
 git push origin main
 ```
+
+---
+
+## ผลตรวจปิดงาน — 29/7/2569 02:10
+
+รันย้อนหลังหลังโค้ดขึ้น production แล้ว (คอมมิตล่าสุด `33a2e1d`) ผ่านทุกด่าน:
+
+- `npx tsc --noEmit` — ผ่าน
+- `npm test` — 308 เทส / 25 ไฟล์ ผ่านหมด
+- `npx eslint` — โค้ดแอปสะอาด (error ที่เหลือ 9 ข้ออยู่ในสคริปต์ใต้ `.claude/skills/` ไม่ใช่โค้ดแอป)
+- `supabase/reconciliation.sql` บน production — **29/29 PASS**
+- Vercel runtime errors 48 ชม. — มี error group เดียวคือ `/customers` หมดเวลา 2 ครั้ง
+  เวลา 00:42–00:43 บน deployment ของ `050e02b` (deploy 00:41) ซึ่งเกิด**ก่อน**ตัวแก้
+  `9685300` ขึ้น (deploy 00:47) หลังจากนั้นไม่มีอีก
+- ยืนยันของจริง: deployment ที่มีตัวแก้เปิดหน้า `/customers` สำเร็จ 2 ครั้งไม่ error ·
+  deployment ปัจจุบันมี 77 request สถานะ 200 ทั้งหมด
