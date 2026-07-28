@@ -104,13 +104,22 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   // ไม่มีเบอร์ = ผูกไม่ได้ (เบอร์คือกุญแจกันสร้างคนซ้ำ) — บิลยังบันทึกได้ แค่ไม่ได้แต้ม
   const typedName = String(formData.get("customer_name") ?? "").trim()
   const typedPhone = String(formData.get("customer_phone") ?? "").trim()
+  //
+  // หนึ่งเบอร์มีได้หลายคนจริง — คู่รักและครอบครัวใช้เบอร์เดียวกัน (ตรวจ 28/7/2569 เจอ 32 เบอร์
+  // เช่น "อาร์ม/ชาแนล" "ยูมี/แบงค์" "พี พีรดา กับ แมน") ปนกับคนเดียวกันที่สะกดชื่อคนละแบบ
+  // เดิมหยิบ .limit(1) เฉยๆ ซึ่งไม่มีลำดับ = ได้ระเบียนไหนก็ไม่รู้ แต้มกับประวัติเลยกระจายคนละที่
+  // ตอนนี้เลือกคนที่ "ชื่อตรงกับที่พิมพ์" ก่อน ถ้าไม่มีชื่อตรงค่อยใช้ระเบียนที่เก่าที่สุด
+  // (เก่าที่สุด = ตัวจริงที่สะสมประวัติไว้มากกว่า และสำคัญกว่านั้นคือให้ผลเหมือนเดิมทุกครั้ง)
   if (!customerId && typedPhone) {
-    const { data: byPhone } = await supabase
+    const { data: samePhone } = await supabase
       .from("customers")
-      .select("id")
+      .select("id, name")
       .eq("phone", typedPhone)
-      .limit(1)
-      .maybeSingle()
+      .order("created_at", { ascending: true })
+
+    const byPhone =
+      samePhone?.find((c) => c.name?.trim() === typedName) ?? samePhone?.[0] ?? null
+
     if (byPhone) {
       customerId = byPhone.id
     } else if (typedName) {

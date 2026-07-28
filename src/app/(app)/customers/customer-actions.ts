@@ -146,9 +146,21 @@ export async function mergeCustomers(
   }
 
   // เติมช่องที่ target ยังว่างด้วยข้อมูลจาก source (ไม่ทับของที่มีอยู่)
+  //
+  // customer_type ต้องคิดแยก เพราะไม่เคยเป็น null — ?? จึงไม่ช่วยอะไร
+  // ถ้าฝั่งไหนเป็นสมาชิก คนที่รวมแล้วต้องเป็นสมาชิก เพราะใบเติมเงินย้ายตามมาด้วย
+  // ไม่งั้นจะได้ระเบียนที่ถือแพ็กอยู่แต่ขึ้นว่า "ลูกค้าทั่วไป" — ป้ายสมาชิกหายจากช่องค้นหา
+  // หน้าโปรไฟล์ หน้าวิเคราะห์ลูกค้า และหลุดจากตัวกรอง "เฉพาะสมาชิก" ในหน้าดูแลลูกค้า
+  // (เจอ 28/7/2569 ตอนรวมกล้วย→สงกรานต์ ซึ่งเป็นคนเดียวกันที่เปลี่ยนชื่อ)
+  const mergedType =
+    target.customer_type === "สมาชิก" || source.customer_type === "สมาชิก"
+      ? "สมาชิก"
+      : target.customer_type
+
   await supabase
     .from("customers")
     .update({
+      customer_type: mergedType,
       phone: target.phone ?? source.phone,
       nickname: target.nickname ?? source.nickname,
       birthday: target.birthday ?? source.birthday,
