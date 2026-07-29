@@ -30,6 +30,88 @@ export function computeSlots(opts: {
   return slots
 }
 
+/**
+ * ความจุของช่วงเวลา — หมอหนึ่งคนรับได้ทีละคิว คิวหนึ่งใบจึงกินหมอหนึ่งคนเสมอ
+ *
+ * ทำไมต้องนับ "ใบ" ไม่ใช่ "หมอที่ถูกระบุ": การ์ดหน้าร้านที่ยังไม่ได้เลือกหมอ
+ * (แถวบนสุดของกระดานคิว) มี therapist_id เป็น null ถ้ากรอง null ทิ้งแบบ busyTherapistIds()
+ * การ์ดพวกนี้จะกลายเป็นไม่กินความจุอะไรเลย ทั้งที่กินหมอจริงหนึ่งคน
+ * — นี่คือรูที่ทำให้คิวไลน์ 29/7/2569 15:00 ถูกรับเข้ามาทั้งที่หมอทั้ง 5 คนติดคิวหมดแล้ว
+ *
+ * ผู้เรียกต้องกรอง status cancelled/rejected ออกมาก่อน (คิว pending ยังนับ —
+ * ไม่งั้นสามคนจองช่องเดียวกันพร้อมกันได้ก่อนร้านจะกดยืนยันใบแรก)
+ */
+export type LoadEntry = { start_time: string; duration_min: number }
+
+const startMinOf = (e: LoadEntry) => {
+  const [h, m] = e.start_time.split(":").map(Number)
+  return h * 60 + m
+}
+
+/**
+ * จำนวนคิวที่ซ้อนกันมากที่สุด ณ จุดใดจุดหนึ่งในช่วง [startMin, startMin+durationMin)
+ *
+ * ต้องเป็น "จุดที่แน่นที่สุด" ไม่ใช่ "จำนวนใบที่แตะช่วงนี้" — ใบที่จบ 15:10
+ * กับใบที่เริ่ม 15:30 ต่างก็แตะช่วง 15:00-16:00 แต่ไม่เคยใช้หมอพร้อมกัน
+ * ถ้านับรวมเป็น 2 จะปิดช่องที่ยังรับได้จริง (ปฏิเสธลูกค้าฟรีๆ)
+ */
+export function peakLoad(
+  entries: LoadEntry[],
+  startMin: number,
+  durationMin: number
+): number {
+  const endMin = startMin + durationMin
+  const overlapping = entries.filter((e) => {
+    const s = startMinOf(e)
+    return s < endMin && startMin < s + e.duration_min
+  })
+  if (overlapping.length === 0) return 0
+  // จุดที่แน่นที่สุดอยู่ที่ "เวลาเริ่มของใบใดใบหนึ่ง" หรือที่หัวช่วงเสมอ
+  // (จำนวนซ้อนเพิ่มขึ้นได้เฉพาะตอนมีใบใหม่เริ่ม) จึงเช็คแค่จุดเหล่านั้นพอ
+  const probes = [startMin, ...overlapping.map(startMinOf).filter((s) => s > startMin)]
+  return Math.max(
+    ...probes.map((t) =>
+      overlapping.filter((e) => {
+        const s = startMinOf(e)
+        return s <= t && t < s + e.duration_min
+      }).length
+    )
+  )
+}
+
+/** ช่วงเวลานี้ยังรับเพิ่มได้อีก seats คนไหม */
+export function hasRoomAt(opts: {
+  entries: LoadEntry[]
+  startMin: number
+  durationMin: number
+  /** จำนวนหมอที่ทำงานวันนั้น */
+  capacity: number
+  /** จองกี่ท่านพร้อมกัน */
+  seats: number
+}): boolean {
+  return peakLoad(opts.entries, opts.startMin, opts.durationMin) + opts.seats <= opts.capacity
+}
+
+/** คัดช่องเวลาที่ยังรับได้ออกมาจากช่องที่ร้านเปิด */
+export function openSlots(opts: {
+  slots: string[]
+  entries: LoadEntry[]
+  capacity: number
+  durationMin: number
+  seats: number
+}): string[] {
+  return opts.slots.filter((t) => {
+    const [h, m] = t.split(":").map(Number)
+    return hasRoomAt({
+      entries: opts.entries,
+      startMin: h * 60 + m,
+      durationMin: opts.durationMin,
+      capacity: opts.capacity,
+      seats: opts.seats,
+    })
+  })
+}
+
 export function isBookableDate(date: string, today: string): boolean {
   if (date < today) return false
   const diffDays =
