@@ -4,7 +4,7 @@
  * "เสร็จสิ้น" เปลี่ยนเองเมื่อเลยเวลาจบ — ไม่แตะ status ในฐานข้อมูล
  * จึงเข้ากันได้กับการ์ดเก่า (paid = จ่ายแล้ว) และ flow POS เดิมทั้งหมด
  */
-import { timeToMin } from "./queue"
+import { bedStartMin, timeToMin } from "./queue"
 
 export type ServiceChip = "waiting" | "in_service" | "done"
 
@@ -27,10 +27,16 @@ export function deriveCardStatus(
     start_time: string
     duration_min: number
     sale_id: string | null
+    started_at?: string | null
   },
   nowMin: number
 ): CardStatus {
-  const startMin = timeToMin(entry.start_time)
+  // เวลาจอง — ใช้ตัดสินได้อย่างเดียวว่า "สาย" ไหม เพราะสายคือเทียบกับเวลานัด
+  const bookedStartMin = timeToMin(entry.start_time)
+  // เวลาที่นวดเดินจริง — กดเริ่มนวดแล้วยึดเวลานั้น ยังไม่กดค่อยใช้เวลาจองไปก่อน
+  // (ตัวเดียวกับที่เตียงใช้จับเวลาอยู่แล้ว — ลูกค้ามาสาย 30 นาที ก็ต้องได้นวดครบ 60 นาที
+  //  ไม่ใช่ถูกตัดเหลือ 30 เพราะป้ายไปนับจากเวลาจอง)
+  const startMin = bedStartMin(entry)
   const endMin = startMin + entry.duration_min
   const paid = Boolean(entry.sale_id) || entry.status === "paid"
 
@@ -50,8 +56,8 @@ export function deriveCardStatus(
     awaitingPayment,
     ...(service === "in_service" ? { remainingMin: endMin - nowMin } : {}),
     ...(awaitingPayment ? { overdueMin: nowMin - endMin } : {}),
-    ...(service === "waiting" && nowMin > startMin
-      ? { lateStartMin: nowMin - startMin }
+    ...(service === "waiting" && nowMin > bookedStartMin
+      ? { lateStartMin: nowMin - bookedStartMin }
       : {}),
   }
 }
