@@ -5,7 +5,10 @@ import { cleanLineDisplayName, pushLineMessage, verifyLineIdToken } from "@/lib/
 import { msgCancelled, msgRequested, type BookingInfo } from "@/lib/line-messages"
 import { pushAssistantMessage } from "@/lib/line-assistant"
 import { msgShopCancelled, msgShopNewBooking } from "@/lib/line-assistant-messages"
-import { canCancelAt, computeSlots, isBookableDate } from "@/lib/booking-slots"
+import {
+  canCancelAt, computeSlots, hasRoomAt, isBookableDate,
+  MAX_ADVANCE_DAYS, type LoadEntry,
+} from "@/lib/booking-slots"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 
 type Fail = { ok: false; error: string; code?: "auth" }
@@ -124,12 +127,76 @@ export async function linkLineAccount(
   return { ok: true }
 }
 
+/** ความจุ (หมอที่ทำงานวันนั้น) + คิวที่จองไว้แล้ว — ใช้ตัดสินว่าช่องเวลาไหนเต็ม */
+export type DayLoad = { capacity: number; entries: LoadEntry[] }
+
+/**
+ * โหลดความจุ+คิวของหลายวันรวดเดียว (4 query ไม่ว่าจะกี่วัน)
+ *
+ * ความจุมาจาก "หมอที่ทำงานวันนั้น" ไม่ใช่จำนวนเตียง — เตียงมี 13 หมอมี 6
+ * คอขวดจริงคือหมอเสมอ นับเตียงจะไม่กันอะไรเลย
+ *
+ * วันที่แอดมินเช็คอินแล้ว → ใช้จำนวนคนที่เช็คอินจริง (แม่นที่สุด)
+ * วันอนาคตที่ยังไม่มีใครเช็คอิน → หมอ active ทั้งหมด ลบคนที่วางแผนลาไว้ในหน้า /shifts
+ * ลำดับนี้ต้องตรงกับด่านเช็คหมอที่ลูกค้ารีเควสใน createBookingRequest
+ */
+async function loadDays(
+  db: ReturnType<typeof createServiceClient>,
+  dates: string[]
+): Promise<Record<string, DayLoad>> {
+  const from = dates[0]
+  const to = dates[dates.length - 1]
+  const [{ count: activeCount }, { data: attendance }, { data: plans }, { data: queue }] =
+    await Promise.all([
+      db.from("therapists").select("id", { count: "exact", head: true }).eq("status", "active"),
+      db.from("attendance").select("work_date, therapist_id")
+        .gte("work_date", from).lte("work_date", to).not("therapist_id", "is", null),
+      db.from("shift_plans").select("work_date, therapist_id")
+        .gte("work_date", from).lte("work_date", to),
+      db.from("queue_entries").select("queue_date, start_time, duration_min")
+        .gte("queue_date", from).lte("queue_date", to)
+        .not("status", "in", "(cancelled,rejected)"),
+    ])
+
+  const perDay = <T extends { therapist_id: string | null }>(rows: T[] | null, key: keyof T) => {
+    const m = new Map<string, Set<string>>()
+    for (const r of rows ?? []) {
+      const d = String(r[key])
+      if (!m.has(d)) m.set(d, new Set())
+      if (r.therapist_id) m.get(d)!.add(r.therapist_id)
+    }
+    return m
+  }
+  const checkedIn = perDay(attendance, "work_date")
+  const onLeave = perDay(plans, "work_date")
+
+  const entriesByDay = new Map<string, LoadEntry[]>()
+  for (const q of queue ?? []) {
+    const list = entriesByDay.get(q.queue_date) ?? []
+    list.push({ start_time: q.start_time, duration_min: q.duration_min })
+    entriesByDay.set(q.queue_date, list)
+  }
+
+  const out: Record<string, DayLoad> = {}
+  for (const d of dates) {
+    const present = checkedIn.get(d)?.size ?? 0
+    out[d] = {
+      capacity: present > 0
+        ? present
+        : Math.max(0, (activeCount ?? 0) - (onLeave.get(d)?.size ?? 0)),
+      entries: entriesByDay.get(d) ?? [],
+    }
+  }
+  return out
+}
+
 /** เมนู+หมอสำหรับ wizard (เปิดเผยเฉพาะ ชื่อ/ราคา/ระยะเวลา) */
 export async function getBookingOptions(): Promise<
   | {
       ok: true
       services: { id: string; name: string; price: number; durationMin: number }[]
       therapists: { id: string; name: string }[]
+      days: Record<string, DayLoad>
     }
   | Fail
 > {
@@ -146,12 +213,16 @@ export async function getBookingOptions(): Promise<
     ])
     if (servicesError || therapistsError)
       return { ok: false, error: "โหลดข้อมูลไม่สำเร็จ ลองใหม่อีกครั้งนะคะ" }
+    const today = todayInShopTz()
+    const dates = Array.from({ length: MAX_ADVANCE_DAYS + 1 }, (_, i) =>
+      new Date(Date.parse(`${today}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10))
     return {
       ok: true,
       services: (services ?? []).map((s) => ({
         id: s.id, name: s.name, price: Number(s.price), durationMin: s.duration_min ?? 60,
       })),
       therapists: therapists ?? [],
+      days: await loadDays(db, dates),
     }
   } catch (e) {
     console.error("getBookingOptions failed:", e)
@@ -256,6 +327,27 @@ export async function createBookingRequest(
   const validSlots = computeSlots({ date: input.date, today, nowMin: nowMin(), durationMin: maxDuration })
   if (!validSlots.includes(input.time))
     return { ok: false, error: "ช่วงเวลานี้ไม่เปิดรับจองแล้ว เลือกเวลาอื่นนะคะ" }
+
+  // ด่านความจุ — ด่านนี้คือตัวจริง ฝั่ง wizard แค่ซ่อนช่องให้ลูกค้าไม่ต้องกดแล้วเจอ error
+  // (ข้อมูลฝั่งลูกค้าโหลดตอนเปิดหน้า ระหว่างกรอกฟอร์มอาจมีคนจองแทรกเข้ามาได้)
+  //
+  // นับ "ใบ" ไม่ใช่ "หมอที่ถูกระบุ" — การ์ดหน้าร้านที่ยังไม่ระบุหมอกินหมอหนึ่งคนเท่ากัน
+  // 29/7/2569 15:00 หลุดมาเพราะตรงนี้ไม่มีด่านอะไรเลย ผู้จัดการต้องมากดปฏิเสธเอง
+  const [h, m] = input.time.split(":").map(Number)
+  const day = (await loadDays(db, [input.date]))[input.date]
+  if (!hasRoomAt({
+    entries: day.entries,
+    startMin: h * 60 + m,
+    durationMin: maxDuration,
+    capacity: day.capacity,
+    seats: input.people.length,
+  }))
+    return {
+      ok: false,
+      error: day.capacity === 0
+        ? "วันนั้นร้านยังไม่เปิดรับจองค่ะ ลองเลือกวันอื่นนะคะ"
+        : "ช่วงเวลานี้คิวเต็มแล้วค่ะ เลือกเวลาอื่นนะคะ",
+    }
 
   // เช็คแล้วค่อย insert (ไม่มี transaction) — ยอมรับ race ได้: เคสแย่สุดคือการ์ด pending เกิน ร้านกดปฏิเสธเอง ไม่มีเงินเกี่ยว
   // ประตูแคบ: pending ค้าง ≤3 · กันกดซ้ำใน 1 นาที

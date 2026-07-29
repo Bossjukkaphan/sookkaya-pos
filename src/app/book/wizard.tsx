@@ -8,7 +8,8 @@ import {
   createBookingRequest, getLineStatus, linkLineAccount,
   type BookingPersonInput,
 } from "./actions"
-import { computeSlots, isBookableDate, MAX_ADVANCE_DAYS } from "@/lib/booking-slots"
+import { computeSlots, isBookableDate, MAX_ADVANCE_DAYS, openSlots } from "@/lib/booking-slots"
+import type { DayLoad } from "./actions"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 
 type Service = { id: string; name: string; price: number; durationMin: number }
@@ -28,8 +29,8 @@ const HEALTH_LIST = [
   "กำลังตั้งครรภ์ (โปรดแจ้งร้านก่อน)",
 ]
 
-export function BookingWizard({ services, therapists }: {
-  services: Service[]; therapists: Therapist[]
+export function BookingWizard({ services, therapists, days }: {
+  services: Service[]; therapists: Therapist[]; days: Record<string, DayLoad>
 }) {
   const liffState = useLiff()
   const [linked, setLinked] = useState<null | boolean>(null)
@@ -95,10 +96,23 @@ export function BookingWizard({ services, therapists }: {
   const maxDuration = Math.max(60,
     ...people.filter((p) => p.serviceId).map((p) => serviceById.get(p.serviceId)?.durationMin ?? 60))
   const nowMinVal = (() => { const [h, m] = nowTimeInShopTz().split(":").map(Number); return h * 60 + m })()
-  const slots = date ? computeSlots({ date, today, nowMin: nowMinVal, durationMin: maxDuration }) : []
+  // ช่องที่ร้านเปิด แล้วคัดเหลือเฉพาะช่องที่หมอยังว่างพอรับทั้งกลุ่ม
+  // (ตัวเลขนี้โหลดตอนเปิดหน้า อาจไม่ทันคิวที่แทรกเข้ามาระหว่างกรอกฟอร์ม —
+  //  ด่านจริงอยู่ที่ createBookingRequest ฝั่งเซิร์ฟเวอร์)
+  const slotsFor = (d: string) =>
+    openSlots({
+      slots: computeSlots({ date: d, today, nowMin: nowMinVal, durationMin: maxDuration }),
+      entries: days[d]?.entries ?? [],
+      capacity: days[d]?.capacity ?? 0,
+      durationMin: maxDuration,
+      seats: people.length,
+    })
+  const slots = date ? slotsFor(date) : []
   const dates = Array.from({ length: MAX_ADVANCE_DAYS + 1 }, (_, i) =>
     new Date(Date.parse(`${today}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10)
   ).filter((d) => isBookableDate(d, today))
+  // วันที่ไม่เหลือช่องเลย ปิดปุ่มไปเลย ลูกค้าจะได้ไม่กดเข้าไปเจอหน้าว่าง
+  const fullDates = new Set(dates.filter((d) => slotsFor(d).length === 0))
 
   if (authExpired)
     return <p className="py-16 text-center text-slate-500">เซสชันหมดอายุ กำลังพาเข้าสู่ระบบใหม่…</p>
@@ -210,14 +224,18 @@ export function BookingWizard({ services, therapists }: {
           <h2 className="mb-3 font-bold">เลือกวันและเวลา</h2>
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
             {dates.map((d) => (
-              <button key={d} className={`${d === date ? PICKED : PICK} shrink-0`}
+              <button key={d} disabled={fullDates.has(d)}
+                className={`${d === date ? PICKED : PICK} shrink-0 disabled:opacity-40`}
                 onClick={() => { setDate(d); setTime("") }}>
-                {formatThaiDate(d)}
+                {formatThaiDate(d)}{fullDates.has(d) && " · เต็ม"}
               </button>
             ))}
           </div>
           {date && (slots.length === 0
-            ? <p className="text-sm text-slate-500">วันนี้ไม่เหลือช่วงเวลาแล้ว เลือกวันอื่นนะคะ</p>
+            ? <p className="text-sm text-slate-500">
+                วันนั้นคิวเต็มแล้วค่ะ เลือกวันอื่นนะคะ
+                {people.length > 1 && " (หรือลดจำนวนท่านลง)"}
+              </p>
             : <div className="grid grid-cols-4 gap-2">
                 {slots.map((t) => (
                   <button key={t} className={t === time ? PICKED : PICK}

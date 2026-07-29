@@ -14,5 +14,11 @@ export default async function BookPage() {
       </div>
     )
   }
-  return <BookingWizard services={options.services} therapists={options.therapists} />
+  return (
+    <BookingWizard
+      services={options.services}
+      therapists={options.therapists}
+      days={options.days}
+    />
+  )
 }
