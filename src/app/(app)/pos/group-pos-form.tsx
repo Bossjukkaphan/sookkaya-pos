@@ -1,12 +1,19 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
-import { PRIVATE_ROOM_FEE, REQUEST_FEE, formatBaht } from "@/lib/constants"
+import { createClient } from "@/lib/supabase/client"
+import { allocateCredit } from "@/lib/bill"
+import {
+  MEMBER_CREDIT_METHOD,
+  PRIVATE_ROOM_FEE,
+  REQUEST_FEE,
+  formatBaht,
+} from "@/lib/constants"
 import {
   HAPPY_HOUR_KEY,
   happyHourDiscountBaht,
@@ -105,6 +112,9 @@ export function GroupPosForm({
   const [mergeBill, setMergeBill] = useState(false)
   // บันทึกทีละใบตามลำดับ — ใบที่สำเร็จแล้วปิดคิวไปเลย ใบที่เหลือยังอยู่ให้ลองใหม่
   const [savingIndex, setSavingIndex] = useState<number | null>(null)
+  // แบ่งชำระด้วยเครดิตสมาชิก — ใช้ได้เฉพาะบิลชุดลูกค้าคนเดียว (กลุ่มหลายคนเครดิตผูกรายบุคคล)
+  const [creditBalance, setCreditBalance] = useState(0)
+  const [creditUseInput, setCreditUseInput] = useState<string | null>(null) // null = ใช้ค่าอัตโนมัติ
 
   const serviceById = useMemo(
     () => new Map(services.map((s) => [s.id, s])),
@@ -120,6 +130,45 @@ export function GroupPosForm({
     )
   })
   const total = nets.reduce((s, n) => s + n, 0)
+
+  // บิลชุดของลูกค้าคนเดียว = ทุกแถวผูก customer เดียวกันและไม่ว่าง — เงื่อนไขเดียวที่เครดิตใช้ได้
+  // (คิวกลุ่มครอบครัวเก็บชื่อผู้ติดต่อคนเดียวลงทุกการ์ดก็จริง แต่ mergeBill คือคำยืนยันจากพนักงาน)
+  const billCustomerId =
+    mergeBill && people.length > 0 && people[0].customerId &&
+    people.every((p) => p.customerId === people[0].customerId)
+      ? people[0].customerId
+      : ""
+
+  // ยอดเครดิตของลูกค้าบิลชุด — ดึงแบบเดียวกับ CustomerPicker (ฟอร์มนี้โหมดคิวไม่มี picker ให้พึ่ง)
+  useEffect(() => {
+    if (!billCustomerId) return
+    let cancelled = false
+    ;(async () => {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from("member_balances")
+        .select("credit_balance")
+        .eq("customer_id", billCustomerId)
+        .single()
+      if (!cancelled) setCreditBalance(Number(data?.credit_balance ?? 0))
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [billCustomerId])
+
+  const canUseCredit = Boolean(billCustomerId) && creditBalance > 0
+  const creditCap = Math.min(creditBalance, total)
+  const creditUse = canUseCredit
+    ? Math.min(
+        creditUseInput === null ? creditCap : Math.max(0, Number(creditUseInput) || 0),
+        creditCap
+      )
+    : 0
+  const cashDue = Math.round((total - creditUse) * 100) / 100
+  // เครดิตพอทั้งบิล → ช่องทางเป็น Member Credit อัตโนมัติ ไม่ต้องเลือกปุ่มเงินจริง
+  const fullCredit = canUseCredit && creditUse > 0 && cashDue === 0
+  const effectivePaymentMethod = fullCredit ? MEMBER_CREDIT_METHOD : paymentMethod
 
   function setPerson(i: number, patch: Partial<(typeof people)[number]>) {
     setPeople((arr) => arr.map((p, j) => (j === i ? { ...p, ...patch } : p)))
@@ -150,13 +199,16 @@ export function GroupPosForm({
   }
 
   async function submitAll() {
-    if (!paymentMethod) {
+    if (!effectivePaymentMethod) {
       toast.error("เลือกช่องทางชำระเงินก่อน")
       return
     }
     // บิลชุด: พนักงานติ๊กเองว่าเป็นลูกค้าคนเดียวทำหลายคอร์ส — เดาจากข้อมูลไม่ได้
     // เพราะคิวกลุ่ม (ครอบครัว) ก็เก็บชื่อผู้ติดต่อคนเดียวลงทุกการ์ดเหมือนกัน
     const billId = mergeBill && people.length > 1 ? crypto.randomUUID() : ""
+    // แบ่งชำระบิลชุด: เฉลี่ยเครดิตลงแต่ละรายการตามสัดส่วน (ที่เดียวกับฟอร์มเดี่ยว)
+    // เครดิตเต็มบิล → ช่องทาง Member Credit ตัดเต็มรายแถวเอง ไม่ต้องส่ง allocation
+    const perItemCredit = allocateCredit(nets, fullCredit ? 0 : creditUse)
     const receipts: string[] = []
     for (let i = 0; i < people.length; i++) {
       const p = people[i]
@@ -164,7 +216,8 @@ export function GroupPosForm({
       const fd = new FormData()
       fd.set("therapist_id", p.therapistId)
       fd.set("service_id", p.serviceId)
-      fd.set("payment_method", paymentMethod)
+      fd.set("payment_method", effectivePaymentMethod)
+      if (perItemCredit[i] > 0) fd.set("credit_requested", String(perItemCredit[i]))
       fd.set("discount", p.discount || "0")
       fd.set("coupon_promo", p.couponPromo)
       fd.set("customer_id", p.customerId)
@@ -413,6 +466,37 @@ export function GroupPosForm({
         </Label>
       </div>
 
+      {/* แบ่งชำระ: เครดิตสมาชิกใช้ได้เฉพาะบิลชุดลูกค้าคนเดียว — แบบเดียวกับฟอร์มขายเดี่ยว */}
+      {canUseCredit && (
+        <div className="space-y-1 rounded-lg border bg-amber-50/50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="group_credit_use">
+              ใช้เครดิตสมาชิก{" "}
+              <span className="font-normal text-slate-500">
+                (มี {formatBaht(creditBalance)} ฿)
+              </span>
+            </Label>
+            <Input
+              id="group_credit_use"
+              inputMode="numeric"
+              className="h-10 w-28 text-right"
+              value={creditUseInput === null ? String(creditCap) : creditUseInput}
+              onChange={(e) => setCreditUseInput(e.target.value)}
+            />
+          </div>
+          <p className="text-sm font-medium">
+            {cashDue > 0 ? (
+              <>
+                เครดิต {formatBaht(creditUse)} · ต้องเก็บเพิ่ม{" "}
+                <span className="text-red-600">{formatBaht(cashDue)} ฿</span>
+              </>
+            ) : creditUse > 0 ? (
+              <>เครดิตครอบคลุมทั้งบิล — ช่องทางชำระเป็น Member Credit อัตโนมัติ</>
+            ) : null}
+          </p>
+        </div>
+      )}
+
       <fieldset className="space-y-2">
         <legend className="text-sm font-medium">
           ช่องทางชำระเงิน <span className="font-normal text-slate-500">(จ่ายรวมครั้งเดียวทั้งกลุ่ม)</span>
@@ -423,8 +507,10 @@ export function GroupPosForm({
               key={m}
               type="button"
               variant="outline"
+              // เครดิตพอทั้งบิลแล้ว — ไม่มีเงินจริงต้องเก็บ ปุ่มช่องทางไม่ต้องกด
+              disabled={fullCredit}
               className={
-                paymentMethod === m
+                effectivePaymentMethod === m
                   ? (PAY_SELECTED[m] ?? PAY_COLOR_DEFAULT)
                   : undefined
               }
@@ -435,8 +521,9 @@ export function GroupPosForm({
           ))}
         </div>
         <p className="text-xs text-slate-500">
-          จ่ายด้วยเครดิตสมาชิก / Gowabi / KOL — กด &quot;เก็บเงิน&quot; รายคนจากการ์ดคิวแทน
-          (เครดิตผูกกับตัวบุคคล ส่วน Gowabi ต้องกรอกรหัสจองรายคน)
+          {canUseCredit
+            ? "เครดิตถูกหักตามช่องด้านบน — เลือกช่องทางสำหรับส่วนที่เก็บเพิ่ม"
+            : 'เครดิตสมาชิกใช้ได้เมื่อติ๊ก "บิลชุดใบเดียว" ของลูกค้าคนเดียวกัน · Gowabi / KOL — กด "เก็บเงิน" รายคนจากการ์ดคิวแทน (ต้องกรอกรหัสจองรายคน)'}
         </p>
       </fieldset>
 
@@ -447,6 +534,14 @@ export function GroupPosForm({
             {formatBaht(total)} ฿
           </span>
         </div>
+        {creditUse > 0 && (
+          <div className="mt-1 flex items-baseline justify-between border-t border-emerald-200 pt-1 text-sm">
+            <span className="text-slate-600">เครดิตสมาชิก {formatBaht(creditUse)} ฿</span>
+            <span className="font-semibold">
+              {cashDue > 0 ? `เก็บเงินจริง ${formatBaht(cashDue)} ฿` : "ไม่ต้องเก็บเงินเพิ่ม"}
+            </span>
+          </div>
+        )}
       </div>
 
       <Button
@@ -460,7 +555,9 @@ export function GroupPosForm({
       >
         {savingIndex !== null
           ? `กำลังบันทึกคนที่ ${savingIndex + 1}/${people.length}...`
-          : `บันทึก ${people.length} บิล — รับเงิน ${formatBaht(total)} ฿`}
+          : `บันทึก ${people.length} บิล — รับเงิน ${formatBaht(cashDue)} ฿${
+              creditUse > 0 ? ` + เครดิต ${formatBaht(creditUse)} ฿` : ""
+            }`}
       </Button>
       {people.some((p) => !p.therapistId || !p.serviceId) && (
         <p className="text-center text-xs text-amber-700">
