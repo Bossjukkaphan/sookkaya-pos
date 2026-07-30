@@ -12,7 +12,7 @@ import {
   PRIVATE_ROOM_FEE,
 } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
-import { earnsPoints, pointExpiryDate, pointsForBaht } from "@/lib/points"
+import { pointExpiryDate, pointsForSale } from "@/lib/points"
 import { queueMirrorFromSale } from "@/lib/queue"
 
 export type SaleResult =
@@ -44,12 +44,16 @@ async function syncSalePoints(
     net_amount: number
     payment_method: string
     sale_date: string
+    credit_used: number
   }
 ) {
-  const points =
-    sale.customer_id && earnsPoints(sale.payment_method)
-      ? pointsForBaht(sale.net_amount)
-      : 0
+  const points = sale.customer_id
+    ? pointsForSale({
+        paymentMethod: sale.payment_method,
+        netAmount: sale.net_amount,
+        creditUsed: sale.credit_used,
+      })
+    : 0
   await supabase.from("point_transactions").delete().eq("sale_id", sale.id)
   if (points > 0 && sale.customer_id) {
     await supabase.from("point_transactions").insert({
@@ -132,13 +136,18 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     }
   }
 
+  // แบ่งชำระ: เครดิตบางส่วน + ช่องทางเงินจริง (สเปก 2026-07-31)
+  // ช่องทาง "Member Credit" = เครดิตเต็มบิล ไม่ใช้ค่านี้ (เดินด่านเดิมด้านล่าง)
+  const creditRequested =
+    paymentMethod === MEMBER_CREDIT_METHOD ? 0 : toNumber(formData.get("credit_requested"))
+
   // สัดส่วนรับรู้รายได้ของสมาชิก — อ่านก่อนคำนวณ เพราะสูตรต้องใช้
   let memberRatio: number | null = null
   // เครดิตคงเหลือหลังหักบิลนี้ — โชว์บนใบเสร็จให้ลูกค้าเห็นทันที (snapshot ณ ตอนขาย)
   let creditAfter: number | null = null
-  if (paymentMethod === MEMBER_CREDIT_METHOD) {
+  if (paymentMethod === MEMBER_CREDIT_METHOD || creditRequested > 0) {
     if (!customerId) {
-      return { ok: false, error: "ชำระด้วย Member Credit ต้องเลือกลูกค้าที่เป็นสมาชิก" }
+      return { ok: false, error: "ชำระด้วยเครดิตสมาชิกต้องเลือกลูกค้าที่เป็นสมาชิก" }
     }
 
     const { data: balance } = await supabase
@@ -151,7 +160,11 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     memberRatio = granted > 0 ? (balance?.cash_paid ?? 0) / granted : 1
 
     const credit = balance?.credit_balance ?? 0
-    const wanted = priceNormal - discountInput + roomFee
+    // เครดิตเต็มบิลต้องพอทั้งบิล (เดิม) · แบ่งจ่ายต้องพอเท่าที่ขอตัด
+    const wanted =
+      paymentMethod === MEMBER_CREDIT_METHOD
+        ? priceNormal - discountInput + roomFee
+        : creditRequested
     if (credit < wanted) {
       return {
         ok: false,
@@ -174,11 +187,15 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     roomFee,
     serviceCommission: service.commission,
     memberRatio,
-    creditRequested: 0,
+    creditRequested,
   })
 
   if (amounts.netAmount < 0) {
     return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
+  }
+
+  if (creditRequested > amounts.netAmount) {
+    return { ok: false, error: "เครดิตที่ตัดเกินยอดบิล กรุณาตรวจสอบ" }
   }
 
   // ต้องกรอง id เอง — admin เห็นได้ทุกโปรไฟล์ ถ้า .single() เฉยๆ จะเจอหลายแถวแล้ว error
@@ -269,6 +286,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     net_amount: amounts.netAmount,
     payment_method: paymentMethod,
     sale_date: saleDate,
+    credit_used: amounts.creditUsed,
   })
 
   // บิลจากคูปองแลกแต้ม → ปิดคูปองเป็นใช้แล้ว ผูกกับบิลนี้
@@ -506,10 +524,15 @@ export async function updateSale(
   const customerId = rawCustomerId === "" ? null : rawCustomerId
   const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount")))) // กันเศษสตางค์หลุดเข้าบิล
 
+  // แบ่งชำระ: เครดิตบางส่วน + ช่องทางเงินจริง (สเปก 2026-07-31)
+  // ช่องทาง "Member Credit" = เครดิตเต็มบิล ไม่ใช้ค่านี้ (เดินด่านเดิมด้านล่าง)
+  const creditRequested =
+    paymentMethod === MEMBER_CREDIT_METHOD ? 0 : toNumber(formData.get("credit_requested"))
+
   let memberRatio: number | null = null
-  if (paymentMethod === MEMBER_CREDIT_METHOD) {
+  if (paymentMethod === MEMBER_CREDIT_METHOD || creditRequested > 0) {
     if (!customerId) {
-      return { ok: false, error: "ชำระด้วย Member Credit ต้องเลือกลูกค้าที่เป็นสมาชิก" }
+      return { ok: false, error: "ชำระด้วยเครดิตสมาชิกต้องเลือกลูกค้าที่เป็นสมาชิก" }
     }
 
     const { data: balance } = await supabase
@@ -523,15 +546,19 @@ export async function updateSale(
 
     // ยอดคงเหลือปัจจุบันหักรายการนี้ไปแล้ว การแก้จะคืนของเดิมก่อนตัดใหม่
     // เพดานจึงเป็นคงเหลือ + ที่รายการนี้เคยตัด — แต่คืนได้เฉพาะเมื่อยังเป็นลูกค้าคนเดิม
+    // (headroom นี้ใช้กับทั้งสองโหมด — เครดิตเต็มบิล และแบ่งจ่ายบางส่วน)
     const sameCustomer = existing.customer_id === customerId
     const headroom =
       Number(balance?.credit_balance ?? 0) +
       (sameCustomer ? Number(existing.credit_used ?? 0) : 0)
 
+    // เครดิตเต็มบิลต้องพอทั้งบิล (เดิม) · แบ่งจ่ายต้องพอเท่าที่ขอตัด
     const wanted =
-      service.price -
-      discountInput +
-      (formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0)
+      paymentMethod === MEMBER_CREDIT_METHOD
+        ? service.price -
+          discountInput +
+          (formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0)
+        : creditRequested
     if (headroom < wanted) {
       return {
         ok: false,
@@ -553,11 +580,15 @@ export async function updateSale(
     roomFee: formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0,
     serviceCommission: service.commission,
     memberRatio,
-    creditRequested: 0,
+    creditRequested,
   })
 
   if (amounts.netAmount < 0) {
     return { ok: false, error: "ยอดรับจริงติดลบ กรุณาตรวจสอบส่วนลด" }
+  }
+
+  if (creditRequested > amounts.netAmount) {
+    return { ok: false, error: "เครดิตที่ตัดเกินยอดบิล กรุณาตรวจสอบ" }
   }
 
   // audit: ใครเป็นคนแก้บิลครั้งล่าสุด — ต้องกรอง id เอง เพราะ admin เห็นทุกโปรไฟล์
@@ -610,6 +641,7 @@ export async function updateSale(
     net_amount: amounts.netAmount,
     payment_method: paymentMethod,
     sale_date: existing.sale_date,
+    credit_used: amounts.creditUsed,
   })
 
   // บิลนี้อาจมีการ์ดคิวผูกอยู่ (คิววันนี้) — sync ฟิลด์ที่การ์ดคิว "มิเรอร์" มาจากบิลตอนสร้าง

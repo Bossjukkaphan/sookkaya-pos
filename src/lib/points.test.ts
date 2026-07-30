@@ -5,6 +5,7 @@ import {
   genCouponCode,
   pointExpiryDate,
   pointsForBaht,
+  pointsForSale,
 } from "./points"
 
 describe("earnsPoints (ได้แต้มเฉพาะเงินจริงที่จ่ายตรงกับร้าน)", () => {
@@ -63,5 +64,20 @@ describe("genCouponCode", () => {
       expect(code).toHaveLength(6)
       expect(code).toMatch(/^[A-HJ-KM-NP-Z2-9]+$/)
     }
+  })
+})
+
+describe("pointsForSale — แต้มจากส่วนที่จ่ายเงินจริงเท่านั้น", () => {
+  it("แบ่งจ่าย: บิล 800 เครดิต 500 โอน 300 → 3 แต้ม", () => {
+    expect(pointsForSale({ paymentMethod: "QR Code", netAmount: 800, creditUsed: 500 })).toBe(3)
+  })
+  it("เครดิตเต็มบิล (Member Credit) → 0 แต้ม เหมือนเดิม", () => {
+    expect(pointsForSale({ paymentMethod: "Member Credit", netAmount: 800, creditUsed: 800 })).toBe(0)
+  })
+  it("บิลเงินจริงล้วน → เท่าสูตรเดิม", () => {
+    expect(pointsForSale({ paymentMethod: "เงินสด", netAmount: 850, creditUsed: 0 })).toBe(8)
+  })
+  it("Gowabi/KOL ไม่ได้แต้มแม้ไม่ใช้เครดิต", () => {
+    expect(pointsForSale({ paymentMethod: "Gowabi", netAmount: 800, creditUsed: 0 })).toBe(0)
   })
 })
