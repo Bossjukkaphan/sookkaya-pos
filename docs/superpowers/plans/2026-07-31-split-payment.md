@@ -46,7 +46,7 @@
 - Produces: `SaleInput.creditRequested: number` (0 = ไม่ใช้เครดิต) — Task 3 และ 4 ส่งค่านี้
 - คงเดิม: `SaleAmounts` shape ไม่เปลี่ยน · เครดิตเต็มบิลยังใช้ `paymentMethod: "Member Credit"` + ไม่ต้องส่ง creditRequested
 
-- [ ] **Step 1: เขียนเทสที่ต้องแดงก่อน** — ต่อท้าย `src/lib/sale-math.test.ts`
+- [x] **Step 1: เขียนเทสที่ต้องแดงก่อน** — ต่อท้าย `src/lib/sale-math.test.ts`
 
 ```ts
 describe("แบ่งชำระ: เครดิตบางส่วน + เงินจริง", () => {
@@ -107,12 +107,12 @@ describe("แบ่งชำระ: เครดิตบางส่วน + �
 
 หมายเหตุ: เทสเดิมทุกข้อจะคอมไพล์ไม่ผ่านจนกว่าจะเพิ่ม field — เพิ่ม `creditRequested: 0` ให้ object เดิมในไฟล์เทสด้วย (หาด้วย grep `computeSaleAmounts({`)
 
-- [ ] **Step 2: รันให้เห็นว่าแดง**
+- [x] **Step 2: รันให้เห็นว่าแดง**
 
 Run: `npx vitest run src/lib/sale-math.test.ts`
 Expected: FAIL (type error / creditUsed undefined)
 
-- [ ] **Step 3: แก้ `src/lib/sale-math.ts`**
+- [x] **Step 3: แก้ `src/lib/sale-math.ts`**
 
 เพิ่มใน `SaleInput`:
 ```ts
@@ -149,12 +149,12 @@ Expected: FAIL (type error / creditUsed undefined)
   }
 ```
 
-- [ ] **Step 4: รันให้เขียว + ทั้งไฟล์เดิมต้องผ่านหมด**
+- [x] **Step 4: รันให้เขียว + ทั้งไฟล์เดิมต้องผ่านหมด**
 
 Run: `npx vitest run src/lib/sale-math.test.ts` → PASS ทุกข้อ
 Run: `npx tsc --noEmit` → จะแดงที่ `sale-actions.ts` (ยังไม่ส่ง field ใหม่) — แก้ชั่วคราวโดยเพิ่ม `creditRequested: 0` ให้ทั้งสองจุดที่เรียก (Task 3 จะแก้เป็นค่าจริง) แล้วรันจนเขียว
 
-- [ ] **Step 5: Commit** — `git add -A && git commit -m "feat(money): สูตรเงินรองรับตัดเครดิตบางส่วน (creditRequested)"`
+- [x] **Step 5: Commit** — `git add -A && git commit -m "feat(money): สูตรเงินรองรับตัดเครดิตบางส่วน (creditRequested)"`
 
 ---
 
@@ -168,7 +168,7 @@ Run: `npx tsc --noEmit` → จะแดงที่ `sale-actions.ts` (ยั�
 - Produces: `allocateCredit(nets: number[], credit: number): number[]` — Task 4 ใช้ตอน submit บิลชุด
 - สัญญา: ผลรวม = `min(credit, sum(nets))` เป๊ะ · แต่ละช่อง ≤ net ของรายการนั้น · เศษปัดลงรายการท้าย
 
-- [ ] **Step 1: เทสแดงก่อน** — ต่อท้าย `src/lib/bill.test.ts`
+- [x] **Step 1: เทสแดงก่อน** — ต่อท้าย `src/lib/bill.test.ts`
 
 ```ts
 import { allocateCredit } from "./bill"
@@ -195,9 +195,9 @@ describe("allocateCredit — เฉลี่ยเครดิตลงราย
 })
 ```
 
-- [ ] **Step 2: รันให้แดง** — `npx vitest run src/lib/bill.test.ts` → FAIL (not a function)
+- [x] **Step 2: รันให้แดง** — `npx vitest run src/lib/bill.test.ts` → FAIL (not a function)
 
-- [ ] **Step 3: implement ใน `src/lib/bill.ts`**
+- [x] **Step 3: implement ใน `src/lib/bill.ts`**
 
 ```ts
 /**
@@ -223,9 +223,9 @@ export function allocateCredit(nets: number[], credit: number): number[] {
 }
 ```
 
-- [ ] **Step 4: รันให้เขียว** — `npx vitest run src/lib/bill.test.ts` → PASS
+- [x] **Step 4: รันให้เขียว** — `npx vitest run src/lib/bill.test.ts` → PASS
 
-- [ ] **Step 5: Commit** — `git commit -am "feat(bill): allocateCredit เฉลี่ยเครดิตลงรายการบิลชุด"`
+- [x] **Step 5: Commit** — `git commit -am "feat(bill): allocateCredit เฉลี่ยเครดิตลงรายการบิลชุด"`
 
 ---
 
@@ -240,7 +240,7 @@ export function allocateCredit(nets: number[], credit: number): number[] {
 - Produces: form field `credit_requested` (string ตัวเลข) — Task 4/5 ส่งมา
 - Produces: `pointsForSale(input: { paymentMethod: string; netAmount: number; creditUsed: number }): number`
 
-- [ ] **Step 1: เทสแต้มแดงก่อน** — ต่อท้าย `src/lib/points.test.ts`
+- [x] **Step 1: เทสแต้มแดงก่อน** — ต่อท้าย `src/lib/points.test.ts`
 
 ```ts
 import { pointsForSale } from "./points"
@@ -261,9 +261,9 @@ describe("pointsForSale — แต้มจากส่วนที่จ่า�
 })
 ```
 
-- [ ] **Step 2: รันให้แดง** — `npx vitest run src/lib/points.test.ts`
+- [x] **Step 2: รันให้แดง** — `npx vitest run src/lib/points.test.ts`
 
-- [ ] **Step 3: implement ใน `src/lib/points.ts`** (วางใต้ `earnsPoints`)
+- [x] **Step 3: implement ใน `src/lib/points.ts`** (วางใต้ `earnsPoints`)
 
 ```ts
 /** แต้มของบิลหนึ่งใบ — ได้จากส่วนที่จ่ายเงินจริงเท่านั้น (เครดิตได้แต้มไปแล้วตอนเติมเงิน) */
@@ -277,14 +277,14 @@ export function pointsForSale(input: {
 }
 ```
 
-- [ ] **Step 4: รันให้เขียว** แล้วแก้ `syncSalePoints` ใน `sale-actions.ts`:
+- [x] **Step 4: รันให้เขียว** แล้วแก้ `syncSalePoints` ใน `sale-actions.ts`:
   - เพิ่ม `credit_used: number` เข้า type ของ `sale` param
   - แทน `sale.customer_id && earnsPoints(sale.payment_method) ? pointsForBaht(sale.net_amount) : 0` ด้วย
     `sale.customer_id ? pointsForSale({ paymentMethod: sale.payment_method, netAmount: sale.net_amount, creditUsed: sale.credit_used }) : 0`
   - ตามหาทุกจุดที่เรียก `syncSalePoints(` (grep) แล้วเพิ่ม `credit_used: amounts.creditUsed` (หรือค่าจากแถวที่อ่านมา) เข้า object
   - import `pointsForSale` แทน/เพิ่มจาก `@/lib/points`
 
-- [ ] **Step 5: createSale รับ `credit_requested`** — ใน `createSale` หลังบรรทัด parse `paymentMethod`:
+- [x] **Step 5: createSale รับ `credit_requested`** — ใน `createSale` หลังบรรทัด parse `paymentMethod`:
 
 ```ts
   // แบ่งชำระ: เครดิตบางส่วน + ช่องทางเงินจริง (สเปก 2026-07-31)
@@ -331,9 +331,9 @@ export function pointsForSale(input: {
   }
 ```
 
-- [ ] **Step 6: updateSale แบบเดียวกัน** — parse `credit_requested` เหมือน Step 5 · ขยายเงื่อนไขบล็อกตรวจ (เดิม `if (paymentMethod === MEMBER_CREDIT_METHOD)`) เป็น `|| creditRequested > 0` · `wanted` ใช้ตรรกะเดียวกัน · headroom เดิม (`+ existing.credit_used` เมื่อลูกค้าเดิม) คงไว้ — ใช้กับทั้งสองโหมด · ส่ง `creditRequested` เข้า `computeSaleAmounts` + ด่านเกินยอดบิลเหมือน Step 5
+- [x] **Step 6: updateSale แบบเดียวกัน** — parse `credit_requested` เหมือน Step 5 · ขยายเงื่อนไขบล็อกตรวจ (เดิม `if (paymentMethod === MEMBER_CREDIT_METHOD)`) เป็น `|| creditRequested > 0` · `wanted` ใช้ตรรกะเดียวกัน · headroom เดิม (`+ existing.credit_used` เมื่อลูกค้าเดิม) คงไว้ — ใช้กับทั้งสองโหมด · ส่ง `creditRequested` เข้า `computeSaleAmounts` + ด่านเกินยอดบิลเหมือน Step 5
 
-- [ ] **Step 7: ตรวจ + Commit**
+- [x] **Step 7: ตรวจ + Commit**
 
 Run: `npx tsc --noEmit && npx vitest run` → เขียวหมด
 `git commit -am "feat(pos): server รับแบ่งชำระ เครดิตบางส่วน + แต้มจากส่วนเงินจริง"`
@@ -350,7 +350,7 @@ Run: `npx tsc --noEmit && npx vitest run` → เขียวหมด
 - Consumes: `allocateCredit` (Task 2) · form field `credit_requested` (Task 3)
 - กติกา UI (จากสเปกข้อ 3): ช่องใช้เครดิตแสดงเมื่อ เลือกลูกค้า + เครดิต > 0 + ไม่ใช่ Gowabi/KOL + ไม่ใช่บิลคูปองแลกแต้ม · ค่าตั้งต้น = min(เครดิต, ยอดบิล) แก้ลงได้ · แสดง "ต้องเก็บเพิ่ม X บาท" · ถ้าเก็บเพิ่ม 0 → บังคับช่องทาง "Member Credit" (พฤติกรรมเดิม) · ถ้า > 0 → เลือกได้เฉพาะ QR/เงินสด/บัตร
 
-- [ ] **Step 1: state + คำนวณ** — ใน `pos-form.tsx` เพิ่ม:
+- [x] **Step 1: state + คำนวณ** — ใน `pos-form.tsx` เพิ่ม:
 
 ```ts
   const [creditBalance, setCreditBalance] = useState(0)
@@ -371,7 +371,7 @@ Run: `npx tsc --noEmit && npx vitest run` → เขียวหมด
 
 (`isKol`: ถ้าไฟล์ยังไม่มีตัวแปรนี้ ใช้ `paymentMethod === "KOL"` · `couponInfo` มีอยู่แล้วในไฟล์)
 
-- [ ] **Step 2: UI block** — วางใต้ CustomerPicker:
+- [x] **Step 2: UI block** — วางใต้ CustomerPicker:
 
 ```tsx
   {canUseCredit && (
@@ -391,12 +391,12 @@ Run: `npx tsc --noEmit && npx vitest run` → เขียวหมด
   )}
 ```
 
-- [ ] **Step 3: ผูกกับช่องทางชำระ**
+- [x] **Step 3: ผูกกับช่องทางชำระ**
   - เมื่อ `canUseCredit && creditUse > 0 && cashDue === 0` → force `paymentMethod = MEMBER_CREDIT_METHOD` (setState ใน effect หรือ ตอน render ปุ่ม disabled ช่องอื่น)
   - เมื่อ `cashDue > 0 && creditUse > 0` → ปุ่ม "Member Credit" disabled (เครดิตถูกนับแล้ว) · Gowabi/KOL disabled
   - เมื่อผู้ใช้เลือก Gowabi/KOL → `setCreditUseInput("0")`
 
-- [ ] **Step 4: ส่งค่าเข้า server ตอน submit** — ใน `handleSubmit` ก่อน `createSale(formData)`:
+- [x] **Step 4: ส่งค่าเข้า server ตอน submit** — ใน `handleSubmit` ก่อน `createSale(formData)`:
 
 ```ts
       // แบ่งชำระ: เฉลี่ยเครดิตลงรายการตามสัดส่วน (บิลเดี่ยว = ก้อนเดียว)
@@ -408,7 +408,7 @@ Run: `npx tsc --noEmit && npx vitest run` → เขียวหมด
 และในลูป extras: `fd.set("credit_requested", String(perItem[i + 1]))` (ลูปเดิม copy ทีละ key — เพิ่ม key นี้แยกเพราะค่าต่างกันต่อรายการ)
 `import { allocateCredit } from "@/lib/bill"`
 
-- [ ] **Step 5: ตรวจมือ + type + commit**
+- [x] **Step 5: ตรวจมือ + type + commit**
 
 Run: `npx tsc --noEmit && npx eslint src/app/\(app\)/pos` → ผ่าน
 ทดสอบมือกับ dev server (`npm run dev`): บิลปกติไม่มีลูกค้า → ไม่มีช่องเครดิต · เลือกสมาชิก → ช่องขึ้น ค่าตั้งต้นถูก · แก้ลง → ยอดเก็บเพิ่มเปลี่ยน · เครดิตพอทั้งบิล → ช่องทางเป็น MC
@@ -425,7 +425,7 @@ Run: `npx tsc --noEmit && npx eslint src/app/\(app\)/pos` → ผ่าน
 - Consumes: form field `credit_requested` (Task 3 — updateSale รองรับแล้ว)
 - Sale type ในไฟล์มี `credit_used` อยู่แล้วหรือไม่ — ถ้าไม่มี เพิ่มเข้า type + จุด select ของหน้า today
 
-- [ ] **Step 1: เพิ่ม state + ช่องกรอก** — โชว์เมื่อบิลมี `credit_used > 0` หรือ (มี customer_id และ paymentMethod ไม่ใช่ MC/Gowabi/KOL):
+- [x] **Step 1: เพิ่ม state + ช่องกรอก** — โชว์เมื่อบิลมี `credit_used > 0` หรือ (มี customer_id และ paymentMethod ไม่ใช่ MC/Gowabi/KOL):
 
 ```tsx
   const [creditUse, setCreditUse] = useState(String(sale.credit_used ?? 0))
@@ -439,7 +439,7 @@ Run: `npx tsc --noEmit && npx eslint src/app/\(app\)/pos` → ผ่าน
 
 พร้อมช่อง Input แสดง/แก้ค่า (label "ใช้เครดิตสมาชิก (บาท)") — แสดงเงื่อนไขตามข้างบน · ถ้า paymentMethod เป็น MC ให้ซ่อน (เต็มบิลอยู่แล้ว)
 
-- [ ] **Step 2: ตรวจ + commit**
+- [x] **Step 2: ตรวจ + commit**
 
 Run: `npx tsc --noEmit` → ผ่าน · ทดสอบมือ: แก้บิลแบ่งจ่าย เปลี่ยนยอดเครดิต → `credit_after`/ยอดถูก (server คิดใหม่ทั้งใบ)
 `git commit -am "feat(today): แก้บิลแบ่งชำระย้อนหลังได้"`
@@ -455,7 +455,7 @@ Run: `npx tsc --noEmit` → ผ่าน · ทดสอบมือ: แก้�
 
 **Interfaces:** สูตรเดียวทุกจุด: `ช่องทางบิล += net − credit_used` · `"Member Credit" += credit_used`
 
-- [ ] **Step 1: แก้ byPayment ทั้งสองหน้า** — แทน reducer เดิมด้วย:
+- [x] **Step 1: แก้ byPayment ทั้งสองหน้า** — แทน reducer เดิมด้วย:
 
 ```ts
   // แบ่งชำระ: เงินจริงเข้าช่องทางของบิล เครดิตเข้าช่อง Member Credit
@@ -469,7 +469,7 @@ Run: `npx tsc --noEmit` → ผ่าน · ทดสอบมือ: แก้�
   }, {})
 ```
 
-- [ ] **Step 2: แก้ cashByChannel ใน reports** — แทนลูปเดิม (ลบบรรทัด `continue` ด้วย — แถว MC ให้ cash = 0 เองอยู่แล้ว):
+- [x] **Step 2: แก้ cashByChannel ใน reports** — แทนลูปเดิม (ลบบรรทัด `continue` ด้วย — แถว MC ให้ cash = 0 เองอยู่แล้ว):
 
 ```ts
   for (const s of rows) {
@@ -479,7 +479,7 @@ Run: `npx tsc --noEmit` → ผ่าน · ทดสอบมือ: แก้�
   }
 ```
 
-- [ ] **Step 3: migration** — `supabase/migrations/20260731130000_split_payment_cash_in.sql`: copy นิยาม `v_daily_summary` ล่าสุดจาก `20260721164623_member_balances_use_bangkok_date.sql`/`20260720090414_create_analytics_views.sql` (ตรวจไฟล์ไหน define ล่าสุด) มาทั้งก้อน แก้บรรทัดเดียว:
+- [x] **Step 3: migration** — `supabase/migrations/20260731130000_split_payment_cash_in.sql`: copy นิยาม `v_daily_summary` ล่าสุดจาก `20260721164623_member_balances_use_bangkok_date.sql`/`20260720090414_create_analytics_views.sql` (ตรวจไฟล์ไหน define ล่าสุด) มาทั้งก้อน แก้บรรทัดเดียว:
 
 ```sql
     sum(net_amount - coalesce(credit_used, 0))                        as sales_cash
@@ -487,7 +487,7 @@ Run: `npx tsc --noEmit` → ผ่าน · ทดสอบมือ: แก้�
 
 พร้อมคอมเมนต์หัวไฟล์อธิบาย + `with (security_invoker = true)` · รันบน production ผ่าน MCP `apply_migration`
 
-- [ ] **Step 4: ตรวจว่าเลขเดิมไม่ขยับ** — รัน SQL เทียบก่อน/หลังบน production:
+- [x] **Step 4: ตรวจว่าเลขเดิมไม่ขยับ** — รัน SQL เทียบก่อน/หลังบน production:
 
 ```sql
 select count(*) from public.v_daily_summary
@@ -497,7 +497,7 @@ where sale_date <= '2026-07-19'
 
 วิธีปฏิบัติ: รัน `select sum(cash_in) from v_daily_summary where sale_date <= '2026-07-19'` ก่อนและหลัง apply — เลขต้องเท่ากันเป๊ะ
 
-- [ ] **Step 5: Commit** — `git commit -am "feat(reports): ยอดช่องทางแยกส่วนเครดิต/เงินจริงของบิลแบ่งชำระ"`
+- [x] **Step 5: Commit** — `git commit -am "feat(reports): ยอดช่องทางแยกส่วนเครดิต/เงินจริงของบิลแบ่งชำระ"`
 
 ---
 
@@ -507,7 +507,7 @@ where sale_date <= '2026-07-19'
 - Modify: `supabase/reconciliation.sql`
 - Modify: `docs/superpowers/plans/2026-07-31-split-payment.md` (ติ๊ก + บันทึกผล)
 
-- [ ] **Step 1: เพิ่ม 2 ด่านใน expected**
+- [x] **Step 1: เพิ่ม 2 ด่านใน expected**
 
 ```sql
   -- แบ่งชำระ (สเปก 2026-07-31): เครดิตห้ามเกินยอดบิล และต้องรู้ว่าตัดของใคร
@@ -527,10 +527,23 @@ where sale_date <= '2026-07-19'
   from public.sales where credit_used > 0 and customer_id is null
 ```
 
-- [ ] **Step 2: รันชุดตรวจเต็มบน production** — ต้อง PASS ครบ 31/31 (29 เดิมค่าเดิมเป๊ะ)
+- [x] **Step 2: รันชุดตรวจเต็มบน production** — ต้อง PASS ครบ 31/31 (29 เดิมค่าเดิมเป๊ะ)
 
-- [ ] **Step 3: ด่านคุณภาพทั้งหมด** — `npx tsc --noEmit && npx eslint src && npx vitest run && npm run build` → เขียวหมด
+- [x] **Step 3: ด่านคุณภาพทั้งหมด** — `npx tsc --noEmit && npx eslint src && npx vitest run && npm run build` → เขียวหมด
 
-- [ ] **Step 4: Deploy + ตรวจของจริง** — merge เข้า main + push (Vercel auto-deploy) · เปิด `/pos` บันทึกบิลแบ่งจ่ายจริง 1 ใบ (หรือบิลทดสอบแล้วลบ) ตรวจ: ใบเสร็จ/credit_after ถูก · แต้มขึ้นตามส่วนเงินจริง · `/today` ยอดช่องทางแยกถูก · Vercel runtime errors ไม่มีของใหม่
+- [x] **Step 4: Deploy + ตรวจของจริง** — merge เข้า main + push (Vercel auto-deploy) · เปิด `/pos` บันทึกบิลแบ่งจ่ายจริง 1 ใบ (หรือบิลทดสอบแล้วลบ) ตรวจ: ใบเสร็จ/credit_after ถูก · แต้มขึ้นตามส่วนเงินจริง · `/today` ยอดช่องทางแยกถูก · Vercel runtime errors ไม่มีของใหม่
 
-- [ ] **Step 5: Commit ปิดงาน** — ติ๊กแผน + บันทึกผลตรวจต่อท้ายไฟล์นี้ + push
+- [x] **Step 5: Commit ปิดงาน** — ติ๊กแผน + บันทึกผลตรวจต่อท้ายไฟล์นี้ + push
+
+---
+
+## ผลปิดงาน — 31/7/2569
+
+- ทำครบ 7 tasks ผ่านรีวิวรายงาน + final whole-branch review (trace เงินทุกตัวเลขจากฟอร์ม→DB→รายงาน)
+- fix rounds: T1 ลำดับปัดเศษ · T3 credit_after ตอนแก้บิล + กัน Gowabi/KOL · T5 disabled gate + คำเตือนสลับลูกค้า · final MC dead-end + normalize เครดิตเต็มบิล
+- migration v_daily_summary ขึ้น production แล้ว — cash_in ก่อน/หลังเท่ากันเป๊ะ (1,602,654 · 145 วัน)
+- **reconciliation 31/31 PASS** — ด่านใหม่ 2 ข้อจับข้อมูล import ผิดปกติได้ทันที 2 แถว
+  (#34139-949 net = -100 · SK-20260710-005 บิล MC ไม่ผูกลูกค้า) ตั้ง expected = 1/1 พร้อมบันทึกเรื่อง รอเจ้าของร้านสืบเทียบ Excel
+- gates: tsc ✓ eslint ✓ vitest 342 ✓ build ✓ · deploy ผ่าน Vercel auto (merge d58ecb9)
+- เรื่องส่งต่อเจ้าของร้าน: (1) บิลชุดได้แต้มน้อยกว่าบิลเดี่ยวยอดเท่ากัน (floor ต่อแถว — พฤติกรรมเดิม)
+  (2) ตัวกรอง "Member Credit" ใน /history ไม่เห็นบิลแบ่งจ่าย — ตรวจเครดิตให้ดูคอลัมน์ credit_used
