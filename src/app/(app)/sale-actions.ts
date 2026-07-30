@@ -141,6 +141,11 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   const creditRequested =
     paymentMethod === MEMBER_CREDIT_METHOD ? 0 : toNumber(formData.get("credit_requested"))
 
+  // แบ่งชำระใช้ได้กับช่องทางเงินจริงจากลูกค้าเท่านั้น — Gowabi/KOL เงินไม่ได้มาจากลูกค้าตรงๆ
+  if (creditRequested > 0 && (paymentMethod === GOWABI_METHOD || paymentMethod === "KOL")) {
+    return { ok: false, error: "ช่องทางนี้ใช้ร่วมกับเครดิตสมาชิกไม่ได้" }
+  }
+
   // สัดส่วนรับรู้รายได้ของสมาชิก — อ่านก่อนคำนวณ เพราะสูตรต้องใช้
   let memberRatio: number | null = null
   // เครดิตคงเหลือหลังหักบิลนี้ — โชว์บนใบเสร็จให้ลูกค้าเห็นทันที (snapshot ณ ตอนขาย)
@@ -529,7 +534,14 @@ export async function updateSale(
   const creditRequested =
     paymentMethod === MEMBER_CREDIT_METHOD ? 0 : toNumber(formData.get("credit_requested"))
 
+  // แบ่งชำระใช้ได้กับช่องทางเงินจริงจากลูกค้าเท่านั้น — Gowabi/KOL เงินไม่ได้มาจากลูกค้าตรงๆ
+  if (creditRequested > 0 && (paymentMethod === GOWABI_METHOD || paymentMethod === "KOL")) {
+    return { ok: false, error: "ช่องทางนี้ใช้ร่วมกับเครดิตสมาชิกไม่ได้" }
+  }
+
   let memberRatio: number | null = null
+  // เครดิตคงเหลือหลังหักบิลนี้ — snapshot ใหม่ตามยอดที่แก้ (null = บิลนี้ไม่เกี่ยวกับเครดิตแล้ว)
+  let creditAfter: number | null = null
   if (paymentMethod === MEMBER_CREDIT_METHOD || creditRequested > 0) {
     if (!customerId) {
       return { ok: false, error: "ชำระด้วยเครดิตสมาชิกต้องเลือกลูกค้าที่เป็นสมาชิก" }
@@ -565,6 +577,7 @@ export async function updateSale(
         error: `เครดิตคงเหลือไม่พอ (แก้เป็นได้สูงสุด ${headroom} บาท ต้องใช้ ${wanted} บาท)`,
       }
     }
+    creditAfter = headroom - wanted
   }
 
   const amounts = computeSaleAmounts({
@@ -614,6 +627,7 @@ export async function updateSale(
       room_fee: amounts.roomFee,
       member_status: paymentMethod === MEMBER_CREDIT_METHOD ? "💳 Member" : null,
       credit_used: amounts.creditUsed,
+      credit_after: creditAfter,
       bonus_used: amounts.bonusUsed,
       revenue_recognize: amounts.revenueRecognize,
       notes: String(formData.get("notes") ?? "").trim() || null,
