@@ -210,8 +210,13 @@ export default async function TodayPage({
 
   // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
   // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
+  // แบ่งชำระ: เงินจริงเข้าช่องทางของบิล เครดิตเข้าช่อง Member Credit
+  // บิลเก่าถูกอัตโนมัติ: บิลปกติ credit_used=0 · บิลเครดิตเต็ม credit_used=net (พิสูจน์บน production แล้ว)
   const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
-    acc[s.payment_method] = (acc[s.payment_method] ?? 0) + Number(s.net_amount)
+    const credit = Number(s.credit_used ?? 0)
+    const cash = Number(s.net_amount) - credit
+    if (cash !== 0) acc[s.payment_method] = (acc[s.payment_method] ?? 0) + cash
+    if (credit !== 0) acc["Member Credit"] = (acc["Member Credit"] ?? 0) + credit
     return acc
   }, {})
 

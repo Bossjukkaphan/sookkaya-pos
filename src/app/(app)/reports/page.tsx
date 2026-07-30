@@ -168,11 +168,9 @@ export default async function ReportsPage({
   // แยกช่องทางของเงินเข้าบัญชี: ยอดขายที่ไม่ใช่เครดิต + เงินเติมสมาชิกตามช่องทางที่จ่าย
   const cashByChannel = new Map<string, number>()
   for (const s of rows) {
-    if (s.payment_method === "Member Credit") continue // เครดิตไม่ใช่เงินเข้า
-    cashByChannel.set(
-      s.payment_method,
-      (cashByChannel.get(s.payment_method) ?? 0) + Number(s.net_amount)
-    )
+    const cash = Number(s.net_amount) - Number(s.credit_used ?? 0)
+    if (cash === 0) continue // เครดิตไม่ใช่เงินเข้า
+    cashByChannel.set(s.payment_method, (cashByChannel.get(s.payment_method) ?? 0) + cash)
   }
   for (const t of topups ?? []) {
     const m = t.payment_method
@@ -211,8 +209,13 @@ export default async function ReportsPage({
   const expenseTotal = payrollPaid + otherExpenses
   const grossProfit = revenue - commissionCost - otherExpenses
 
+  // แบ่งชำระ: เงินจริงเข้าช่องทางของบิล เครดิตเข้าช่อง Member Credit
+  // บิลเก่าถูกอัตโนมัติ: บิลปกติ credit_used=0 · บิลเครดิตเต็ม credit_used=net (พิสูจน์บน production แล้ว)
   const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
-    acc[s.payment_method] = (acc[s.payment_method] ?? 0) + Number(s.net_amount)
+    const credit = Number(s.credit_used ?? 0)
+    const cash = Number(s.net_amount) - credit
+    if (cash !== 0) acc[s.payment_method] = (acc[s.payment_method] ?? 0) + cash
+    if (credit !== 0) acc["Member Credit"] = (acc["Member Credit"] ?? 0) + credit
     return acc
   }, {})
 
