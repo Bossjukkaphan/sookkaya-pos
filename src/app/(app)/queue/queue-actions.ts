@@ -888,6 +888,15 @@ export async function rejectBooking(id: string, reason: string): Promise<Result>
       staffName: rejecter?.full_name,
     })
   )
+  // นับเข้ารายงาน "ปฏิเสธลูกค้า" (/reports) อัตโนมัติ — ก่อนหน้านี้ยอดรายได้ที่หลุดมือ
+  // นับเฉพาะที่พนักงานกดปุ่มแดงบนบอร์ดเอง คิวไลน์ที่ถูกปฏิเสธจึงหายจากตัวเลขเงียบๆ
+  // หนึ่งคำขอ = หนึ่งครั้ง (คำขอกลุ่มหลายคนก็คือลูกค้าหนึ่งกลุ่มที่รับไม่ได้) · พลาดไม่กระทบการปฏิเสธ
+  const info = shopInfoOf(set.entries)
+  await supabase.from("turn_aways").insert({
+    queue_date: set.entries[0].queue_date,
+    note: `คิวไลน์ ${info.name} ${info.time} น. (${set.entries.length} ที่) — ${cleanReason}`,
+    created_by: rejecter?.full_name ?? null,
+  })
   revalidatePath("/queue")
   return { ok: true, warning }
 }
