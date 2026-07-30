@@ -256,9 +256,19 @@ export function PosForm({
   // เครดิตครอบคลุมทั้งบิลพอดี → ช่องทางที่ "จริงๆ" ใช้ต้องเป็น Member Credit เสมอ (บังคับ ไม่ใช่แค่ default)
   // คำนวณระหว่าง render แทนการ setState ใน effect กัน setPaymentMethod ชนของที่ผู้ใช้กดเอง
   // ไม่งั้นบิลจะถูกบันทึกเป็นช่องทางที่ผิด (เช่น "QR Code" ทั้งที่เงินจริงมาจากเครดิตล้วน)
+  //
+  // กรณีตรงข้าม: paymentMethod ค้างเป็น Member Credit อยู่ (เคยเลือกไว้ตอนเครดิตพอ) แต่ตอนนี้เครดิตที่ใช้ได้
+  // ไม่พอบิลแล้ว (partialCreditActive) — ต้อง "หลุด" การเลือกทันที ไม่งั้นปุ่มจะค้างเป็น selected-but-disabled
+  // พร้อมให้กดส่งได้ทั้งที่ server จะปฏิเสธด้วยข้อความเดิม ("เครดิตคงเหลือไม่พอ") ที่ฟีเจอร์แบ่งชำระนี้ตั้งใจกำจัดทิ้ง
+  const mcSelectionBlocked = paymentMethod === MEMBER_CREDIT_METHOD && partialCreditActive
   const isMemberCredit =
-    paymentMethod === MEMBER_CREDIT_METHOD || (canUseCredit && creditUse > 0 && cashDue === 0)
-  const effectivePaymentMethod = isMemberCredit ? MEMBER_CREDIT_METHOD : paymentMethod
+    !mcSelectionBlocked &&
+    (paymentMethod === MEMBER_CREDIT_METHOD || (canUseCredit && creditUse > 0 && cashDue === 0))
+  const effectivePaymentMethod = mcSelectionBlocked
+    ? ""
+    : isMemberCredit
+      ? MEMBER_CREDIT_METHOD
+      : paymentMethod
 
   function resetForm() {
     setTherapistId("")

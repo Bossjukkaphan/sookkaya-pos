@@ -76,7 +76,9 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
   const therapistId = String(formData.get("therapist_id") ?? "")
   const serviceId = String(formData.get("service_id") ?? "")
-  const paymentMethod = String(formData.get("payment_method") ?? "")
+  // ปกติเป็นค่าคงที่ตลอดฟังก์ชัน — แต่ normalize เป็น Member Credit ได้ทีหลังถ้าแบ่งจ่ายตัดเครดิตเต็มบิลพอดี
+  // (ดูจุด normalize ด้านล่างหลัง computeSaleAmounts)
+  let paymentMethod = String(formData.get("payment_method") ?? "")
 
   if (!therapistId) return { ok: false, error: "กรุณาเลือกหมอนวด" }
   if (!serviceId) return { ok: false, error: "กรุณาเลือกเมนูบริการ" }
@@ -201,6 +203,19 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
   if (creditRequested > amounts.netAmount) {
     return { ok: false, error: "เครดิตที่ตัดเกินยอดบิล กรุณาตรวจสอบ" }
+  }
+
+  // แบ่งจ่ายที่ขอตัดเครดิตพอดีเต็มบิล (creditUsed === netAmount) แต่ช่องทางที่เลือกยังเป็นเงินจริง
+  // (เช่น QR) — ต้อง normalize เป็น "Member Credit" เพื่อรักษากติกาเดิม "Member Credit = เครดิตเต็มบิล
+  // เท่านั้น" ที่ข้อมูลเก่า/รายงานพึ่งพาไว้แปะป้ายช่องทาง ไม่งั้นบิลจะถูกนับเป็นช่องทางเงินจริงทั้งที่ไม่มี
+  // เงินจริงเข้าร้านเลยสักบาท (แต้มไม่ได้รับผลกระทบ — pointsForSale หักด้วย netAmount-creditUsed = 0 อยู่แล้ว
+  // แต่ normalize ให้ paymentMethod ตรงกับความจริงไว้ด้วย เพราะทุกจุดข้างล่างอ่านจากตัวแปรนี้ตัวเดียว)
+  if (
+    creditRequested > 0 &&
+    amounts.creditUsed === amounts.netAmount &&
+    paymentMethod !== MEMBER_CREDIT_METHOD
+  ) {
+    paymentMethod = MEMBER_CREDIT_METHOD
   }
 
   // ต้องกรอง id เอง — admin เห็นได้ทุกโปรไฟล์ ถ้า .single() เฉยๆ จะเจอหลายแถวแล้ว error
@@ -507,7 +522,9 @@ export async function updateSale(
 
   const therapistId = String(formData.get("therapist_id") ?? "")
   const serviceId = String(formData.get("service_id") ?? "")
-  const paymentMethod = String(formData.get("payment_method") ?? "")
+  // ปกติเป็นค่าคงที่ตลอดฟังก์ชัน — แต่ normalize เป็น Member Credit ได้ทีหลังถ้าแบ่งจ่ายตัดเครดิตเต็มบิลพอดี
+  // (ดูจุด normalize ด้านล่างหลัง computeSaleAmounts)
+  let paymentMethod = String(formData.get("payment_method") ?? "")
 
   if (!therapistId) return { ok: false, error: "กรุณาเลือกหมอนวด" }
   if (!serviceId) return { ok: false, error: "กรุณาเลือกเมนูบริการ" }
@@ -602,6 +619,19 @@ export async function updateSale(
 
   if (creditRequested > amounts.netAmount) {
     return { ok: false, error: "เครดิตที่ตัดเกินยอดบิล กรุณาตรวจสอบ" }
+  }
+
+  // แบ่งจ่ายที่ขอตัดเครดิตพอดีเต็มบิล (creditUsed === netAmount) แต่ช่องทางที่เลือกยังเป็นเงินจริง
+  // (เช่น QR) — ต้อง normalize เป็น "Member Credit" เพื่อรักษากติกาเดิม "Member Credit = เครดิตเต็มบิล
+  // เท่านั้น" ที่ข้อมูลเก่า/รายงานพึ่งพาไว้แปะป้ายช่องทาง ไม่งั้นบิลจะถูกนับเป็นช่องทางเงินจริงทั้งที่ไม่มี
+  // เงินจริงเข้าร้านเลยสักบาท (แต้มไม่ได้รับผลกระทบ — pointsForSale หักด้วย netAmount-creditUsed = 0 อยู่แล้ว
+  // แต่ normalize ให้ paymentMethod ตรงกับความจริงไว้ด้วย เพราะทุกจุดข้างล่างอ่านจากตัวแปรนี้ตัวเดียว)
+  if (
+    creditRequested > 0 &&
+    amounts.creditUsed === amounts.netAmount &&
+    paymentMethod !== MEMBER_CREDIT_METHOD
+  ) {
+    paymentMethod = MEMBER_CREDIT_METHOD
   }
 
   // audit: ใครเป็นคนแก้บิลครั้งล่าสุด — ต้องกรอง id เอง เพราะ admin เห็นทุกโปรไฟล์
