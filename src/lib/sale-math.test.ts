@@ -58,6 +58,16 @@ describe("computeSaleAmounts", () => {
     expect(a.bonusUsed).toBe(0)
   })
 
+  it("ยอดมีเศษสตางค์: เครดิตเต็มบิลยังตรงสูตรเดิม (ปัดที่รายได้ก่อน)", () => {
+    const a = computeSaleAmounts({
+      ...base, priceNormal: 2.01, paymentMethod: "Member Credit",
+      memberRatio: 5000 / 6000, creditRequested: 0,
+    })
+    expect(a.revenueRecognize).toBe(1.67)  // round2(2.01 × 5000/6000)
+    expect(a.bonusUsed).toBe(0.34)         // 2.01 − 1.67
+    expect(a.creditUsed).toBe(a.revenueRecognize + a.bonusUsed)
+  })
+
   it("ค่ารีเควสไม่นับเป็นยอดขาย แต่ติดไปกับรายการเพื่อจ่ายหมอ", () => {
     const a = computeSaleAmounts({ ...base, isRequest: true, requestFee: 40 })
     expect(a.netAmount).toBe(650)

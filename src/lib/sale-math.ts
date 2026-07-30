@@ -69,12 +69,15 @@ export function computeSaleAmounts(input: SaleInput): SaleAmounts {
   // ส่วนของแถมในเครดิตไม่ใช่รายได้ — คิดเฉพาะก้อนที่ตัดเครดิต ส่วนที่จ่ายเงินจริงรับรู้เต็ม
   // เครดิตเต็มบิล: bonusUsed = net×(1−ratio) → revenue = net×ratio = สูตรเดิมเป๊ะ (มีเทสพิสูจน์)
   const ratio = input.memberRatio ?? 1
-  const bonusUsed = round2(creditUsed * (1 - ratio))
+  // ปัดที่ "รายได้" ก่อนแล้วค่อยหาของแถม — ลำดับเดียวกับสูตรเดิมของบิลเครดิตเต็ม
+  // (ปัดที่ของแถมก่อนจะให้ค่าต่างกันเมื่อยอดมีเศษสตางค์ — มีเทสกันไว้แล้ว)
+  const revenueRecognize = round2(netAmount - creditUsed * (1 - ratio))
+  const bonusUsed = round2(netAmount - revenueRecognize)
 
   return {
     netAmount, discount, commission: input.serviceCommission, requestFee, roomFee,
     creditUsed,
     bonusUsed,
-    revenueRecognize: round2(netAmount - bonusUsed),
+    revenueRecognize,
   }
 }
