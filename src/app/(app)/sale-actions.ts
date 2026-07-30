@@ -174,6 +174,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     roomFee,
     serviceCommission: service.commission,
     memberRatio,
+    creditRequested: 0,
   })
 
   if (amounts.netAmount < 0) {
@@ -552,6 +553,7 @@ export async function updateSale(
     roomFee: formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0,
     serviceCommission: service.commission,
     memberRatio,
+    creditRequested: 0,
   })
 
   if (amounts.netAmount < 0) {

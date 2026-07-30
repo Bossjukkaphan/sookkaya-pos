@@ -221,6 +221,7 @@ function EditSaleForm({
         roomFee: privateRoom ? PRIVATE_ROOM_FEE : 0,
         serviceCommission: service?.commission ?? 0,
         memberRatio: isMemberCredit ? ratio : null,
+        creditRequested: 0,
       }),
     [
       service,
