@@ -13,6 +13,8 @@ export type SaleInput = {
   serviceCommission: number
   /** cash_paid / credit_granted ของสมาชิก · null = ไม่ได้จ่ายด้วยเครดิต */
   memberRatio: number | null
+  /** เครดิตที่ขอตัด (แบ่งชำระ) · 0 = ไม่ใช้ · ช่องทาง "Member Credit" ไม่ต้องส่ง (ตัดเต็มบิลเสมอ) */
+  creditRequested: number
 }
 
 export type SaleAmounts = {
@@ -51,32 +53,31 @@ export function computeSaleAmounts(input: SaleInput): SaleAmounts {
   const discount = isGowabi ? input.priceNormal - baseNet : input.discount
   const requestFee = input.isRequest ? Math.max(0, input.requestFee) : 0
 
-  if (!isMemberCredit) {
+  // เครดิตที่ตัดจริง: ช่องทาง Member Credit = เต็มบิลเสมอ (ความหมายเดิมของข้อมูลเก่า)
+  // ช่องทางเงินจริง = ตามที่ขอ แต่ไม่เกินยอดบิล (แบ่งชำระ — สเปก 2026-07-31)
+  const creditUsed = isMemberCredit
+    ? netAmount
+    : Math.min(Math.max(0, input.creditRequested), netAmount)
+
+  if (creditUsed === 0) {
     return {
-      netAmount,
-      discount,
-      commission: input.serviceCommission,
-      requestFee,
-      roomFee,
-      creditUsed: 0,
-      bonusUsed: 0,
-      revenueRecognize: netAmount,
+      netAmount, discount, commission: input.serviceCommission, requestFee, roomFee,
+      creditUsed: 0, bonusUsed: 0, revenueRecognize: netAmount,
     }
   }
 
-  // เครดิตถูกตัดเต็มยอด แต่ส่วนที่เป็นของแถมไม่ใช่รายได้
-  // เช่น Silver จ่าย 5,000 ได้เครดิต 6,000 → ใช้ 690 รับรู้ 575 ที่เหลือ 115 คือของแถม
+  // ส่วนของแถมในเครดิตไม่ใช่รายได้ — คิดเฉพาะก้อนที่ตัดเครดิต ส่วนที่จ่ายเงินจริงรับรู้เต็ม
+  // เครดิตเต็มบิล: bonusUsed = net×(1−ratio) → revenue = net×ratio = สูตรเดิมเป๊ะ (มีเทสพิสูจน์)
   const ratio = input.memberRatio ?? 1
-  const revenueRecognize = round2(netAmount * ratio)
+  // ปัดที่ "รายได้" ก่อนแล้วค่อยหาของแถม — ลำดับเดียวกับสูตรเดิมของบิลเครดิตเต็ม
+  // (ปัดที่ของแถมก่อนจะให้ค่าต่างกันเมื่อยอดมีเศษสตางค์ — มีเทสกันไว้แล้ว)
+  const revenueRecognize = round2(netAmount - creditUsed * (1 - ratio))
+  const bonusUsed = round2(netAmount - revenueRecognize)
 
   return {
-    netAmount,
-    discount,
-    commission: input.serviceCommission,
-    requestFee,
-    roomFee,
-    creditUsed: netAmount,
-    bonusUsed: round2(netAmount - revenueRecognize),
+    netAmount, discount, commission: input.serviceCommission, requestFee, roomFee,
+    creditUsed,
+    bonusUsed,
     revenueRecognize,
   }
 }

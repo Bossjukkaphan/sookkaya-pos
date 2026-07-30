@@ -18,6 +18,7 @@ export function CustomerPicker({
   onPick,
   onNameChange,
   onPhoneChange,
+  onBalanceChange,
   requireMember,
 }: {
   customerId: string
@@ -26,6 +27,8 @@ export function CustomerPicker({
   onPick: (c: Match) => void
   onNameChange: (name: string) => void
   onPhoneChange: (phone: string) => void
+  /** เครดิตคงเหลือของลูกค้าที่เลือก — ใช้คำนวณช่องใช้เครดิตแบ่งชำระที่ pos-form.tsx (0 = ไม่มี/ล้างลูกค้า) */
+  onBalanceChange?: (b: number) => void
   requireMember: boolean
 }) {
   const [matches, setMatches] = useState<Match[]>([])
@@ -63,9 +66,14 @@ export function CustomerPicker({
     }
   }, [canSearch, customerName])
 
-  // ดึงยอดเครดิตคงเหลือเมื่อเลือกลูกค้าแล้ว
+  // ดึงยอดเครดิตคงเหลือเมื่อเลือกลูกค้าแล้ว — ล้างลูกค้า (customerId ว่าง) ก็ต้องแจ้ง onBalanceChange(0)
+  // ด้วย ไม่งั้นช่องใช้เครดิตแบ่งชำระที่ pos-form.tsx จะค้างเครดิตของลูกค้าคนก่อนหน้า
+  // (ไม่ setBalance ที่นี่เพราะ shownBalance กรองด้วย customerId อยู่แล้ว — ไม่มีอะไรให้แสดงตอนไม่มีลูกค้า)
   useEffect(() => {
-    if (!customerId) return
+    if (!customerId) {
+      onBalanceChange?.(0)
+      return
+    }
 
     let cancelled = false
     ;(async () => {
@@ -77,14 +85,16 @@ export function CustomerPicker({
         .single()
 
       if (!cancelled) {
-        setBalance(data?.credit_balance ?? 0)
+        const b = data?.credit_balance ?? 0
+        setBalance(b)
+        onBalanceChange?.(b)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [customerId])
+  }, [customerId, onBalanceChange])
 
   return (
     <div className="space-y-2" ref={boxRef}>

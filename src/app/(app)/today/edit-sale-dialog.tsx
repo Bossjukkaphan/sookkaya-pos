@@ -170,9 +170,25 @@ function EditSaleForm({
       !!sale.coupon_promo &&
       !promotions.some((p) => p.name === sale.coupon_promo)
   )
+  // แบ่งชำระด้วยเครดิตสมาชิก (ช่องทางเงินจริง + ตัดเครดิตบางส่วน) — prefill ด้วยของเดิมที่บิลนี้ตัดไปแล้ว
+  const [creditUse, setCreditUse] = useState(String(sale.credit_used ?? 0))
 
   const isGowabi = paymentMethod === GOWABI_METHOD
+  const isKol = paymentMethod === "KOL"
   const isMemberCredit = paymentMethod === MEMBER_CREDIT_METHOD
+
+  // โชว์ช่องกรอกเมื่อบิลนี้เคยตัดเครดิตอยู่แล้ว (ให้แก้/ล้างได้เสมอ) หรือกำลังผูกลูกค้าอยู่ตอนนี้
+  // + ช่องทางเป็นเงินจริง — Member Credit ตัดเต็มบิลอยู่แล้ว ส่วน Gowabi/KOL server ปฏิเสธถ้ามีเครดิตปนมา
+  const showCreditInput =
+    !isMemberCredit && !isGowabi && !isKol && (sale.credit_used > 0 || Boolean(customerId))
+
+  // ค่าที่ส่งจริงเป็น 0 เสมอตอนซ่อนช่อง — กันเลขเดิมที่พิมพ์ไว้ค้างส่งไปตอนสลับไปช่องทางที่ใช้เครดิตไม่ได้
+  const creditRequestedValue = showCreditInput ? Math.max(0, Number(creditUse) || 0) : 0
+
+  // เครดิตแบ่งจ่ายกำลังใช้อยู่จริง (ช่องทางเงินจริง + กรอกไว้ > 0) — ห้ามคลิกสลับไป MC/Gowabi/KOL
+  // ตรงๆ เพราะจะทำให้ credit_requested กลายเป็น 0 ทันทีจากการคลิกช่องทางเฉยๆ (คืนเครดิตแบบไม่ตั้งใจ)
+  // ต้องพิมพ์ลดเครดิตลงเป็น 0 เองก่อนถึงจะสลับช่องทางได้ — เข้มเท่า pos-form.tsx (partialCreditActive)
+  const partialCreditActive = showCreditInput && creditRequestedValue > 0
 
   // หมอที่ลาออกแล้วยังต้องเห็นชื่อในฟอร์ม ไม่งั้นดูเหมือนรายการนี้ไม่มีหมอ
   const pickableTherapists = useMemo(() => {
@@ -221,6 +237,7 @@ function EditSaleForm({
         roomFee: privateRoom ? PRIVATE_ROOM_FEE : 0,
         serviceCommission: service?.commission ?? 0,
         memberRatio: isMemberCredit ? ratio : null,
+        creditRequested: creditRequestedValue,
       }),
     [
       service,
@@ -232,6 +249,7 @@ function EditSaleForm({
       privateRoom,
       isMemberCredit,
       ratio,
+      creditRequestedValue,
     ]
   )
 
@@ -330,6 +348,12 @@ function EditSaleForm({
               type="button"
               variant={paymentMethod === m ? "default" : "outline"}
               className="h-11 text-xs sm:text-sm"
+              // เครดิตแบ่งจ่ายค้างอยู่ (กรอก > 0) — ห้ามสลับไปช่องทางที่ตัดเครดิตซ้ำ (MC) หรือรับเงิน
+              // ไม่ตรงจากลูกค้า (Gowabi/KOL) จนกว่าจะพิมพ์ลดเครดิตลงเป็น 0 เอง
+              disabled={
+                partialCreditActive &&
+                (m === MEMBER_CREDIT_METHOD || m === GOWABI_METHOD || m === "KOL")
+              }
               onClick={() => {
                 // ช่องเดียวกันใช้เก็บทั้งรหัส Gowabi และชื่อโปรฯ — สลับประเภทต้องล้าง
                 if ((m === GOWABI_METHOD) !== isGowabi) {
@@ -345,6 +369,39 @@ function EditSaleForm({
           ))}
         </div>
       </fieldset>
+
+      {/* เครดิตสมาชิกแบบแบ่งชำระ — ช่องทางเงินจริง + ตัดเครดิตบางส่วน (ไม่ใช่ MC/Gowabi/KOL)
+          hidden input ส่งค่าจริงเสมอ ส่วนช่องกรอกที่เห็นโชว์เฉพาะตอนที่ยังใช้ได้ */}
+      <input type="hidden" name="credit_requested" value={creditRequestedValue} />
+      {showCreditInput && (
+        <div className="space-y-2">
+          <Label htmlFor={uid("credit_use")}>ใช้เครดิตสมาชิก (บาท)</Label>
+          <Input
+            id={uid("credit_use")}
+            type="number"
+            inputMode="numeric"
+            min={0}
+            className="h-12"
+            value={creditUse}
+            onChange={(e) => setCreditUse(e.target.value)}
+            placeholder="0"
+          />
+          {customerId === sale.customer_id && balance && (
+            <p className="text-xs text-slate-500">
+              เครดิตคงเหลือ {formatBaht(balance.credit_balance + sale.credit_used)} ฿
+              (รวมที่รายการนี้ตัดไปแล้ว)
+            </p>
+          )}
+          {/* เปลี่ยนลูกค้าแล้วแต่บิลนี้เคยตัดเครดิตของคนเก่าไว้ — เตือนแบบเดียวกับสาขา Member Credit
+              ข้างล่าง เพราะพฤติกรรม server เหมือนกันทุกประการ: คืนให้คนเก่า ตัดใหม่จากคนใหม่ */}
+          {sale.credit_used > 0 && customerId !== sale.customer_id && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              เปลี่ยนลูกค้าแล้ว — เครดิต {formatBaht(creditRequestedValue)} บาทจะถูกตัดจากลูกค้าคนใหม่
+              และคืนให้ลูกค้าคนเก่า ตรวจสอบก่อนบันทึก
+            </p>
+          )}
+        </div>
+      )}
 
       {/* คูปอง/โปรโมชั่น + ส่วนลด */}
       <div className="grid grid-cols-2 gap-3">

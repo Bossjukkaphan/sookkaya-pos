@@ -11,6 +11,7 @@ const base = {
   roomFee: 0,
   serviceCommission: 240,
   memberRatio: null,
+  creditRequested: 0,
 }
 
 describe("computeSaleAmounts", () => {
@@ -55,6 +56,16 @@ describe("computeSaleAmounts", () => {
     expect(a.creditUsed).toBe(650)
     expect(a.revenueRecognize).toBe(650)
     expect(a.bonusUsed).toBe(0)
+  })
+
+  it("ยอดมีเศษสตางค์: เครดิตเต็มบิลยังตรงสูตรเดิม (ปัดที่รายได้ก่อน)", () => {
+    const a = computeSaleAmounts({
+      ...base, priceNormal: 2.01, paymentMethod: "Member Credit",
+      memberRatio: 5000 / 6000, creditRequested: 0,
+    })
+    expect(a.revenueRecognize).toBe(1.67)  // round2(2.01 × 5000/6000)
+    expect(a.bonusUsed).toBe(0.34)         // 2.01 − 1.67
+    expect(a.creditUsed).toBe(a.revenueRecognize + a.bonusUsed)
   })
 
   it("ค่ารีเควสไม่นับเป็นยอดขาย แต่ติดไปกับรายการเพื่อจ่ายหมอ", () => {
@@ -102,5 +113,60 @@ describe("ค่าห้องสปาส่วนตัว (ลูกค้�
     const a = computeSaleAmounts({ ...base, discount: 160 })
     expect(a.netAmount).toBe(490)
     expect(a.roomFee).toBe(0)
+  })
+})
+
+describe("แบ่งชำระ: เครดิตบางส่วน + เงินจริง", () => {
+  const base = {
+    priceNormal: 800, discount: 0, gowabiNet: null,
+    isRequest: false, requestFee: 0, roomFee: 0, serviceCommission: 250,
+  }
+
+  it("เคสจริง 31/7: บิล 800 เครดิต 500 โอน 300 (Silver ratio 5000/6000)", () => {
+    const r = computeSaleAmounts({
+      ...base, paymentMethod: "QR Code", memberRatio: 5000 / 6000, creditRequested: 500,
+    })
+    expect(r.creditUsed).toBe(500)
+    expect(r.bonusUsed).toBe(83.33)          // 500 × (1 − 5000/6000)
+    expect(r.revenueRecognize).toBe(716.67)  // 800 − 83.33
+    expect(r.netAmount).toBe(800)
+  })
+
+  it("ขอเครดิตเกินยอดบิล → หนีบเหลือเท่ายอดบิล", () => {
+    const r = computeSaleAmounts({
+      ...base, paymentMethod: "QR Code", memberRatio: 1, creditRequested: 9999,
+    })
+    expect(r.creditUsed).toBe(800)
+  })
+
+  it("creditRequested = 0 → เหมือนบิลปกติทุกช่อง", () => {
+    const split = computeSaleAmounts({
+      ...base, paymentMethod: "QR Code", memberRatio: null, creditRequested: 0,
+    })
+    const legacy = computeSaleAmounts({
+      ...base, paymentMethod: "QR Code", memberRatio: null, creditRequested: 0,
+    })
+    expect(split).toEqual(legacy)
+    expect(split.creditUsed).toBe(0)
+    expect(split.revenueRecognize).toBe(800)
+  })
+
+  it("พิสูจน์เข้ากันได้: Member Credit เต็มบิล = สูตรเดิมเป๊ะ (ratio ใดๆ)", () => {
+    for (const ratio of [1, 5000 / 6000, 10000 / 12000]) {
+      const r = computeSaleAmounts({
+        ...base, paymentMethod: "Member Credit", memberRatio: ratio, creditRequested: 0,
+      })
+      expect(r.creditUsed).toBe(800)
+      expect(r.revenueRecognize).toBe(Math.round(800 * ratio * 100) / 100)
+      expect(r.bonusUsed).toBe(Math.round((800 - 800 * ratio) * 100) / 100)
+    }
+  })
+
+  it("แบ่งจ่าย + ค่าห้อง: เครดิตหนีบที่ net รวมค่าห้อง", () => {
+    const r = computeSaleAmounts({
+      ...base, roomFee: 100, paymentMethod: "เงินสด", memberRatio: 1, creditRequested: 9999,
+    })
+    expect(r.netAmount).toBe(900)
+    expect(r.creditUsed).toBe(900)
   })
 })

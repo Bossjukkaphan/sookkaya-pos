@@ -76,6 +76,17 @@ with expected(check_name, expected_value) as (values
   -- ถ้าเลขนี้ขึ้นเป็น 2 = มีเคสใหม่ที่เกิดจากแอป ต้องสืบทันที (ของเดิมมาจาก import ทั้งหมด)
   ('member_credit_negative_customers', 1),
 
+  -- แบ่งชำระ (สเปก 2026-07-31): เครดิตห้ามเกินยอดบิล และต้องรู้ว่าตัดของใคร
+  -- ด่านคู่นี้จับของจริงได้ทันทีที่ใส่เข้ามา (31/7/2569) — ทั้งคู่เป็นข้อมูล import จาก Excel:
+  --   · #34139-949 (23/3 ได๋) net_amount = -100 — "คูปองลด100" บนราคา 0 ยอดบิลติดลบ
+  --     (เข้าด่าน exceeds_net เพราะ 0 > -100 · Excel ต้นทางผิดแบบเดียวกัน แก้ข้อมูลจะทำ
+  --      net_revenue มี.ค. ไม่ตรง Excel — รอเจ้าของร้านตัดสินว่ายอดจริงคือเท่าไหร่)
+  --   · SK-20260710-005 (10/7) บิล Member Credit 790 ไม่ผูกลูกค้า — ตัดเครดิตไม่รู้ของใคร
+  --     (bonus_used = 790 เต็มใบด้วย น่าจะช่องชีทเลื่อน — รอเทียบแถว Excel ต้นทาง)
+  -- ขึ้นเป็น 2 เมื่อไหร่ = มีเคสใหม่เกิดจากแอป ต้องสืบทันที (โค้ดใหม่มีด่านกันครบแล้ว)
+  ('credit_used_exceeds_net', 1),
+  ('credit_used_without_customer', 1),
+
   -- คนหรือเตียงถูกจองซ้อนกันเกิน 20 นาที = เป็นไปไม่ได้จริง มีบิลกรอกผิดแน่นอน
   -- (เผื่อ 20 นาทีไว้ให้คิวต่อกันแบบชนขอบเล็กน้อย ซึ่งเกิดปกติเวลาคีย์เวลาคร่าวๆ)
   --
@@ -191,6 +202,14 @@ actual(check_name, actual_value) as (
   union all
   select 'member_credit_negative_customers', count(*)
   from public.member_balances where credit_balance < 0
+
+  union all
+  select 'credit_used_exceeds_net', count(*)
+  from public.sales where credit_used > net_amount
+
+  union all
+  select 'credit_used_without_customer', count(*)
+  from public.sales where credit_used > 0 and customer_id is null
 
   union all
   select 'bed_double_booked', count(*)

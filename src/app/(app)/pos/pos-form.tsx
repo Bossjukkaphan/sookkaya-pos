@@ -5,6 +5,7 @@ import { toast } from "sonner"
 
 import { checkPointCoupon, createSale, type CouponCheck } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
+import { allocateCredit } from "@/lib/bill"
 import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
@@ -136,6 +137,10 @@ export function PosForm({
   const [couponCode, setCouponCode] = useState("")
   const [couponInfo, setCouponInfo] = useState<(CouponCheck & { ok: true }) | null>(null)
   const [checkingCoupon, setCheckingCoupon] = useState(false)
+  // แบ่งชำระ: เครดิตสมาชิกของลูกค้าที่เลือก (มาจาก CustomerPicker) + ค่าที่พนักงานแก้เอง
+  // null = ยังไม่แตะ ใช้ค่าอัตโนมัติ (min(เครดิต, ยอดบิล))
+  const [creditBalance, setCreditBalance] = useState(0)
+  const [creditUseInput, setCreditUseInput] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const service = useMemo(
@@ -144,7 +149,6 @@ export function PosForm({
   )
 
   const isGowabi = paymentMethod === GOWABI_METHOD
-  const isMemberCredit = paymentMethod === MEMBER_CREDIT_METHOD
 
   // เลือกโปรที่ตั้ง % หรือ Happy Hour → คืนส่วนลดเป็นบาทเต็ม (null = ไม่ต้องแตะช่อง)
   // ใช้ร่วมกันทั้งรายการหลักและรายการเพิ่มเติม
@@ -226,6 +230,46 @@ export function PosForm({
     return Math.max(0, service.price - (Number(discount) || 0)) + room
   }, [service, discount, gowabiNet, isGowabi, privateRoom])
 
+  const isKol = paymentMethod === "KOL"
+
+  // ยอดบิลรวมทั้งหมด (รายการหลัก + รายการเพิ่มเติม) — เพดานเครดิตและฐานคำนวณ "ต้องเก็บเพิ่ม"
+  // (สูตรเดียวกับที่การ์ดสรุปยอดด้านล่างใช้โชว์)
+  const billTotalNet = netAmount + extras.reduce((s, x) => s + extraNet(x), 0)
+
+  // ช่องใช้เครดิตสมาชิกแบ่งชำระ — โชว์เฉพาะเลือกลูกค้าแล้ว + มีเครดิต + ไม่ใช่ Gowabi/KOL
+  // + ไม่ใช่บิลคูปองแลกแต้ม (บิลนั้นเก็บ 0 บาทอยู่แล้ว ไม่มีอะไรให้แบ่ง)
+  const canUseCredit =
+    Boolean(customerId) && creditBalance > 0 && !isGowabi && !isKol && !couponInfo
+  const creditCap = Math.min(creditBalance, billTotalNet)
+  const creditUse = canUseCredit
+    ? Math.min(
+        creditUseInput === null ? creditCap : Math.max(0, Number(creditUseInput) || 0),
+        creditCap
+      )
+    : 0
+  const cashDue = Math.round((billTotalNet - creditUse) * 100) / 100
+
+  // เครดิตใช้บางส่วนแล้วยังไม่ครบบิล — ต้องเก็บเงินจริงส่วนที่เหลือ ช่องทางที่ตัดเครดิตซ้ำ
+  // (Member Credit) หรือรับเงินไม่ตรงจากลูกค้า (Gowabi/KOL) เลือกไม่ได้ตอนนี้ (server ก็ปฏิเสธเหมือนกัน)
+  const partialCreditActive = canUseCredit && creditUse > 0 && cashDue > 0
+
+  // เครดิตครอบคลุมทั้งบิลพอดี → ช่องทางที่ "จริงๆ" ใช้ต้องเป็น Member Credit เสมอ (บังคับ ไม่ใช่แค่ default)
+  // คำนวณระหว่าง render แทนการ setState ใน effect กัน setPaymentMethod ชนของที่ผู้ใช้กดเอง
+  // ไม่งั้นบิลจะถูกบันทึกเป็นช่องทางที่ผิด (เช่น "QR Code" ทั้งที่เงินจริงมาจากเครดิตล้วน)
+  //
+  // กรณีตรงข้าม: paymentMethod ค้างเป็น Member Credit อยู่ (เคยเลือกไว้ตอนเครดิตพอ) แต่ตอนนี้เครดิตที่ใช้ได้
+  // ไม่พอบิลแล้ว (partialCreditActive) — ต้อง "หลุด" การเลือกทันที ไม่งั้นปุ่มจะค้างเป็น selected-but-disabled
+  // พร้อมให้กดส่งได้ทั้งที่ server จะปฏิเสธด้วยข้อความเดิม ("เครดิตคงเหลือไม่พอ") ที่ฟีเจอร์แบ่งชำระนี้ตั้งใจกำจัดทิ้ง
+  const mcSelectionBlocked = paymentMethod === MEMBER_CREDIT_METHOD && partialCreditActive
+  const isMemberCredit =
+    !mcSelectionBlocked &&
+    (paymentMethod === MEMBER_CREDIT_METHOD || (canUseCredit && creditUse > 0 && cashDue === 0))
+  const effectivePaymentMethod = mcSelectionBlocked
+    ? ""
+    : isMemberCredit
+      ? MEMBER_CREDIT_METHOD
+      : paymentMethod
+
   function resetForm() {
     setTherapistId("")
     setServiceId("")
@@ -247,6 +291,8 @@ export function PosForm({
     setExtras([])
     setCouponInfo(null)
     setCouponCode("")
+    setCreditBalance(0)
+    setCreditUseInput(null)
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -265,6 +311,12 @@ export function PosForm({
         return
       }
     }
+
+    // แบ่งชำระ: เฉลี่ยเครดิตลงแต่ละรายการตามสัดส่วนยอดสุทธิ (allocateCredit การันตีผลรวม = creditUse เป๊ะ)
+    // Member Credit = เครดิตเต็มบิล ไม่ผ่านช่องแบ่งจ่ายนี้ — server หักเต็มบิลของมันเอง
+    const nets = [netAmount, ...extras.map((x) => extraNet(x))]
+    const perItemCredit = allocateCredit(nets, isMemberCredit ? 0 : creditUse)
+    formData.set("credit_requested", String(perItemCredit[0]))
 
     startTransition(async () => {
       // บิลชุด: ทุกรายการแชร์ bill_id เดียว — สร้างฝั่ง client เพราะต้องใส่ตั้งแต่แถวแรก
@@ -300,6 +352,7 @@ export function PosForm({
         fd.set("service_id", x.serviceId)
         fd.set("discount", x.discount || "0")
         fd.set("coupon_promo", x.couponPromo)
+        fd.set("credit_requested", String(perItemCredit[i + 1]))
         if (x.isRequest) {
           fd.set("is_request", "on")
           fd.set("request_fee", String(REQUEST_FEE))
@@ -421,14 +474,46 @@ export function PosForm({
           setCustomerId(c.id)
           setCustomerName(c.name)
           setCustomerPhone(c.phone ?? "")
+          // เปลี่ยนลูกค้า → เพดานเครดิตเปลี่ยน เลิกใช้ตัวเลขที่แก้เองของลูกค้าคนก่อน กลับไปค่าอัตโนมัติ
+          setCreditUseInput(null)
         }}
         onNameChange={(name) => {
           setCustomerName(name)
           setCustomerId("")
+          setCreditUseInput(null)
         }}
         onPhoneChange={setCustomerPhone}
+        onBalanceChange={setCreditBalance}
         requireMember={isMemberCredit}
       />
+
+      {/* แบ่งชำระด้วยเครดิตสมาชิก — โชว์เฉพาะเลือกลูกค้าที่มีเครดิต + ไม่ใช่ Gowabi/KOL/คูปองแลกแต้ม */}
+      {canUseCredit && (
+        <div className="rounded-lg border bg-amber-50/50 p-3 space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="credit_use">
+              ใช้เครดิตสมาชิก (มี {creditBalance.toLocaleString()} บาท)
+            </Label>
+            <Input
+              id="credit_use"
+              inputMode="numeric"
+              className="w-28 text-right"
+              value={creditUseInput === null ? String(creditCap) : creditUseInput}
+              onChange={(e) => setCreditUseInput(e.target.value)}
+            />
+          </div>
+          <p className="text-sm font-medium">
+            {cashDue > 0 ? (
+              <>
+                เครดิต {creditUse.toLocaleString()} · ต้องเก็บเพิ่ม{" "}
+                <span className="text-red-600">{cashDue.toLocaleString()} บาท</span>
+              </>
+            ) : (
+              <>เครดิตครอบคลุมทั้งบิล — ช่องทางชำระเป็น Member Credit อัตโนมัติ</>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* ที่มาลูกค้า — metadata สำหรับวิเคราะห์ช่องทาง ไม่กระทบยอดเงิน */}
       <fieldset className="space-y-2">
@@ -500,7 +585,7 @@ export function PosForm({
       {/* ช่องทางชำระเงิน */}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">ช่องทางชำระเงิน</legend>
-        <input type="hidden" name="payment_method" value={paymentMethod} />
+        <input type="hidden" name="payment_method" value={effectivePaymentMethod} />
         <div className="grid grid-cols-3 gap-2">
           {PAYMENT_METHODS.map((m) => (
             <Button
@@ -511,8 +596,14 @@ export function PosForm({
               // จะได้เห็นแวบเดียวว่ากดช่องทางไหนไป และจำสีไปอ่านหน้ารายงานต่อได้
               className={cn(
                 "h-12 text-xs sm:text-sm",
-                paymentMethod === m && (PAY_SELECTED[m] ?? PAY_SELECTED_DEFAULT)
+                effectivePaymentMethod === m && (PAY_SELECTED[m] ?? PAY_SELECTED_DEFAULT)
               )}
+              // แบ่งชำระเครดิตบางส่วนค้างอยู่ (เก็บเพิ่ม > 0) — เปลี่ยนไปช่องทางที่ตัดเครดิตซ้ำ
+              // หรือรับเงินไม่ตรงจากลูกค้าไม่ได้ (server ก็ปฏิเสธเหมือนกัน) ต้องลดเครดิตเป็น 0 ก่อน
+              disabled={
+                partialCreditActive &&
+                (m === MEMBER_CREDIT_METHOD || m === GOWABI_METHOD || m === "KOL")
+              }
               onClick={() => {
                 // ช่องนี้เปลี่ยนความหมายระหว่าง "รหัสจอง Gowabi" กับ "ชื่อโปรโมชั่น"
                 // ถ้าไม่ล้างค่าเดิม ค่าที่ค้างจะถูกบันทึกข้ามประเภทกันโดยไม่มีอะไรเตือน
@@ -520,14 +611,18 @@ export function PosForm({
                   setCouponPromo("")
                   setCustomPromo(false)
                 }
+                // Gowabi/KOL ใช้ร่วมกับเครดิตสมาชิกไม่ได้ (server ปฏิเสธ) — ล้างเครดิตที่กรอกไว้ทิ้ง
+                if (m === GOWABI_METHOD || m === "KOL") {
+                  setCreditUseInput("0")
+                }
                 setPaymentMethod(m)
               }}
-              aria-pressed={paymentMethod === m}
+              aria-pressed={effectivePaymentMethod === m}
             >
               <span
                 className={cn(
                   "mr-1 inline-block h-2 w-2 shrink-0 rounded-full",
-                  paymentMethod === m ? "bg-white/80" : (PAY_DOT[m] ?? PAY_DOT_DEFAULT)
+                  effectivePaymentMethod === m ? "bg-white/80" : (PAY_DOT[m] ?? PAY_DOT_DEFAULT)
                 )}
               />
               {m}
@@ -885,8 +980,7 @@ export function PosForm({
                 : "ยอดรับจริง"}
             </span>
             <span className="text-3xl font-bold text-emerald-800">
-              {formatBaht(netAmount + extras.reduce((s, x) => s + extraNet(x), 0))}{" "}
-              <span className="text-base font-normal">บาท</span>
+              {formatBaht(billTotalNet)} <span className="text-base font-normal">บาท</span>
             </span>
           </div>
         </CardContent>
@@ -895,18 +989,18 @@ export function PosForm({
       <Button
         type="submit"
         className={cn("h-14 w-full text-lg")}
-        disabled={pending || !therapistId || !serviceId || !paymentMethod}
+        disabled={pending || !therapistId || !serviceId || !effectivePaymentMethod}
       >
         {pending ? "กำลังบันทึก..." : "บันทึกการขาย"}
       </Button>
       {/* บอกให้รู้ว่าปุ่มยังกดไม่ได้เพราะขาดอะไร — ไม่ต้องเดา */}
-      {!pending && (!therapistId || !serviceId || !paymentMethod) && (
+      {!pending && (!therapistId || !serviceId || !effectivePaymentMethod) && (
         <p className="text-center text-xs text-slate-500">
           ยังไม่ได้เลือก:{" "}
           {[
             !therapistId && "หมอนวด",
             !serviceId && "เมนูบริการ",
-            !paymentMethod && "ช่องทางชำระเงิน",
+            !effectivePaymentMethod && "ช่องทางชำระเงิน",
           ]
             .filter(Boolean)
             .join(" · ")}

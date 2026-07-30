@@ -19,6 +19,16 @@ export function earnsPoints(paymentMethod: string): boolean {
   return (POINT_EARNING_METHODS as readonly string[]).includes(paymentMethod)
 }
 
+/** แต้มของบิลหนึ่งใบ — ได้จากส่วนที่จ่ายเงินจริงเท่านั้น (เครดิตได้แต้มไปแล้วตอนเติมเงิน) */
+export function pointsForSale(input: {
+  paymentMethod: string
+  netAmount: number
+  creditUsed: number
+}): number {
+  if (!earnsPoints(input.paymentMethod)) return 0
+  return pointsForBaht(input.netAmount - input.creditUsed)
+}
+
 /** แต้มที่ได้ปีนี้ใช้ได้ถึงสิ้นปีถัดไป */
 export function pointExpiryDate(earnedDate: string): string {
   const year = Number(earnedDate.slice(0, 4))
