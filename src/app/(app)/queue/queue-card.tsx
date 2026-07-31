@@ -676,6 +676,7 @@ export function QueueCard({
           therapists={therapists}
           beds={beds}
           allEntries={allEntries}
+          nowMin={nowMin}
           pending={pending}
           onClose={() => setMoveOpen(false)}
           onSave={(v) =>
@@ -723,6 +724,7 @@ function MoveCardDialog({
   therapists,
   beds,
   allEntries,
+  nowMin,
   pending,
   onClose,
   onSave,
@@ -731,6 +733,8 @@ function MoveCardDialog({
   therapists: { id: string; name: string }[]
   beds: Bed[]
   allEntries: QueueEntry[]
+  /** นาทีปัจจุบัน — เช็คว่างเฉพาะช่วงที่เหลือของการนวด (ส่วนที่ผ่านแล้วไม่ต้องว่าง) */
+  nowMin: number
   pending: boolean
   onClose: () => void
   onSave: (v: { bedId: string | null; therapistId: string; isRequest: boolean }) => void
@@ -739,11 +743,14 @@ function MoveCardDialog({
   const [bedId, setBedId] = useState(entry.bed_id ?? "")
   const [isRequest, setIsRequest] = useState(Boolean(entry.is_request))
 
-  // ช่วงเวลาที่การ์ดนี้ใช้จริง (นับจากเวลาเริ่มจริงถ้ามี) — ใช้หาว่าใครว่าง
+  // เช็คว่างเฉพาะ "ช่วงที่เหลือ" ของการนวดนี้ — ปลายทางที่เพิ่งว่างหลังคิวก่อนจบ
+  // ต้องเลือกได้ (นั่นคือเคสที่ฟีเจอร์นี้เกิดมาแก้) · server เช็คซ้ำด้วยกติกาเดียวกัน
   const startMin = bedStartMin(entry)
+  const checkStart = Math.max(startMin, nowMin)
+  const remainMin = startMin + entry.duration_min - checkStart
   const others = allEntries.filter((e) => e.id !== entry.id)
-  const busyT = busyTherapistIds(others, startMin, entry.duration_min)
-  const busyB = busyBedIds(others, startMin, entry.duration_min)
+  const busyT = busyTherapistIds(others, checkStart, remainMin)
+  const busyB = busyBedIds(others, checkStart, remainMin)
   const therapistChanged = therapistId !== (entry.therapist_id ?? "")
 
   return (
@@ -815,7 +822,13 @@ function MoveCardDialog({
               className="flex-1"
               disabled={pending || !therapistId}
               onClick={() =>
-                onSave({ bedId: bedId || null, therapistId, isRequest })
+                onSave({
+                  bedId: bedId || null,
+                  therapistId,
+                  // checkbox โชว์เฉพาะตอนเปลี่ยนหมอ — ถ้าสุดท้ายเลือกหมอเดิมกลับมา
+                  // ค่าที่ติ๊กไว้ตอน checkbox โผล่ห้ามติดไป (รีเควสเดิมของบิลต้องคงอยู่)
+                  isRequest: therapistChanged ? isRequest : Boolean(entry.is_request),
+                })
               }
             >
               บันทึกย้าย

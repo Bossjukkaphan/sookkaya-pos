@@ -934,13 +934,17 @@ export async function movePaidCard(
   const win = canMoveCardWindow(entry, nh * 60 + nm)
   if (!win.allowed) return { ok: false, error: win.reason ?? "เลยเวลาที่ย้ายได้แล้ว" }
 
-  // เตียง/หมอปลายทางต้องว่างตลอดช่วงการนวดนี้ (นับจากเวลาเริ่มจริง) — ชนใครบอกชื่อ
+  // เตียง/หมอปลายทางต้องว่าง "ช่วงที่เหลือ" ของการนวดนี้เท่านั้น — ส่วนที่นวดผ่านไปแล้ว
+  // ไม่ต้องว่าง (เคสจริงคือย้ายหนีห้องที่กำลังจะมีคิวเข้า: ปลายทางเพิ่งว่างหลังคิวก่อนจบ)
   const startMin = bedStartMin(entry)
+  const nowM = nh * 60 + nm
+  const checkStart = Math.max(startMin, nowM)
+  const remainMin = startMin + entry.duration_min - checkStart
   const bedErr = await bedConflictError(
-    supabase, input.bedId, entry.queue_date, startMin, entry.duration_min, [entry.id])
+    supabase, input.bedId, entry.queue_date, checkStart, remainMin, [entry.id])
   if (bedErr) return { ok: false, error: bedErr }
   const thErr = await therapistConflictError(
-    supabase, input.therapistId, entry.queue_date, startMin, entry.duration_min, [entry.id])
+    supabase, input.therapistId, entry.queue_date, checkStart, remainMin, [entry.id])
   if (thErr) return { ok: false, error: thErr }
 
   const { data: sale } = await supabase
