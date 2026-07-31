@@ -235,9 +235,13 @@ export function BillRow({
                 </div>
                 {payments.length > 0 && (
                   <ul className="space-y-1">
-                    {payments.map((p) => (
+                    {payments.map((p, i) => (
                       <li key={p.id} className="text-sm text-slate-600">
-                        {p.method} · {formatBaht(p.amount)} ฿ · {p.received_date}
+                        แบ่งจ่ายครั้งที่ {i + 1} ({p.method}) · {formatBaht(p.amount)} ฿ ·{" "}
+                        {p.received_date}
+                        {p.received_at
+                          ? ` (${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(p.received_at))})`
+                          : ""}
                       </li>
                     ))}
                   </ul>

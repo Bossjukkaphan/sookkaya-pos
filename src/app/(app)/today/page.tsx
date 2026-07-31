@@ -140,7 +140,7 @@ export default async function TodayPage({
     ? await Promise.all([
         supabase
           .from("bill_payments")
-          .select("id, bill_key, method, amount, received_date")
+          .select("id, bill_key, method, amount, received_date, received_at")
           .in("bill_key", billKeys)
           .order("received_at"),
         supabase.from("v_bill_due").select("bill_key, due").in("bill_key", billKeys),
@@ -156,6 +156,7 @@ export default async function TodayPage({
       method: p.method,
       amount: Number(p.amount),
       received_date: String(p.received_date),
+      received_at: p.received_at ? String(p.received_at) : null,
     })
     paymentsByBillKey.set(key, arr)
   }

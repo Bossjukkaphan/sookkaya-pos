@@ -50,6 +50,8 @@ export type BillPaymentLine = {
   method: string
   amount: number
   received_date: string
+  /** เวลารับเงินจริง (timestamptz) — โชว์กำกับบรรทัดแบบ ThaiHand "ครั้งที่ N (วิธี) วันที่ (เวลา)" */
+  received_at: string | null
 }
 
 /** ข้อมูลรายการขายเท่าที่ฟอร์มแก้ไขต้องใช้ — แปลง numeric ของ postgres เป็น number มาแล้ว */
@@ -400,9 +402,13 @@ function EditSaleForm({
               className="h-11 text-xs sm:text-sm"
               // เครดิตแบ่งจ่ายค้างอยู่ (กรอก > 0) — ห้ามสลับไปช่องทางที่ตัดเครดิตซ้ำ (MC) หรือรับเงิน
               // ไม่ตรงจากลูกค้า (Gowabi/KOL) จนกว่าจะพิมพ์ลดเครดิตลงเป็น 0 เอง
+              // บิลที่มีบรรทัดแบ่งจ่ายแล้ว: ช่องทางจริงถูกกำหนดโดยบรรทัด — ล็อกทั้งแถบ
+              // แบบ ThaiHand ("เปลี่ยนช่องทางได้โดยลบการแบ่งจ่ายก่อน") กัน payment_method
+              // เพี้ยนออกจากบรรทัด (ด่าน tracked_bill_method_mismatch เฝ้าอยู่)
               disabled={
-                partialCreditActive &&
-                (m === MEMBER_CREDIT_METHOD || m === GOWABI_METHOD || m === "KOL")
+                payments.length > 0 ||
+                (partialCreditActive &&
+                  (m === MEMBER_CREDIT_METHOD || m === GOWABI_METHOD || m === "KOL"))
               }
               onClick={() => {
                 // ช่องเดียวกันใช้เก็บทั้งรหัส Gowabi และชื่อโปรฯ — สลับประเภทต้องล้าง
@@ -639,10 +645,14 @@ function EditSaleForm({
           </div>
           {payments.length > 0 && (
             <ul className="space-y-1">
-              {payments.map((p) => (
+              {payments.map((p, idx) => (
                 <li key={p.id} className="flex items-center justify-between text-sm">
                   <span className="text-slate-600">
-                    {p.method} · {formatBaht(p.amount)} ฿ · {p.received_date}
+                    แบ่งจ่ายครั้งที่ {idx + 1} ({p.method}) · {formatBaht(p.amount)} ฿ ·{" "}
+                    {p.received_date}
+                    {p.received_at
+                      ? ` (${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(p.received_at))})`
+                      : ""}
                   </span>
                   {canDeletePayments && (
                     <Button
@@ -662,6 +672,12 @@ function EditSaleForm({
           )}
           {due > 0.001 && (
             <CollectDueDialog billKey={billKey} due={due} onDone={() => router.refresh()} />
+          )}
+          {payments.length > 0 && due <= 0.001 && (
+            <p className="text-xs text-slate-500">
+              ชำระเงินครบแล้ว — หากต้องการเปลี่ยนช่องทางการชำระเงิน
+              กรุณาลบบรรทัดแบ่งจ่ายก่อน (เฉพาะหัวหน้า)
+            </p>
           )}
         </div>
       )}
