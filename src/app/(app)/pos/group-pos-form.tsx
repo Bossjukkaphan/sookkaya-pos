@@ -8,6 +8,7 @@ import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { createClient } from "@/lib/supabase/client"
 import { allocateCredit } from "@/lib/bill"
+import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount } from "@/lib/payments"
 import {
   MEMBER_CREDIT_METHOD,
   PRIVATE_ROOM_FEE,
@@ -60,7 +61,6 @@ export type GroupPerson = {
  * จ่ายร่วมได้เฉพาะช่องทางเงินจริง — เครดิตสมาชิกผูกกับตัวบุคคล และ Gowabi/KOL
  * ต้องกรอกรหัสจองรายคน จึงให้แยกไปกดเก็บเงินรายคนตามเดิม
  */
-const GROUP_PAYMENT_METHODS = ["เงินสด", "QR Code", "บัตรเครดิต"] as const
 
 /** คนเปล่าสำหรับโหมด standalone (เพิ่มคนเองในหน้า POS ไม่ผ่านคิว) */
 function blankPerson(groupId: string): GroupPerson {
@@ -114,7 +114,12 @@ export function GroupPosForm({
   const [savingIndex, setSavingIndex] = useState<number | null>(null)
   // แบ่งชำระด้วยเครดิตสมาชิก — ใช้ได้เฉพาะบิลชุดลูกค้าคนเดียว (กลุ่มหลายคนเครดิตผูกรายบุคคล)
   const [creditBalance, setCreditBalance] = useState(0)
-  const [creditUseInput, setCreditUseInput] = useState<string | null>(null) // null = ใช้ค่าอัตโนมัติ
+  // เริ่ม "0" เสมอ — ไม่ auto-fill เพดานเครดิตให้แล้ว (สเปก 2026-08-01) พนักงานต้องกดปุ่ม "ใช้เครดิต" เอง
+  const [creditUseInput, setCreditUseInput] = useState("0")
+  // แบ่งจ่ายหลายวิธี (เฉพาะบิลชุด mergeBill) — บรรทัดแรกคือปุ่มช่องทางหลักด้านล่าง ยอด = ที่เหลือหลังหักบรรทัดเสริม
+  const [extraPayments, setExtraPayments] = useState<{ method: string; amount: string }[]>([])
+  // ยอดบรรทัดหลัก: null = auto (ยอดที่เหลือเป๊ะ) · พนักงานพิมพ์เอง = ตั้งใจรับน้อยกว่า (ค้างรับ)
+  const [primaryInput, setPrimaryInput] = useState<string | null>(null)
 
   const serviceById = useMemo(
     () => new Map(services.map((s) => [s.id, s])),
@@ -160,15 +165,36 @@ export function GroupPosForm({
   const canUseCredit = Boolean(billCustomerId) && creditBalance > 0
   const creditCap = Math.min(creditBalance, total)
   const creditUse = canUseCredit
-    ? Math.min(
-        creditUseInput === null ? creditCap : Math.max(0, Number(creditUseInput) || 0),
-        creditCap
-      )
+    ? Math.min(Math.max(0, Number(creditUseInput) || 0), creditCap)
     : 0
   const cashDue = Math.round((total - creditUse) * 100) / 100
   // เครดิตพอทั้งบิล → ช่องทางเป็น Member Credit อัตโนมัติ ไม่ต้องเลือกปุ่มเงินจริง
   const fullCredit = canUseCredit && creditUse > 0 && cashDue === 0
   const effectivePaymentMethod = fullCredit ? MEMBER_CREDIT_METHOD : paymentMethod
+
+  // บิลชุด (mergeBill + ลูกค้าเดียว + มากกว่า 1 รายการ — ตรงเงื่อนไขเดียวกับที่ submitAll สร้าง bill_id จริง)
+  // แบ่งจ่ายหลายวิธีได้เหมือนฟอร์มเดี่ยว — บรรทัดแรกคือปุ่มช่องทางหลัก ยอด = ที่เหลือหลังหักบรรทัดเสริม
+  const isBillChud = mergeBill && people.length > 1
+  const extraTotal = extraPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  const primaryRemainder = Math.max(0, Math.round((cashDue - extraTotal) * 100) / 100)
+  // primaryInput = null → ใช้ยอดที่เหลือเป๊ะ · พนักงานพิมพ์เอง → รับได้น้อยกว่ายอดที่เหลือ (ตั้งใจปล่อยค้างรับ)
+  // แต่พิมพ์เกินยอดที่เหลือไม่ได้ (หนีบไว้ที่ primaryRemainder กันเก็บเกิน)
+  const primaryAmount =
+    primaryInput === null
+      ? primaryRemainder
+      : Math.min(primaryRemainder, Math.max(0, Number(primaryInput) || 0))
+
+  // บรรทัดชำระของบิลชุด — undefined = ไม่ track (ไม่ใช่บิลชุด หรือเครดิตครอบคลุมทั้งบิลแล้ว ไม่มีเงินจริงให้ track)
+  const mergeBillPaymentLines: { method: string; amount: number }[] | undefined =
+    isBillChud && !fullCredit
+      ? [
+          { method: effectivePaymentMethod, amount: primaryAmount },
+          ...extraPayments.map((p) => ({ method: p.method, amount: Number(p.amount) || 0 })),
+        ].filter((l) => l.amount > 0)
+      : undefined
+
+  // ค้างรับ ณ ตอนนี้ของบิลชุด (พนักงานลบ/ลดบรรทัดจนรวม < ต้องเก็บ) — โชว์สดในฟอร์ม + เช็คก่อน submit
+  const dueNow = mergeBillPaymentLines ? dueAmount(cashDue, mergeBillPaymentLines) : 0
 
   function setPerson(i: number, patch: Partial<(typeof people)[number]>) {
     setPeople((arr) => arr.map((p, j) => (j === i ? { ...p, ...patch } : p)))
@@ -203,9 +229,17 @@ export function GroupPosForm({
       toast.error("เลือกช่องทางชำระเงินก่อน")
       return
     }
+    // บิลชุดค้างรับ > 0 (พนักงานลบ/ลดบรรทัดจนรวมไม่ครบ) — ยืนยันก่อนบันทึกว่าตั้งใจปล่อยค้าง
+    if (
+      isBillChud &&
+      dueNow > 0 &&
+      !window.confirm(`บันทึกแบบค้างรับ ${dueNow} ฿? ลูกค้าจะจ่ายส่วนนี้ทีหลัง`)
+    ) {
+      return
+    }
     // บิลชุด: พนักงานติ๊กเองว่าเป็นลูกค้าคนเดียวทำหลายคอร์ส — เดาจากข้อมูลไม่ได้
     // เพราะคิวกลุ่ม (ครอบครัว) ก็เก็บชื่อผู้ติดต่อคนเดียวลงทุกการ์ดเหมือนกัน
-    const billId = mergeBill && people.length > 1 ? crypto.randomUUID() : ""
+    const billId = isBillChud ? crypto.randomUUID() : ""
     // แบ่งชำระบิลชุด: เฉลี่ยเครดิตลงแต่ละรายการตามสัดส่วน (ที่เดียวกับฟอร์มเดี่ยว)
     // เครดิตเต็มบิล → ช่องทาง Member Credit ตัดเต็มรายแถวเอง ไม่ต้องส่ง allocation
     const perItemCredit = allocateCredit(nets, fullCredit ? 0 : creditUse)
@@ -236,6 +270,19 @@ export function GroupPosForm({
         fd.set("request_fee", String(REQUEST_FEE))
       }
       if (p.privateRoom) fd.set("private_room", "on")
+
+      if (billId) {
+        // บิลชุด: บรรทัดชำระของทั้งบิลเขียนครั้งเดียวที่แถวแรก (ดู sale-actions.ts) —
+        // แถวถัดไปส่ง "[]" ไม่ใช่บรรทัดจริง แต่ยัง track (payments_tracked=true) เหมือนกันทุกแถว
+        if (mergeBillPaymentLines) {
+          fd.set("payments", i === 0 ? JSON.stringify(mergeBillPaymentLines) : "[]")
+        }
+      } else {
+        // กลุ่มหลายคน (คนละบิล จ่ายรวมครั้งเดียว): บิลของแต่ละคน track บรรทัดเดียวของตัวเอง
+        // = ยอดที่ต้องเก็บของบิลนั้นเป๊ะ (ปกติไม่มีเครดิตปน — เครดิตกลุ่มใช้ได้เฉพาะบิลชุด mergeBill เท่านั้น)
+        const due = Math.round((nets[i] - perItemCredit[i]) * 100) / 100
+        if (due > 0) fd.set("payments", JSON.stringify([{ method: effectivePaymentMethod, amount: due }]))
+      }
 
       const r = await createSale(fd)
       if (!r.ok) {
@@ -457,7 +504,12 @@ export function GroupPosForm({
         <Checkbox
           id="merge_bill"
           checked={mergeBill}
-          onCheckedChange={(v) => setMergeBill(v === true)}
+          onCheckedChange={(v) => {
+            setMergeBill(v === true)
+            // สลับโหมด → เลิกใช้ตัวเลขบรรทัดชำระที่แก้เองไว้ก่อนหน้า กันเลขค้างซากข้ามโหมด
+            setExtraPayments([])
+            setPrimaryInput(null)
+          }}
         />
         <Label htmlFor="merge_bill" className="flex-1 cursor-pointer text-sm">
           🧾 รวมทุกรายการเป็นบิลชุดใบเดียว{" "}
@@ -481,10 +533,26 @@ export function GroupPosForm({
               id="group_credit_use"
               inputMode="numeric"
               className="h-10 w-28 text-right"
-              value={creditUseInput === null ? String(creditCap) : creditUseInput}
-              onChange={(e) => setCreditUseInput(e.target.value)}
+              value={creditUseInput}
+              onChange={(e) => {
+                setCreditUseInput(e.target.value)
+                // เครดิตเปลี่ยน → cashDue เปลี่ยน เลิกใช้ตัวเลขบรรทัดหลักที่แก้เองไว้ก่อนหน้า กลับไป auto
+                setPrimaryInput(null)
+              }}
             />
           </div>
+          {/* เริ่มที่ "0" เสมอ — ปุ่มนี้กดแล้วค่อยเติมเพดานให้ (สเปก 2026-08-01 เลิก auto-fill) */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCreditUseInput(String(creditCap))
+              setPrimaryInput(null)
+            }}
+          >
+            ใช้เครดิต (เหลือ {formatBaht(creditBalance)} ฿)
+          </Button>
           <p className="text-sm font-medium">
             {cashDue > 0 ? (
               <>
@@ -503,7 +571,7 @@ export function GroupPosForm({
           ช่องทางชำระเงิน <span className="font-normal text-slate-500">(จ่ายรวมครั้งเดียวทั้งกลุ่ม)</span>
         </legend>
         <div className="grid grid-cols-3 gap-2">
-          {GROUP_PAYMENT_METHODS.map((m) => (
+          {PAYMENT_LINE_METHODS.map((m) => (
             <Button
               key={m}
               type="button"
@@ -527,6 +595,88 @@ export function GroupPosForm({
             : 'เครดิตสมาชิกใช้ได้เมื่อติ๊ก "บิลชุดใบเดียว" ของลูกค้าคนเดียวกัน · Gowabi / KOL — กด "เก็บเงิน" รายคนจากการ์ดคิวแทน (ต้องกรอกรหัสจองรายคน)'}
         </p>
       </fieldset>
+
+      {/* แบ่งจ่ายหลายวิธีในบิลเดียว — เฉพาะบิลชุด (mergeBill คนเดียวกัน) เพราะกลุ่มหลายคนได้บรรทัดเดียว
+          ต่อบิลของตัวเองอัตโนมัติอยู่แล้ว (ดู submitAll) ไม่ต้องมี UI แยก */}
+      {isBillChud && !fullCredit && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">แบ่งจ่ายหลายวิธี (ไม่บังคับ)</p>
+          {extraPayments.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <select
+                value={p.method}
+                aria-label={`วิธีชำระบรรทัดที่ ${i + 2}`}
+                className="h-10 flex-1 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                onChange={(e) =>
+                  setExtraPayments((a) =>
+                    a.map((x, j) => (j === i ? { ...x, method: e.target.value } : x))
+                  )
+                }
+              >
+                {PAYMENT_LINE_METHODS.map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+              <Input
+                inputMode="numeric"
+                className="h-10 w-28 text-right"
+                aria-label={`ยอดบรรทัดที่ ${i + 2}`}
+                value={p.amount}
+                onChange={(e) =>
+                  setExtraPayments((a) =>
+                    a.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x))
+                  )
+                }
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-red-600"
+                onClick={() => setExtraPayments((a) => a.filter((_, j) => j !== i))}
+              >
+                ✕
+              </Button>
+            </div>
+          ))}
+          {extraPayments.length < MAX_PAYMENT_LINES - 1 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setExtraPayments((a) => [...a, { method: "QR Code", amount: "" }])}
+            >
+              + แบ่งจ่ายอีกวิธี
+            </Button>
+          )}
+          {/* บรรทัดหลัก — ปกติเป็นยอดที่เหลือ auto พิมพ์เองได้ถ้าตั้งใจรับน้อยกว่า (ค้างรับ) พิมพ์เกินยอดที่เหลือไม่ได้ (หนีบ) */}
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-sm font-medium">{effectivePaymentMethod || "—"}</span>
+            <Input
+              inputMode="numeric"
+              className="h-10 w-28 text-right"
+              aria-label="ยอดบรรทัดหลัก"
+              value={primaryInput ?? String(primaryRemainder)}
+              onChange={(e) => setPrimaryInput(e.target.value)}
+              onBlur={() => {
+                if (primaryInput === null) return
+                setPrimaryInput(String(primaryAmount))
+              }}
+            />
+          </div>
+          <p className="text-sm">
+            {extraPayments
+              .filter((p) => Number(p.amount) > 0)
+              .map((p) => `+ ${p.method} ${formatBaht(Number(p.amount))} ฿`)
+              .join(" ")}
+            {dueNow > 0 && (
+              <span className="ml-1 font-medium text-red-600">
+                · ค้างรับ {formatBaht(dueNow)} ฿
+              </span>
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="rounded-xl border-2 border-emerald-500 bg-emerald-50 px-4 py-3">
         <div className="flex items-baseline justify-between">

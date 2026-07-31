@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
 import { billTotal, groupSalesByBill } from "@/lib/bill"
@@ -9,6 +10,7 @@ import { MONEY_INFO } from "@/lib/money-info"
 import { Button } from "@/components/ui/button"
 import { SaleRowActions } from "./sale-row-actions"
 import type {
+  BillPaymentLine,
   EditableSale,
   MemberBalance,
   Promotion,
@@ -65,6 +67,7 @@ export default async function TodayPage({
     { data: promotions },
     { data: memberBalances },
     { data: topups },
+    profile,
   ] = await Promise.all([
     supabase
       .from("sales")
@@ -109,11 +112,47 @@ export default async function TodayPage({
       .gte("topup_date", from)
       .lte("topup_date", to)
       .order("topup_date", { ascending: false }),
+    // ลบบรรทัดชำระได้เฉพาะหัวหน้า — ใช้เช็คสิทธิ์ในหน้านี้เท่านั้น server action เช็คซ้ำเสมอ
+    getMyProfile(),
   ])
+  const canDeletePayments = profile?.role === "admin" || profile?.role === "manager"
 
   const rows = sales ?? []
   const truncated = rows.length === ROW_CAP
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
+
+  // บรรทัดชำระของบิล (bill_payments) + ยอดค้างรับ (v_bill_due) ของบิลที่แสดงอยู่ในหน้านี้ —
+  // ต้องรู้ bill_key (bill_id ?? id) จาก rows ก่อน จึงดึงเป็นรอบสองต่อจาก sales (เหมือน topupCustomers ด้านล่าง)
+  // ไม่ query รายแถว กันยิง N+1 ไปที่ view/ตารางนี้
+  const billKeys = editable
+    ? [...new Set(rows.map((s) => String(s.bill_id ?? s.id)))]
+    : []
+  const [{ data: billPayments }, { data: billDues }] = billKeys.length
+    ? await Promise.all([
+        supabase
+          .from("bill_payments")
+          .select("id, bill_key, method, amount, received_date")
+          .in("bill_key", billKeys)
+          .order("received_at"),
+        supabase.from("v_bill_due").select("bill_key, due").in("bill_key", billKeys),
+      ])
+    : [{ data: [] }, { data: [] }]
+
+  const paymentsByBillKey = new Map<string, BillPaymentLine[]>()
+  for (const p of billPayments ?? []) {
+    const key = String(p.bill_key)
+    const arr = paymentsByBillKey.get(key) ?? []
+    arr.push({
+      id: p.id,
+      method: p.method,
+      amount: Number(p.amount),
+      received_date: String(p.received_date),
+    })
+    paymentsByBillKey.set(key, arr)
+  }
+  const dueByBillKey = new Map<string, number>(
+    (billDues ?? []).map((d) => [String(d.bill_key), Number(d.due)])
+  )
 
   // ตัวเลือกในฟอร์มแก้ไขใช้เฉพาะหมอที่ยังทำงานอยู่ ส่วนการแสดงผลใช้ map ด้านบนที่ครบทุกคน
   const activeTherapists: Therapist[] = (therapists ?? [])
@@ -136,6 +175,9 @@ export default async function TodayPage({
     services: (services ?? []) as Service[],
     promotions: (promotions ?? []) as Promotion[],
     balanceByCustomer,
+    paymentsByBillKey,
+    dueByBillKey,
+    canDeletePayments,
   }
 
   // ยอดสรุปทุกตัวเป็นผลรวมของยอดรายวัน จึงบวกข้ามวันได้ตรงๆ ไม่ซ้ำซ้อน
@@ -618,6 +660,7 @@ export default async function TodayPage({
 
 type SaleRecord = {
   id: string
+  bill_id: string | null
   sale_time: string | null
   receipt_no: string | null
   service_id: string | null
@@ -647,6 +690,9 @@ type EditOptions = {
   services: Service[]
   promotions: Promotion[]
   balanceByCustomer: Map<string, MemberBalance>
+  paymentsByBillKey: Map<string, BillPaymentLine[]>
+  dueByBillKey: Map<string, number>
+  canDeletePayments: boolean
 }
 
 function SaleRow({
@@ -670,6 +716,7 @@ function SaleRow({
   // ไม่งั้นการบวกในกล่องแก้ไขจะกลายเป็นการต่อสตริง
   const editableSale: EditableSale = {
     id: s.id,
+    bill_id: s.bill_id,
     receipt_no: s.receipt_no,
     sale_time: s.sale_time,
     service_id: s.service_id,
@@ -755,6 +802,9 @@ function SaleRow({
             }
             currentTherapistName={therapistName.get(s.therapist_id ?? "") ?? null}
             label={`${s.service_name} ${formatBaht(netAmount)} บาท`}
+            payments={editOptions.paymentsByBillKey.get(String(s.bill_id ?? s.id)) ?? []}
+            due={editOptions.dueByBillKey.get(String(s.bill_id ?? s.id)) ?? 0}
+            canDeletePayments={editOptions.canDeletePayments}
           />
         )}
       </div>
