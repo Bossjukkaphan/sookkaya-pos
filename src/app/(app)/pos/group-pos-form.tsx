@@ -572,16 +572,11 @@ export function GroupPosForm({
         </Label>
       </div>
 
-      {/* แบ่งชำระ: เครดิตสมาชิกใช้ได้เฉพาะบิลชุดลูกค้าคนเดียว — แบบเดียวกับฟอร์มขายเดี่ยว */}
-      {canUseCredit && (
+      {/* กล่องแก้ยอดเครดิตบางส่วน — เปิดใช้จากปุ่ม "เครดิต" ในแถวช่องทาง (แบบ ThaiHand) */}
+      {canUseCredit && creditUse > 0 && (
         <div className="space-y-1 rounded-lg border bg-amber-50/50 p-3">
           <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="group_credit_use">
-              ใช้เครดิตสมาชิก{" "}
-              <span className="font-normal text-slate-500">
-                (มี {formatBaht(creditBalance)} ฿)
-              </span>
-            </Label>
+            <Label htmlFor="group_credit_use">ยอดเครดิตที่ใช้ (แก้ได้)</Label>
             <Input
               id="group_credit_use"
               inputMode="numeric"
@@ -594,18 +589,6 @@ export function GroupPosForm({
               }}
             />
           </div>
-          {/* เริ่มที่ "0" เสมอ — ปุ่มนี้กดแล้วค่อยเติมเพดานให้ (สเปก 2026-08-01 เลิก auto-fill) */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setCreditUseInput(String(creditCap))
-              setPrimaryInput(null)
-            }}
-          >
-            ใช้เครดิต (เหลือ {formatBaht(creditBalance)} ฿)
-          </Button>
           <p className="text-sm font-medium">
             {cashDue > 0 ? (
               <>
@@ -623,7 +606,7 @@ export function GroupPosForm({
         <legend className="text-sm font-medium">
           ช่องทางชำระเงิน <span className="font-normal text-slate-500">(จ่ายรวมครั้งเดียวทั้งกลุ่ม)</span>
         </legend>
-        <div className="grid grid-cols-3 gap-2">
+        <div className={canUseCredit ? "grid grid-cols-4 gap-2" : "grid grid-cols-3 gap-2"}>
           {PAYMENT_LINE_METHODS.map((m) => (
             <Button
               key={m}
@@ -641,10 +624,24 @@ export function GroupPosForm({
               {m}
             </Button>
           ))}
+          {/* ปุ่มเครดิตอยู่แถวเดียวกับช่องทาง (แบบ ThaiHand) — กดสลับใช้/เลิกใช้ */}
+          {canUseCredit && (
+            <Button
+              type="button"
+              variant="outline"
+              className={creditUse > 0 ? (PAY_SELECTED["Member Credit"] ?? PAY_COLOR_DEFAULT) : undefined}
+              onClick={() => {
+                setCreditUseInput(creditUse > 0 ? "0" : String(creditCap))
+                setPrimaryInput(null)
+              }}
+            >
+              เครดิต ({formatBaht(creditBalance)})
+            </Button>
+          )}
         </div>
         <p className="text-xs text-slate-500">
           {canUseCredit
-            ? "เครดิตถูกหักตามช่องด้านบน — เลือกช่องทางสำหรับส่วนที่เก็บเพิ่ม"
+            ? "กดปุ่มเครดิตเพื่อใช้เครดิตเมมเบอร์ — ส่วนที่เหลือเลือกช่องทางเงินจริง"
             : 'เครดิตสมาชิกใช้ได้เมื่อติ๊ก "บิลชุดใบเดียว" ของลูกค้าคนเดียวกัน · Gowabi / KOL — กด "เก็บเงิน" รายคนจากการ์ดคิวแทน (ต้องกรอกรหัสจองรายคน)'}
         </p>
       </fieldset>
