@@ -198,6 +198,45 @@ export type Database = {
         }
         Relationships: []
       }
+      // เพิ่มด้วยมือ — ตาราง bill_payments ยังไม่ apply ขึ้น production (ดู
+      // supabase/migrations/20260801100000_bill_payments.sql) จะถูกแทนที่ด้วย
+      // generated types หลัง apply จริง (npx supabase gen types ...)
+      bill_payments: {
+        Row: {
+          amount: number
+          bill_key: string
+          created_at: string
+          created_by: string | null
+          id: string
+          method: string
+          note: string | null
+          received_at: string
+          received_date: string
+        }
+        Insert: {
+          amount: number
+          bill_key: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method: string
+          note?: string | null
+          received_at?: string
+          received_date: string
+        }
+        Update: {
+          amount?: number
+          bill_key?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          method?: string
+          note?: string | null
+          received_at?: string
+          received_date?: string
+        }
+        Relationships: []
+      }
       beds: {
         Row: {
           id: string
@@ -1013,6 +1052,8 @@ export type Database = {
           net_amount: number
           notes: string | null
           payment_method: string
+          // เพิ่มด้วยมือ — คอลัมน์ยังไม่ apply ขึ้น production (ดู migration bill_payments)
+          payments_tracked: boolean
           price_normal: number
           receipt_no: string | null
           request_fee: number
@@ -1049,6 +1090,7 @@ export type Database = {
           net_amount: number
           notes?: string | null
           payment_method: string
+          payments_tracked?: boolean
           price_normal: number
           receipt_no?: string | null
           request_fee?: number
@@ -1085,6 +1127,7 @@ export type Database = {
           net_amount?: number
           notes?: string | null
           payment_method?: string
+          payments_tracked?: boolean
           price_normal?: number
           receipt_no?: string | null
           request_fee?: number

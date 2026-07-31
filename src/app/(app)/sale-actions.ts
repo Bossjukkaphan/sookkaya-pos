@@ -12,6 +12,7 @@ import {
   PRIVATE_ROOM_FEE,
 } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
+import { parsePaymentLines, primaryMethod } from "@/lib/payments"
 import { pointExpiryDate, pointsForSale } from "@/lib/points"
 import { queueMirrorFromSale } from "@/lib/queue"
 
@@ -205,6 +206,20 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     return { ok: false, error: "เครดิตที่ตัดเกินยอดบิล กรุณาตรวจสอบ" }
   }
 
+  // บรรทัดชำระ (สเปก 2026-08-01): มี field payments = บิลระบบใหม่ (tracked)
+  // ไม่มี = โค้ดเก่า/Gowabi/KOL/เครดิตเต็มบิล → พฤติกรรมเดิมทุกอย่าง
+  const paymentsRaw = formData.get("payments")
+  const wantsTracking =
+    paymentsRaw !== null && paymentMethod !== GOWABI_METHOD && paymentMethod !== "KOL"
+  const mustCollect = amounts.netAmount - amounts.creditUsed
+  const parsedLines: ReturnType<typeof parsePaymentLines> = wantsTracking
+    ? parsePaymentLines(String(paymentsRaw), mustCollect)
+    : { ok: true, lines: [] }
+  if (!parsedLines.ok) return { ok: false, error: parsedLines.error }
+  // วิธีหลักจากบรรทัด — บรรทัดว่าง (ค้างรับเต็มยอด/เครดิตเต็มบิล) คงวิธีที่ฟอร์มส่งมา
+  const linePrimary = wantsTracking ? primaryMethod(parsedLines.lines) : null
+  if (linePrimary) paymentMethod = linePrimary
+
   // แบ่งจ่ายที่ขอตัดเครดิตพอดีเต็มบิล (creditUsed === netAmount) แต่ช่องทางที่เลือกยังเป็นเงินจริง
   // (เช่น QR) — ต้อง normalize เป็น "Member Credit" เพื่อรักษากติกาเดิม "Member Credit = เครดิตเต็มบิล
   // เท่านั้น" ที่ข้อมูลเก่า/รายงานพึ่งพาไว้แปะป้ายช่องทาง ไม่งั้นบิลจะถูกนับเป็นช่องทางเงินจริงทั้งที่ไม่มี
@@ -243,6 +258,13 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     ? String(formData.get("sale_time"))
     : nowTimeInShopTz()
 
+  // บิลชุด (ลูกค้าคนเดียวหลายรายการจ่ายรวม) — ใช้เป็นกุญแจเขียนบรรทัดชำระร่วมกันทั้งบิลด้วย
+  const billId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(formData.get("bill_id") ?? "")
+  )
+    ? String(formData.get("bill_id"))
+    : null
+
   const { data: inserted, error } = await supabase
     .from("sales")
     .insert({
@@ -276,11 +298,9 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
         ? String(formData.get("group_id"))
         : null,
       // บิลชุด (ลูกค้าคนเดียวหลายรายการจ่ายรวม) — ไม่กระทบสูตรเงินเช่นกัน
-      bill_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        String(formData.get("bill_id") ?? "")
-      )
-        ? String(formData.get("bill_id"))
-        : null,
+      bill_id: billId,
+      // บรรทัดชำระ (สเปก 2026-08-01): มี field payments (แม้ "[]") และไม่ใช่ Gowabi/KOL → tracked
+      payments_tracked: wantsTracking,
       // metadata ของบิล (ที่มา/ช่องทางย่อย/เตียง/หมายเหตุ) — ไม่กระทบสูตรเงิน
       // ค่าเพี้ยนจาก client เก่า → null (ไม่ทราบ) ดีกว่าเดาผิด
       source: (() => {
@@ -298,6 +318,33 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .single()
 
   if (error) return { ok: false, error: `บันทึกไม่สำเร็จ: ${error.message}` }
+
+  // เขียนบรรทัดชำระครั้งเดียวต่อบิล — บิลชุด (bill_id ซ้ำกันหลายแถว) ให้แถวแรกของบิลเป็นผู้เขียน
+  // แถวถัดไปของบิลเดียวกันเช็คแล้วพบบรรทัดของ bill_key นี้อยู่แล้ว จึงข้าม ไม่เขียนซ้ำ
+  if (wantsTracking) {
+    const billKey = billId ?? inserted.id
+    const isFirstOfBill =
+      !billId ||
+      !(
+        await supabase
+          .from("bill_payments")
+          .select("id")
+          .eq("bill_key", billKey)
+          .limit(1)
+          .maybeSingle()
+      ).data
+    if (isFirstOfBill && parsedLines.lines.length > 0) {
+      await supabase.from("bill_payments").insert(
+        parsedLines.lines.map((l) => ({
+          bill_key: billKey,
+          method: l.method,
+          amount: l.amount,
+          received_date: todayInShopTz(),
+          created_by: profile?.full_name ?? user.email ?? null,
+        }))
+      )
+    }
+  }
 
   // แต้มสะสม: บิลผูกลูกค้า + จ่ายจริง → ทุก 100฿ = 1 แต้ม (เครดิตสมาชิกได้ตอนเติมไปแล้ว)
   await syncSalePoints(supabase, {
@@ -442,7 +489,7 @@ export async function deleteSale(
 
   const { data: existing } = await supabase
     .from("sales")
-    .select("sale_date, customer_id")
+    .select("sale_date, customer_id, bill_id")
     .eq("id", id)
     .single()
 
@@ -466,6 +513,18 @@ export async function deleteSale(
   const { error } = await supabase.from("sales").delete().eq("id", id)
 
   if (error) return { ok: false, error: error.message }
+
+  // แถวสุดท้ายของบิลถูกลบ → บรรทัดชำระของบิลต้องไปด้วย (กัน orphan)
+  // bill_key เดียวกับที่ createSale ใช้เขียน: บิลชุดใช้ bill_id · บิลเดี่ยวใช้ id ตัวเอง
+  const billKey = existing.bill_id ?? id
+  const { data: remain } = await supabase
+    .from("sales")
+    .select("id")
+    .or(`bill_id.eq.${billKey},id.eq.${billKey}`)
+    .limit(1)
+  if (!remain || remain.length === 0) {
+    await supabase.from("bill_payments").delete().eq("bill_key", billKey)
+  }
 
   // แต้มบิลนี้ถูกถอนไปพร้อมการลบ (FK cascade) — ถ้ายอดลูกค้าติดลบต้องบอกพนักงาน
   const warning = await pointsWarningAfterSync(supabase, existing.customer_id)
