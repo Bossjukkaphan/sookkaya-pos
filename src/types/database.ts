@@ -1609,6 +1609,18 @@ export type Database = {
           },
         ]
       }
+      // เพิ่มด้วยมือ — view v_bill_due สำหรับหน้าชำระหลายบรรทัดต่อบิล (Task 4)
+      v_bill_due: {
+        Row: {
+          bill_key: string
+          sale_date: string
+          net_total: number
+          credit_total: number
+          paid_total: number
+          due: number
+        }
+        Relationships: []
+      }
     }
     Functions: {
       app_role: { Args: never; Returns: string }
