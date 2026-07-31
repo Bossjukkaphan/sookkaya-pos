@@ -28,6 +28,7 @@ import {
 } from "@/lib/payment-colors"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { DueBadge } from "../due-badge"
 
 export const metadata = { title: "ยอดขาย · สุขกายา POS" }
 
@@ -124,9 +125,8 @@ export default async function TodayPage({
   // บรรทัดชำระของบิล (bill_payments) + ยอดค้างรับ (v_bill_due) ของบิลที่แสดงอยู่ในหน้านี้ —
   // ต้องรู้ bill_key (bill_id ?? id) จาก rows ก่อน จึงดึงเป็นรอบสองต่อจาก sales (เหมือน topupCustomers ด้านล่าง)
   // ไม่ query รายแถว กันยิง N+1 ไปที่ view/ตารางนี้
-  const billKeys = editable
-    ? [...new Set(rows.map((s) => String(s.bill_id ?? s.id)))]
-    : []
+  // ไม่กรองด้วย editable — ป้ายค้างรับต้องขึ้นแม้เดือนก่อนที่แก้ไม่ได้แล้ว (บิลยังค้างเงินจริงอยู่)
+  const billKeys = [...new Set(rows.map((s) => String(s.bill_id ?? s.id)))]
   const [{ data: billPayments }, { data: billDues }] = billKeys.length
     ? await Promise.all([
         supabase
@@ -152,6 +152,14 @@ export default async function TodayPage({
   }
   const dueByBillKey = new Map<string, number>(
     (billDues ?? []).map((d) => [String(d.bill_key), Number(d.due)])
+  )
+
+  // การ์ดเตือนรวมของหัวหน้า (admin/manager) — นับเฉพาะบิลที่ "ค้างรับ" จริง (due>0)
+  // ไม่นับบิลเกินรับ (due<0) เพราะไม่ใช่เงินที่ต้องตามเก็บ · มาจากบิลใน rows หน้านี้เท่านั้น
+  // (เหมือน byPayment ด้านล่าง — ถ้าโดนตัดที่ ROW_CAP ยอดนี้ก็อาจไม่ครบเช่นกัน)
+  const dueSummary = [...dueByBillKey.values()].reduce(
+    (acc, due) => (due > 0.005 ? { count: acc.count + 1, total: acc.total + due } : acc),
+    { count: 0, total: 0 }
   )
 
   // ตัวเลือกในฟอร์มแก้ไขใช้เฉพาะหมอที่ยังทำงานอยู่ ส่วนการแสดงผลใช้ map ด้านบนที่ครบทุกคน
@@ -301,6 +309,19 @@ export default async function TodayPage({
         <Card className="border-slate-300 bg-slate-50">
           <CardContent className="py-3 text-sm text-slate-700">
             ข้อมูลเดือนก่อน ดูได้อย่างเดียว แก้หรือลบไม่ได้
+          </CardContent>
+        </Card>
+      )}
+
+      {/* การ์ดเตือนรวมค้างรับ — เห็นเฉพาะหัวหน้า (admin/manager) ให้ตามทวงเงิน
+          ป้ายค้างรับต่อบิลด้านล่างเห็นได้ทุก role — พนักงานเป็นคนกดเก็บเพิ่มจริง */}
+      {canDeletePayments && dueSummary.count > 0 && (
+        <Card className="border-red-300 bg-red-50">
+          <CardContent className="py-3 text-sm text-red-900">
+            <span className="font-semibold">
+              บิลค้างรับ{isSingleDay ? "วันนี้" : "ในช่วงนี้"} {dueSummary.count} ใบ
+            </span>{" "}
+            รวม {formatBaht(dueSummary.total)} ฿
           </CardContent>
         </Card>
       )}
@@ -711,6 +732,8 @@ function SaleRow({
   const commission = Number(s.commission ?? 0)
   const requestFee = Number(s.request_fee ?? 0)
   const roomFee = Number(s.room_fee ?? 0)
+  const billKey = String(s.bill_id ?? s.id)
+  const due = editOptions.dueByBillKey.get(billKey) ?? 0
 
   // numeric ของ postgres มาเป็น string — แปลงให้ครบก่อนส่งเข้าฟอร์ม
   // ไม่งั้นการบวกในกล่องแก้ไขจะกลายเป็นการต่อสตริง
@@ -780,6 +803,7 @@ function SaleRow({
               ลด {formatBaht(discount)} ฿{s.coupon_promo ? ` (${s.coupon_promo})` : ""}
             </span>
           )}
+          <DueBadge billKey={billKey} due={due} />
         </div>
 
         {s.notes && <p className="text-xs text-slate-400">📝 {s.notes}</p>}
@@ -802,8 +826,8 @@ function SaleRow({
             }
             currentTherapistName={therapistName.get(s.therapist_id ?? "") ?? null}
             label={`${s.service_name} ${formatBaht(netAmount)} บาท`}
-            payments={editOptions.paymentsByBillKey.get(String(s.bill_id ?? s.id)) ?? []}
-            due={editOptions.dueByBillKey.get(String(s.bill_id ?? s.id)) ?? 0}
+            payments={editOptions.paymentsByBillKey.get(billKey) ?? []}
+            due={due}
             canDeletePayments={editOptions.canDeletePayments}
           />
         )}

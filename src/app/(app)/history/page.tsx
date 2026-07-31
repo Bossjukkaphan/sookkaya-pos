@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { BillRow, type BillRecord } from "./bill-row"
+import type { BillPaymentLine } from "../today/edit-sale-dialog"
 
 export const metadata = { title: "ประวัติบิล · สุขกายา POS" }
 
@@ -15,6 +16,9 @@ export const metadata = { title: "ประวัติบิล · สุขก
 const ROW_CAP = 200
 
 const n = (x: number | string | null | undefined) => Number(x ?? 0)
+
+/** กุญแจบิลของบรรทัดชำระ (ดู migration bill_payments): บิลชุดใช้ bill_id · บิลเดี่ยวใช้ id ตัวเอง */
+const billKeyOf = (b: { id: string; bill_id: string | null }) => String(b.bill_id ?? b.id)
 
 const SELECT_CLASS =
   "h-11 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none"
@@ -76,6 +80,37 @@ export default async function HistoryPage({
   const rows = sales ?? []
   const total = count ?? rows.length
   const totalAmount = rows.reduce((s, r) => s + n(r.net_amount), 0)
+
+  // บรรทัดชำระของบิล (bill_payments) + ยอดค้างรับ (v_bill_due) เฉพาะบิลที่แสดงอยู่ในหน้านี้ —
+  // ต้องรู้ bill_key (bill_id ?? id) จาก rows ก่อน จึงดึงเป็นรอบสองต่อจาก sales (เหมือนหน้า /today)
+  // ไม่ query รายแถว กันยิง N+1 ไปที่ view/ตารางนี้
+  const billKeys = [...new Set(rows.map((s) => String(s.bill_id ?? s.id)))]
+  const [{ data: billPayments }, { data: billDues }] = billKeys.length
+    ? await Promise.all([
+        supabase
+          .from("bill_payments")
+          .select("id, bill_key, method, amount, received_date")
+          .in("bill_key", billKeys)
+          .order("received_at"),
+        supabase.from("v_bill_due").select("bill_key, due").in("bill_key", billKeys),
+      ])
+    : [{ data: [] }, { data: [] }]
+
+  const paymentsByBillKey = new Map<string, BillPaymentLine[]>()
+  for (const p of billPayments ?? []) {
+    const key = String(p.bill_key)
+    const arr = paymentsByBillKey.get(key) ?? []
+    arr.push({
+      id: p.id,
+      method: p.method,
+      amount: Number(p.amount),
+      received_date: String(p.received_date),
+    })
+    paymentsByBillKey.set(key, arr)
+  }
+  const dueByBillKey = new Map<string, number>(
+    (billDues ?? []).map((d) => [String(d.bill_key), Number(d.due)])
+  )
 
   const bills: BillRecord[] = rows.map((s) => ({
     id: s.id,
@@ -208,7 +243,11 @@ export default async function HistoryPage({
               {groupSalesByBill(bills).map((g) =>
                 g.items.length === 1 ? (
                   <li key={g.key}>
-                    <BillRow bill={g.items[0]} />
+                    <BillRow
+                      bill={g.items[0]}
+                      payments={paymentsByBillKey.get(billKeyOf(g.items[0])) ?? []}
+                      due={dueByBillKey.get(billKeyOf(g.items[0])) ?? 0}
+                    />
                   </li>
                 ) : (
                   // บิลชุด: ลูกค้าคนเดียวหลายรายการจ่ายรวม
@@ -223,7 +262,11 @@ export default async function HistoryPage({
                     <ul className="divide-y">
                       {g.items.map((b) => (
                         <li key={b.id}>
-                          <BillRow bill={b} />
+                          <BillRow
+                            bill={b}
+                            payments={paymentsByBillKey.get(billKeyOf(b)) ?? []}
+                            due={dueByBillKey.get(billKeyOf(b)) ?? 0}
+                          />
                         </li>
                       ))}
                     </ul>
