@@ -268,20 +268,13 @@ export function PosForm({
 
   // เครดิตครอบคลุมทั้งบิลพอดี → ช่องทางที่ "จริงๆ" ใช้ต้องเป็น Member Credit เสมอ (บังคับ ไม่ใช่แค่ default)
   // คำนวณระหว่าง render แทนการ setState ใน effect กัน setPaymentMethod ชนของที่ผู้ใช้กดเอง
-  // ไม่งั้นบิลจะถูกบันทึกเป็นช่องทางที่ผิด (เช่น "QR Code" ทั้งที่เงินจริงมาจากเครดิตล้วน)
   //
-  // กรณีตรงข้าม: paymentMethod ค้างเป็น Member Credit อยู่ (เคยเลือกไว้ตอนเครดิตพอ) แต่ตอนนี้เครดิตที่ใช้ได้
-  // ไม่พอบิลแล้ว (partialCreditActive) — ต้อง "หลุด" การเลือกทันที ไม่งั้นปุ่มจะค้างเป็น selected-but-disabled
-  // พร้อมให้กดส่งได้ทั้งที่ server จะปฏิเสธด้วยข้อความเดิม ("เครดิตคงเหลือไม่พอ") ที่ฟีเจอร์แบ่งชำระนี้ตั้งใจกำจัดทิ้ง
-  const mcSelectionBlocked = paymentMethod === MEMBER_CREDIT_METHOD && partialCreditActive
-  const isMemberCredit =
-    !mcSelectionBlocked &&
-    (paymentMethod === MEMBER_CREDIT_METHOD || (canUseCredit && creditUse > 0 && cashDue === 0))
-  const effectivePaymentMethod = mcSelectionBlocked
-    ? ""
-    : isMemberCredit
-      ? MEMBER_CREDIT_METHOD
-      : paymentMethod
+  // หมายเหตุ: ตั้งแต่ปุ่ม Member Credit กลายเป็นปุ่มสลับใช้เครดิต (UX แบบ ThaiHand 1/8/2569)
+  // paymentMethod ไม่มีทางเป็น "Member Credit" อีก — MC เกิดจาก fullCredit ทางเดียวเท่านั้น
+  // (guard mcSelectionBlocked เดิมจึงถูกถอดออก · ถ้าวันหน้ามีโค้ด setPaymentMethod(MC) กลับมา
+  // ต้องคิดเรื่องเครดิตไม่พอ + ปุ่มค้าง selected ใหม่ด้วย — ดู git log ของบรรทัดนี้)
+  const isMemberCredit = canUseCredit && creditUse > 0 && cashDue === 0
+  const effectivePaymentMethod = isMemberCredit ? MEMBER_CREDIT_METHOD : paymentMethod
 
   // เครดิตครอบคลุมทั้งบิล → ไม่มีเงินจริงให้ track เป็นบรรทัดชำระ (เหมือน Gowabi/KOL — server ก็ไม่รับ field payments)
   const fullCredit = isMemberCredit
@@ -674,7 +667,13 @@ export function PosForm({
                   "h-12 text-xs sm:text-sm",
                   selected && (PAY_SELECTED[m] ?? PAY_SELECTED_DEFAULT)
                 )}
-                disabled={isCreditToggle && !canUseCredit}
+                // ปุ่มเครดิต: กดได้เฉพาะสมาชิกที่มีเครดิต · Gowabi/KOL: ห้ามกดตอนเครดิตบางส่วน
+                // ค้างอยู่ — เดิมเคยกดแล้วล้างเครดิตเงียบๆ พนักงานตกใจ (ต้องลดเครดิตเป็น 0 เองก่อน)
+                disabled={
+                  isCreditToggle
+                    ? !canUseCredit
+                    : partialCreditActive && (m === GOWABI_METHOD || m === "KOL")
+                }
                 onClick={() => {
                   if (isCreditToggle) {
                     // สลับใช้เครดิต: กดครั้งแรกเติมเต็มเพดาน · กดซ้ำเลิกใช้ (แก้ยอดบางส่วนได้ในกล่องด้านล่าง)
@@ -815,25 +814,42 @@ export function PosForm({
             </div>
           )}
           {!fullCredit &&
-            (paymentLines ?? []).map((l, i) => (
-              <div key={i} className="flex items-center justify-between text-slate-600">
-                <span className="flex items-center gap-1">
-                  แบ่งจ่ายครั้งที่ {i + 1} ({l.method})
-                  {/* บรรทัดเสริมลบได้จากลิสต์เลย (บรรทัดแรกคือช่องทางหลัก แก้ที่ปุ่ม/ช่องยอดข้างบน) */}
-                  {i > 0 && (
-                    <button
-                      type="button"
-                      aria-label={`ลบแบ่งจ่ายครั้งที่ ${i + 1}`}
-                      className="text-red-500"
-                      onClick={() => setExtraPayments((a) => a.filter((_, j) => j !== i - 1))}
-                    >
-                      🗑
-                    </button>
-                  )}
-                </span>
-                <span>{formatBaht(l.amount)} ฿</span>
-              </div>
-            ))}
+            // พกดัชนีของ extraPayments ติดแต่ละบรรทัดตั้งแต่ก่อน filter — paymentLines ถูกกรอง
+            // amount > 0 ออก ตำแหน่งในลิสต์จึงใช้ย้อนหาบรรทัดต้นทางไม่ได้ (บรรทัดหลักเป็น 0
+            // เมื่อบรรทัดเสริมกินยอดหมด แล้ว i-1 จะชี้ผิดตัว — ลบบรรทัดที่ตาไม่ได้มอง)
+            [
+              { method: effectivePaymentMethod, amount: primaryAmount, extraIdx: -1 },
+              ...extraPayments.map((x, idx) => ({
+                method: x.method,
+                amount: Number(x.amount) || 0,
+                extraIdx: idx,
+              })),
+            ]
+              .filter((l) => l.amount > 0)
+              .map((l, i) => (
+                <div
+                  key={`${l.extraIdx}-${l.method}`}
+                  className="flex items-center justify-between text-slate-600"
+                >
+                  <span className="flex items-center gap-1">
+                    แบ่งจ่ายครั้งที่ {i + 1} ({l.method})
+                    {/* บรรทัดเสริมลบได้จากลิสต์เลย (บรรทัดหลักแก้ที่ปุ่ม/ช่องยอดข้างบน) */}
+                    {l.extraIdx >= 0 && (
+                      <button
+                        type="button"
+                        aria-label={`ลบแบ่งจ่าย ${l.method} ${formatBaht(l.amount)} บาท`}
+                        className="text-red-500"
+                        onClick={() =>
+                          setExtraPayments((a) => a.filter((_, j) => j !== l.extraIdx))
+                        }
+                      >
+                        🗑
+                      </button>
+                    )}
+                  </span>
+                  <span>{formatBaht(l.amount)} ฿</span>
+                </div>
+              ))}
           <div
             className={cn(
               "flex justify-between border-t pt-1 font-semibold",
