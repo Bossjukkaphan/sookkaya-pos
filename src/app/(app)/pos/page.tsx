@@ -109,6 +109,7 @@ export default async function PosPage({
           therapists={therapists ?? []}
           services={services ?? []}
           promotions={promotions ?? []}
+          beds={beds ?? []}
           people={people}
         />
       </div>

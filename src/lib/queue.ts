@@ -177,3 +177,26 @@ export function queueMirrorFromSale(
     updated_at: new Date().toISOString(),
   }
 }
+
+/** หน้าต่างเวลาที่ยังย้ายเตียง/เปลี่ยนหมอของการ์ดที่ชำระแล้วได้ (กติกาเจ้าของร้าน 1/8/2569):
+ *  เปลี่ยนได้ถึง 15 นาทีแรกของการนวดจริงเท่านั้น — เลยนั้นหมอนวดไปเกินครึ่งค่อนแล้ว
+ *  ค่ามือต้องนิ่ง · ยังไม่เริ่มนวดย้ายได้เสมอ · จบแล้วล็อกเสมอ (กันย้ายย้อนหลังแก้ค่ามือ) */
+export const MOVE_CARD_WINDOW_MIN = 15
+
+export function canMoveCardWindow(
+  entry: { start_time: string; duration_min: number; started_at: string | null },
+  nowMin: number
+): { allowed: boolean; reason?: string } {
+  const startMin = bedStartMin(entry)
+  const endMin = startMin + entry.duration_min
+  // จบแล้ว (ตามเวลาเริ่มจริงถ้ามี ไม่มีก็ตามจอง) — ล็อกเสมอ
+  if (nowMin >= endMin) return { allowed: false, reason: "การนวดจบแล้ว ย้ายย้อนหลังไม่ได้" }
+  // ยังไม่เริ่มนวดจริง — ย้ายได้เสมอ
+  if (!entry.started_at) return { allowed: true }
+  const elapsed = nowMin - isoToShopMin(entry.started_at)
+  if (elapsed <= MOVE_CARD_WINDOW_MIN) return { allowed: true }
+  return {
+    allowed: false,
+    reason: `เริ่มนวดเกิน ${MOVE_CARD_WINDOW_MIN} นาทีแล้ว (ผ่านไป ${elapsed} นาที) — เปลี่ยนหมอ/เตียงไม่ได้`,
+  }
+}

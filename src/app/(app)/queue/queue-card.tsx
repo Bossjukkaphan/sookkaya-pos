@@ -19,10 +19,14 @@ import {
   minToX,
   overlaps,
   timeToMin,
+  busyBedIds,
+  busyTherapistIds,
+  canMoveCardWindow,
 } from "@/lib/queue"
 import { deriveCardStatus } from "@/lib/queue-status"
 import {
   approveBooking,
+  movePaidCard,
   rejectBooking,
   setActualStartTime,
   setQueueStatus,
@@ -227,6 +231,9 @@ export function QueueCard({
   onPointerDown,
   onEdit,
   onChanged,
+  therapists = [],
+  beds = [],
+  allEntries = [],
 }: {
   entry: QueueEntry
   /** ระยะจากขอบบนแถว — คิวเวลาชนกันถูกจัดลงเลนถัดไป ไม่วางทับกัน */
@@ -253,10 +260,15 @@ export function QueueCard({
   onPointerDown: (e: React.PointerEvent) => void
   onEdit: () => void
   onChanged: () => void
+  /** รายชื่อหมอ/เตียง/คิวทั้งวัน — ใช้เฉพาะกล่องย้ายเตียง-เปลี่ยนหมอของการ์ดที่จ่ายแล้ว */
+  therapists?: { id: string; name: string }[]
+  beds?: Bed[]
+  allEntries?: QueueEntry[]
 }) {
   const [open, setOpen] = useState(false)
   // กล่องกรอกเวลาเริ่มจริง: "start" = กดเริ่มนวด · "edit" = แก้/เติมเวลาย้อนหลัง
   const [timeDialog, setTimeDialog] = useState<"start" | "edit" | null>(null)
+  const [moveOpen, setMoveOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
   const startMin = timeToMin(entry.start_time)
@@ -583,6 +595,23 @@ export function QueueCard({
                 ย้อนเป็นรอ
               </Button>
             )}
+            {/* ย้ายเตียง/เปลี่ยนหมอโดยไม่ยกเลิกบิล — เฉพาะการ์ดจ่ายแล้วของวันนี้
+                และภายใน 15 นาทีแรกของการนวดจริง (server เช็คซ้ำอีกชั้น) */}
+            {entry.status === "paid" &&
+              entry.sale_id &&
+              isToday &&
+              canMoveCardWindow(entry, nowMin).allowed && (
+                <Button
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => {
+                    setOpen(false)
+                    setMoveOpen(true)
+                  }}
+                >
+                  🔁 ย้ายเตียง/เปลี่ยนหมอ
+                </Button>
+              )}
             {entry.status === "pending" && (
               <>
                 <Button
@@ -641,6 +670,27 @@ export function QueueCard({
         </DialogContent>
       </Dialog>
 
+      {moveOpen && (
+        <MoveCardDialog
+          entry={entry}
+          therapists={therapists}
+          beds={beds}
+          allEntries={allEntries}
+          nowMin={nowMin}
+          pending={pending}
+          onClose={() => setMoveOpen(false)}
+          onSave={(v) =>
+            startTransition(async () => {
+              const r = await movePaidCard(entry.id, v)
+              if (!r.ok) toast.error(r.error)
+              else toast.success("ย้ายเรียบร้อย — บิลและการ์ดขยับพร้อมกัน")
+              setMoveOpen(false)
+              onChanged()
+            })
+          }
+        />
+      )}
+
       <StartTimeDialog
         open={timeDialog !== null}
         title={timeDialog === "start" ? "▶ เริ่มนวด" : "🕐 เวลาเริ่มนวดจริง"}
@@ -661,5 +711,134 @@ export function QueueCard({
         }
       />
     </>
+  )
+}
+
+
+/**
+ * กล่องย้ายเตียง/เปลี่ยนหมอของการ์ดที่จ่ายแล้ว — เตียง/หมอที่ติดคิวช่วงเวลานวดนี้เลือกไม่ได้
+ * เปลี่ยนหมอ = ค่ามือย้ายตามบิลไปหมอใหม่ · รีเควสให้ติ๊กตามข้อตกลงกับลูกค้าจริง
+ */
+function MoveCardDialog({
+  entry,
+  therapists,
+  beds,
+  allEntries,
+  nowMin,
+  pending,
+  onClose,
+  onSave,
+}: {
+  entry: QueueEntry
+  therapists: { id: string; name: string }[]
+  beds: Bed[]
+  allEntries: QueueEntry[]
+  /** นาทีปัจจุบัน — เช็คว่างเฉพาะช่วงที่เหลือของการนวด (ส่วนที่ผ่านแล้วไม่ต้องว่าง) */
+  nowMin: number
+  pending: boolean
+  onClose: () => void
+  onSave: (v: { bedId: string | null; therapistId: string; isRequest: boolean }) => void
+}) {
+  const [therapistId, setTherapistId] = useState(entry.therapist_id ?? "")
+  const [bedId, setBedId] = useState(entry.bed_id ?? "")
+  const [isRequest, setIsRequest] = useState(Boolean(entry.is_request))
+
+  // เช็คว่างเฉพาะ "ช่วงที่เหลือ" ของการนวดนี้ — ปลายทางที่เพิ่งว่างหลังคิวก่อนจบ
+  // ต้องเลือกได้ (นั่นคือเคสที่ฟีเจอร์นี้เกิดมาแก้) · server เช็คซ้ำด้วยกติกาเดียวกัน
+  const startMin = bedStartMin(entry)
+  const checkStart = Math.max(startMin, nowMin)
+  const remainMin = startMin + entry.duration_min - checkStart
+  const others = allEntries.filter((e) => e.id !== entry.id)
+  const busyT = busyTherapistIds(others, checkStart, remainMin)
+  const busyB = busyBedIds(others, checkStart, remainMin)
+  const therapistChanged = therapistId !== (entry.therapist_id ?? "")
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>🔁 ย้ายเตียง/เปลี่ยนหมอ</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">หมอนวด</p>
+            <select
+              value={therapistId}
+              onChange={(e) => setTherapistId(e.target.value)}
+              className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+              aria-label="เลือกหมอนวดใหม่"
+            >
+              <option value="">— เลือกหมอ —</option>
+              {therapists.map((t) => (
+                <option
+                  key={t.id}
+                  value={t.id}
+                  disabled={t.id !== entry.therapist_id && busyT.has(t.id)}
+                >
+                  {t.name}
+                  {t.id !== entry.therapist_id && busyT.has(t.id) ? " (ติดคิว)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1">
+            <p className="text-sm font-medium">เตียง</p>
+            <select
+              value={bedId}
+              onChange={(e) => setBedId(e.target.value)}
+              className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+              aria-label="เลือกเตียงใหม่"
+            >
+              <option value="">— ไม่ระบุเตียง —</option>
+              {beds.map((b) => (
+                <option
+                  key={b.id}
+                  value={b.id}
+                  disabled={b.id !== entry.bed_id && busyB.has(b.id)}
+                >
+                  {b.room} · {b.name}
+                  {b.id !== entry.bed_id && busyB.has(b.id) ? " (ไม่ว่าง)" : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+          {therapistChanged && (
+            <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={isRequest}
+                onChange={(e) => setIsRequest(e.target.checked)}
+                className="h-4 w-4"
+              />
+              คิดรีเควสหมอ (+40 ฿ — ร้านจ่ายให้หมอ ลูกค้าไม่จ่ายเพิ่ม)
+            </label>
+          )}
+          <p className="text-xs text-slate-500">
+            ค่ามือย้ายตามบิลไปหมอใหม่ · ยอดบิลลูกค้าไม่เปลี่ยน · ย้ายได้ภายใน 15
+            นาทีแรกของการนวด
+          </p>
+          <div className="flex gap-2">
+            <Button
+              className="flex-1"
+              disabled={pending || !therapistId}
+              onClick={() =>
+                onSave({
+                  bedId: bedId || null,
+                  therapistId,
+                  // checkbox โชว์เฉพาะตอนเปลี่ยนหมอ — ถ้าสุดท้ายเลือกหมอเดิมกลับมา
+                  // ค่าที่ติ๊กไว้ตอน checkbox โผล่ห้ามติดไป (รีเควสเดิมของบิลต้องคงอยู่)
+                  isRequest: therapistChanged ? isRequest : Boolean(entry.is_request),
+                })
+              }
+            >
+              บันทึกย้าย
+            </Button>
+            <Button variant="outline" disabled={pending} onClick={onClose}>
+              ยกเลิก
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

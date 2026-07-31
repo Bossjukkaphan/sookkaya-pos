@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  canMoveCardWindow,
   BOARD_END_MIN,
   BOARD_START_MIN,
   PX_PER_MIN,
@@ -173,5 +174,39 @@ describe("queueMirrorFromSale", () => {
   it("เมนูที่ไม่ได้ตั้งความยาวเวลาไว้ ใช้ 60 นาทีเป็นค่าตั้งต้น", () => {
     const out = queueMirrorFromSale(fd({}), "s", { name: "x", duration_min: null }, "t")
     expect(out.duration_min).toBe(60)
+  })
+})
+
+describe("canMoveCardWindow — ย้ายเตียง/เปลี่ยนหมอได้ภายใน 15 นาทีแรกของการนวดจริง", () => {
+  // การ์ดจ่ายแล้ว จอง 17:00 นวด 120 นาที
+  const base = {
+    start_time: "17:00",
+    duration_min: 120,
+    started_at: null as string | null,
+  }
+  const bkk = (hhmm: string) => `2026-08-01T${hhmm}:00+07:00`
+
+  it("ยังไม่เริ่มนวด (จ่ายแล้วรอเริ่ม) → ย้ายได้", () => {
+    expect(canMoveCardWindow(base, 16 * 60 + 30).allowed).toBe(true)
+  })
+  it("เริ่มจริง 17:00 · ตอนนี้ 17:10 (ผ่านไป 10 นาที) → ย้ายได้", () => {
+    expect(canMoveCardWindow({ ...base, started_at: bkk("17:00") }, 17 * 60 + 10).allowed).toBe(true)
+  })
+  it("นาทีที่ 15 พอดี → ยังย้ายได้ (ขอบใน)", () => {
+    expect(canMoveCardWindow({ ...base, started_at: bkk("17:00") }, 17 * 60 + 15).allowed).toBe(true)
+  })
+  it("นาทีที่ 16 → ล็อกแล้ว พร้อมเหตุผล", () => {
+    const r = canMoveCardWindow({ ...base, started_at: bkk("17:00") }, 17 * 60 + 16)
+    expect(r.allowed).toBe(false)
+    expect(r.reason).toContain("15 นาที")
+  })
+  it("ลูกค้ามาสาย เริ่มจริง 17:30 → หน้าต่างนับจากเวลาเริ่มจริง ไม่ใช่เวลาจอง", () => {
+    expect(canMoveCardWindow({ ...base, started_at: bkk("17:30") }, 17 * 60 + 40).allowed).toBe(true)
+    expect(canMoveCardWindow({ ...base, started_at: bkk("17:30") }, 17 * 60 + 50).allowed).toBe(false)
+  })
+  it("นวดจบแล้ว → ล็อกเสมอ (กันเคสข้อมูลเวลาเริ่มหาย)", () => {
+    // ไม่มี started_at แต่เลยเวลาจบตามจองไปแล้ว — ห้ามย้ายย้อนหลัง
+    const r = canMoveCardWindow(base, 19 * 60 + 1)
+    expect(r.allowed).toBe(false)
   })
 })

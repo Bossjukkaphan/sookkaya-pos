@@ -562,6 +562,9 @@ export function QueueBoard({
                       laneTop={(layout.laneById.get(e.id) ?? 0) * ROW_H}
                       therapistName={row.id ? row.name : null}
                       bed={beds.find((b) => b.id === e.bed_id) ?? null}
+                      therapists={therapists}
+                      beds={beds}
+                      allEntries={entries}
                       siblings={entries.filter(
                         (s) => s.therapist_id === row.id && s.id !== e.id
                       )}
