@@ -6,7 +6,7 @@ import { toast } from "sonner"
 import { checkPointCoupon, createSale, type CouponCheck } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { allocateCredit } from "@/lib/bill"
-import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount } from "@/lib/payments"
+import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
@@ -299,6 +299,15 @@ export function PosForm({
   // ค้างรับ ณ ตอนนี้ (ถ้าพนักงานลบ/ลดบรรทัดจนรวม < ต้องเก็บ) — ใช้ทั้งโชว์สดในฟอร์มและเช็คก่อน submit
   const dueNow = paymentLines ? dueAmount(cashDue, paymentLines) : 0
 
+  // F1: server เขียน payment_method ของ "แถวแรก" ของบิลชุดเป็น primaryMethod(lines) เสมอ (sale-actions.ts
+  // linePrimary) แต่แถวที่ 2 เป็นต้นไปส่ง payments="[]" (ไม่มีบรรทัดให้ derive) จึง fallback ไปใช้ค่าดิบที่
+  // ฟอร์มส่งมา — ถ้าปุ่มที่กดไม่ตรงกับ "วิธีที่ยอดสูงสุด" ในบรรทัดแบ่งจ่าย (เช่น กดเงินสดแต่บรรทัดเสริมบัตร
+  // เครดิตยอดสูงกว่า) แถวแรกกับแถวอื่นจะได้ payment_method คนละค่า → recon FAIL (bill_overpaid/mismatch)
+  // ต้องคำนวณค่าเดียวกับที่ server จะเขียนที่แถวแรกไว้ล่วงหน้า แล้วส่งค่านี้ให้ทุกแถวของบิลชุด
+  const submittedPaymentMethod = paymentLines
+    ? primaryMethod(paymentLines) ?? effectivePaymentMethod
+    : effectivePaymentMethod
+
   function resetForm() {
     setTherapistId("")
     setServiceId("")
@@ -348,6 +357,13 @@ export function PosForm({
     const nets = [netAmount, ...extras.map((x) => extraNet(x))]
     const perItemCredit = allocateCredit(nets, isMemberCredit ? 0 : creditUse)
     formData.set("credit_requested", String(perItemCredit[0]))
+
+    // F2: บิลชุด (billId) เพดาน server เป็น Infinity โดยตั้งใจ (ดูคอมเมนต์ mustCollect ใน sale-actions.ts)
+    // เพราะแถวแรกยังไม่รู้ยอดรวมของรายการเสริมที่ยังไม่ insert — ฝั่ง client จึงต้องกันเก็บเกินเอง ก่อนยิง network
+    if (dueNow < -0.005) {
+      toast.error("ยอดรับรวมเกินยอดบิล — ตรวจบรรทัดแบ่งจ่าย")
+      return
+    }
 
     // บิลเงินจริง (ไม่ใช่ Gowabi/KOL/เครดิตเต็มบิล) → ส่ง field "payments" เสมอ (แม้บรรทัดเดียว) ให้เข้า tracked
     if (paymentLines) formData.set("payments", JSON.stringify(paymentLines))
@@ -651,7 +667,9 @@ export function PosForm({
       {/* ช่องทางชำระเงิน */}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">ช่องทางชำระเงิน</legend>
-        <input type="hidden" name="payment_method" value={effectivePaymentMethod} />
+        {/* F1: ส่งค่าที่ server จะเขียนจริงที่แถวแรกของบิลชุด (ดูคอมเมนต์ submittedPaymentMethod ด้านบน)
+            แถวรายการเสริม (extras loop ด้านล่าง) copy field นี้จาก formData ตรงๆ จึงได้ค่าเดียวกันอัตโนมัติ */}
+        <input type="hidden" name="payment_method" value={submittedPaymentMethod} />
         <div className="grid grid-cols-3 gap-2">
           {PAYMENT_METHODS.map((m) => (
             <Button

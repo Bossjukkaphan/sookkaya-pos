@@ -256,10 +256,14 @@ export default async function TodayPage({
 
   // สมการรายรับเดียวกับหน้ารายงาน แต่ถอดจากยอด view รายวันล้วนๆ (นิยามใน sale-math):
   //   net_revenue = volume − bonus_used  →  bonus_used = volume − net_revenue
-  //   cash_in = (volume − credit_used) + topup  →  credit_used = volume + topup − cash_in
   // จึงแม่นเสมอแม้รายการด้านล่างโดนตัดที่ ROW_CAP
   const bonusUsedTotal = totalVolume - totalNetRevenue
-  const creditUsedTotal = totalVolume + totalTopup - totalCashIn
+  // F3: "จ่ายด้วยเครดิตสมาชิก" ห้ามถอดจาก identity cash_in = (volume − credit_used) + topup อีกต่อไป
+  // เพราะ cash_in นับตามวันเงินเข้าจริง (received_date) ไม่ใช่วันขาย (sale_date) — บิลค้างรับที่มาจ่าย
+  // ทีหลังจะทำให้ identity เพี้ยน (เช่น ค้างรับ 240 ที่ยังไม่ได้รับเงินจะโผล่เป็น "เครดิต 240" ปลอมๆ ทั้งที่
+  // ไม่มีเครดิตเกี่ยวข้องเลย) ใช้ยอดรวมจากแถวขาย (credit_used) ตรงๆ แทน — ตัวเดียวกับที่ byPayment ด้านล่าง
+  // ใช้โชว์ "Member Credit" (มี ROW_CAP caveat เดียวกัน: โหมดช่วงวันที่รายการเกิน ROW_CAP จะถูกตัด)
+  const creditTotal = rows.reduce((s, r) => s + Number(r.credit_used ?? 0), 0)
   // ต่อยอด waterfall ขึ้นไปถึงมูลค่าเต็มตามเมนู: gross = volume + ส่วนลด
   const totalDiscount = summaryRows.reduce(
     (sum, d) => sum + Number(d.discount_total ?? 0),
@@ -275,7 +279,6 @@ export default async function TodayPage({
   for (const p of paymentLines ?? []) {
     byPayment[p.method] = (byPayment[p.method] ?? 0) + Number(p.amount)
   }
-  const creditTotal = rows.reduce((s, r) => s + Number(r.credit_used ?? 0), 0)
   if (creditTotal > 0) byPayment["Member Credit"] = creditTotal
 
   // โหมดช่วงวัน: จัดกลุ่มตามวัน เพื่อไม่ให้เผลอแก้รายการผิดวัน
@@ -373,7 +376,7 @@ export default async function TodayPage({
             </div>
             <div className="flex justify-between pl-3 text-xs text-slate-500">
               <span>ในนี้จ่ายด้วยเครดิตสมาชิก</span>
-              <span>{formatBaht(creditUsedTotal)}</span>
+              <span>{formatBaht(creditTotal)}</span>
             </div>
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">

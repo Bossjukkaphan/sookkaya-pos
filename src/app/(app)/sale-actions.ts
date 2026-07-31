@@ -355,8 +355,10 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       if (linesError) {
         // เขียนบรรทัดไม่สำเร็จ (RLS/ชั่วคราว) — ถ้าปล่อย payments_tracked=true ค้างไว้ บิลนี้จะโชว์
         // ค้างรับเต็มยอดถาวรใน v_bill_due ทั้งที่ไม่มีใครรู้ ต้องถอนกลับเป็น false (best-effort)
-        // ถอนเฉพาะแถวนี้ — บิลชุด: แถวถัดไปเช็ค isFirstOfBill แล้วจะไม่เจอบรรทัดใน bill_payments เลย
-        // (เพราะ insert ครั้งนี้ล้มทั้งก้อน ไม่มีอะไรถูกเขียนเลยสักแถว) จึงลองเขียนใหม่เองอัตโนมัติที่แถวนั้น
+        // ถอนเฉพาะแถวนี้ (row ปัจจุบัน) — แถวถัดไปของบิลชุดเดียวกันไม่ retry ให้ เพราะส่ง payments="[]"
+        // (parsedLines.lines.length===0 ที่แถวนั้น เงื่อนไข isFirstOfBill && length>0 เลยข้ามไปเฉยๆ)
+        // โอกาสเกิดจริงต่ำ เพราะ insert นี้ใช้ RLS เดียวกับ insert บิล (sales) ที่เพิ่งผ่านไปหมาดๆ ข้างบน
+        // ถ้าพลาดขึ้นจริง ด่าน recon 'bill_overpaid'/'tracked_bill_method_mismatch' จับบิล phantom ค้างรับได้อยู่ดี
         await supabase.from("sales").update({ payments_tracked: false }).eq("id", inserted.id)
         paymentsWarning = "บันทึกบิลแล้ว แต่บันทึกบรรทัดชำระไม่สำเร็จ — ยอดช่องทางอาจไม่ตรง แจ้งผู้ดูแล"
       }

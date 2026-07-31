@@ -8,7 +8,7 @@ import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { createClient } from "@/lib/supabase/client"
 import { allocateCredit } from "@/lib/bill"
-import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount } from "@/lib/payments"
+import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
   MEMBER_CREDIT_METHOD,
   PRIVATE_ROOM_FEE,
@@ -196,6 +196,15 @@ export function GroupPosForm({
   // ค้างรับ ณ ตอนนี้ของบิลชุด (พนักงานลบ/ลดบรรทัดจนรวม < ต้องเก็บ) — โชว์สดในฟอร์ม + เช็คก่อน submit
   const dueNow = mergeBillPaymentLines ? dueAmount(cashDue, mergeBillPaymentLines) : 0
 
+  // F1: server เขียน payment_method ของ "แถวแรก" ของบิลชุดเป็น primaryMethod(lines) เสมอ (sale-actions.ts
+  // linePrimary) แต่แถวที่ 2 เป็นต้นไปส่ง payments="[]" จึงไม่มีบรรทัดให้ derive และ fallback ไปใช้ค่าดิบที่
+  // ส่งมา — ถ้าปุ่มที่กดไม่ตรงกับ "วิธีที่ยอดสูงสุด" ในบรรทัดแบ่งจ่าย (เช่น กดเงินสดแต่บรรทัดเสริมบัตรเครดิต
+  // ยอดสูงกว่า) แถวแรกกับแถวอื่นจะได้ payment_method คนละค่า → recon FAIL ต้องส่งค่าเดียวกับที่ server จะ
+  // เขียนที่แถวแรกไว้ล่วงหน้าให้ทุกแถวของบิลชุด
+  const submittedPaymentMethod = mergeBillPaymentLines
+    ? primaryMethod(mergeBillPaymentLines) ?? effectivePaymentMethod
+    : effectivePaymentMethod
+
   function setPerson(i: number, patch: Partial<(typeof people)[number]>) {
     setPeople((arr) => arr.map((p, j) => (j === i ? { ...p, ...patch } : p)))
   }
@@ -229,6 +238,12 @@ export function GroupPosForm({
       toast.error("เลือกช่องทางชำระเงินก่อน")
       return
     }
+    // F2: บิลชุด (billId) เพดาน server เป็น Infinity โดยตั้งใจ (ดูคอมเมนต์ mustCollect ใน sale-actions.ts)
+    // เพราะแถวแรกยังไม่รู้ยอดรวมของรายการเสริมที่ยังไม่ insert — ฝั่ง client จึงต้องกันเก็บเกินเอง ก่อนยิง network
+    if (dueNow < -0.005) {
+      toast.error("ยอดรับรวมเกินยอดบิล — ตรวจบรรทัดแบ่งจ่าย")
+      return
+    }
     // บิลชุดค้างรับ > 0 (พนักงานลบ/ลดบรรทัดจนรวมไม่ครบ) — ยืนยันก่อนบันทึกว่าตั้งใจปล่อยค้าง
     if (
       isBillChud &&
@@ -250,7 +265,7 @@ export function GroupPosForm({
       const fd = new FormData()
       fd.set("therapist_id", p.therapistId)
       fd.set("service_id", p.serviceId)
-      fd.set("payment_method", effectivePaymentMethod)
+      fd.set("payment_method", submittedPaymentMethod)
       if (perItemCredit[i] > 0) fd.set("credit_requested", String(perItemCredit[i]))
       fd.set("discount", p.discount || "0")
       fd.set("coupon_promo", p.couponPromo)
@@ -280,8 +295,15 @@ export function GroupPosForm({
       } else {
         // กลุ่มหลายคน (คนละบิล จ่ายรวมครั้งเดียว): บิลของแต่ละคน track บรรทัดเดียวของตัวเอง
         // = ยอดที่ต้องเก็บของบิลนั้นเป๊ะ (ปกติไม่มีเครดิตปน — เครดิตกลุ่มใช้ได้เฉพาะบิลชุด mergeBill เท่านั้น)
+        //
+        // F7: กรณี 1 คน + mergeBill + เครดิตครอบคลุมทั้งบิล (fullCredit) — isBillChud ยังเป็น false เพราะ
+        // ต้องมากกว่า 1 คน จึงหลุดมาเข้า branch นี้ทั้งที่ effectivePaymentMethod คือ "Member Credit" (ไม่ใช่
+        // ช่องทางเงินจริงตาม PAYMENT_LINE_METHODS) ถ้าส่ง payments ออกไป parsePaymentLines จะปฏิเสธค่านี้ทันที
+        // → save hard-fail เพิ่ม !fullCredit กันไว้ — เครดิตเต็มบิลไม่มีเงินจริงให้ track เลย server เดินทาง
+        // MEMBER_CREDIT_METHOD หักเครดิตเต็มยอดของแถวนั้นเอง (เหมือนที่ pos-form.tsx ปฏิบัติกับ fullCredit)
         const due = Math.round((nets[i] - perItemCredit[i]) * 100) / 100
-        if (due > 0) fd.set("payments", JSON.stringify([{ method: effectivePaymentMethod, amount: due }]))
+        if (due > 0 && !fullCredit)
+          fd.set("payments", JSON.stringify([{ method: effectivePaymentMethod, amount: due }]))
       }
 
       const r = await createSale(fd)

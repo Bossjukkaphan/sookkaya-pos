@@ -267,6 +267,10 @@ actual(check_name, actual_value) as (
   from public.v_bill_due where due < -0.005
 
   union all
+  -- ผ่านเมื่อ payment_method ตรงกับ "หนึ่งในบรรทัด" ที่ยอดสูงสุดเท่ากัน ไม่ใช่แค่บรรทัดเดียวที่สุ่มได้
+  -- เดิม order by amount desc, created_at asc limit 1 หยิบมาแค่บรรทัดเดียว — บิลชุดที่แบ่งจ่ายเท่ากันเป๊ะ
+  -- (created_at เหมือนกันเพราะ insert ทีเดียวเป็นก้อน จึงเรียงลำดับไม่เที่ยง) จะสุ่มได้ผลลัพธ์คนละบรรทัด
+  -- แล้ว FAIL ทั้งที่ payment_method ถูกต้องอยู่แล้ว (445/445 ที่แบ่งจ่ายเท่ากันเป๊ะพังแบบสุ่ม)
   select 'tracked_bill_method_mismatch', count(*)
   from (
     select d.bill_key
@@ -274,10 +278,10 @@ actual(check_name, actual_value) as (
     join public.sales s on coalesce(s.bill_id, s.id) = d.bill_key
     where d.paid_total > 0
     group by d.bill_key
-    having min(s.payment_method) <> (
-      select p.method from public.bill_payments p
+    having not (min(s.payment_method) = any(
+      select array_agg(p.method) from public.bill_payments p
       where p.bill_key = d.bill_key
-      order by p.amount desc, p.created_at asc limit 1)
+        and p.amount = (select max(p2.amount) from public.bill_payments p2 where p2.bill_key = d.bill_key)))
   ) bad
 )
 select
