@@ -208,14 +208,27 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     return { ok: false, error: "เครดิตที่ตัดเกินยอดบิล กรุณาตรวจสอบ" }
   }
 
+  // บิลชุด (ลูกค้าคนเดียวหลายรายการจ่ายรวม) — ต้องรู้ก่อนตรวจบรรทัดชำระด้านล่าง (ดูคอมเมนต์ mustCollect)
+  // ใช้เป็นกุญแจเขียนบรรทัดชำระร่วมกันทั้งบิลด้วย (ดูจุด insert bill_payments ท้ายฟังก์ชัน)
+  const billId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(formData.get("bill_id") ?? "")
+  )
+    ? String(formData.get("bill_id"))
+    : null
+
   // บรรทัดชำระ (สเปก 2026-08-01): มี field payments = บิลระบบใหม่ (tracked)
   // ไม่มี = โค้ดเก่า/Gowabi/KOL/เครดิตเต็มบิล → พฤติกรรมเดิมทุกอย่าง
   const paymentsRaw = formData.get("payments")
   const wantsTracking =
     paymentsRaw !== null && paymentMethod !== GOWABI_METHOD && paymentMethod !== "KOL"
   const mustCollect = amounts.netAmount - amounts.creditUsed
+  // บิลชุด (billId ไม่ null): client ส่ง payments เป็นยอดรวม "ทั้งบิล" (รายการหลัก+รายการเสริม) มาที่แถว
+  // แรกแถวเดียว แต่ mustCollect ข้างบนรู้แค่ราคาของแถวนี้แถวเดียว (createSale ไม่รู้จักรายการเสริมที่ยังไม่ insert)
+  // เพดาน mustCollect เดิมจึงเตี้ยเกินไปเสมอสำหรับบิลชุดที่มีรายการเสริมยอดจริง → ปฏิเสธทุกบิลชุดที่แบ่งจ่าย
+  // ทางแก้: บิลชุดยกเว้น cap (ตรวจแค่วิธี/จำนวน>0/ไม่เกิน 3 บรรทัดเหมือนเดิม) แล้วให้ด่านหลังบ้านจับยอดเกินแทน
+  // — reconciliation.sql เช็ค 'bill_overpaid' (v_bill_due.due < 0) เป็นตาข่ายรองรับความถูกต้องของยอดรวมทั้งบิล
   const parsedLines: ReturnType<typeof parsePaymentLines> = wantsTracking
-    ? parsePaymentLines(String(paymentsRaw), mustCollect)
+    ? parsePaymentLines(String(paymentsRaw), billId ? Number.POSITIVE_INFINITY : mustCollect)
     : { ok: true, lines: [] }
   if (!parsedLines.ok) return { ok: false, error: parsedLines.error }
   // วิธีหลักจากบรรทัด — บรรทัดว่าง (ค้างรับเต็มยอด/เครดิตเต็มบิล) คงวิธีที่ฟอร์มส่งมา
@@ -259,13 +272,6 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   const saleTime = /^\d{2}:\d{2}$/.test(String(formData.get("sale_time") ?? ""))
     ? String(formData.get("sale_time"))
     : nowTimeInShopTz()
-
-  // บิลชุด (ลูกค้าคนเดียวหลายรายการจ่ายรวม) — ใช้เป็นกุญแจเขียนบรรทัดชำระร่วมกันทั้งบิลด้วย
-  const billId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-    String(formData.get("bill_id") ?? "")
-  )
-    ? String(formData.get("bill_id"))
-    : null
 
   const { data: inserted, error } = await supabase
     .from("sales")

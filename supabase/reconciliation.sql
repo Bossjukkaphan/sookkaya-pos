@@ -95,7 +95,10 @@ with expected(check_name, expected_value) as (values
   --   · 28/7 เตียง 1 ห้องนวดไทย — "จิราพิชญ์" นวดจริงที่เตียง 2 แก้ทั้งการ์ดและบิลแล้ว
   -- ขึ้นเป็น 1 เมื่อไหร่ = มีคนคีย์เวลาหรือเตียงผิด ให้ไล่หาว่าใบไหนแล้วถามพนักงาน
   ('bed_double_booked', 0),
-  ('therapist_double_booked', 0)
+  ('therapist_double_booked', 0),
+
+  -- แบ่งชำระ (สเปก 2026-08-01): บิล track ห้ามรับเกินยอด — ด่านหลังบ้านของการยกเว้น cap ฝั่ง server สำหรับบิลชุด
+  ('bill_overpaid', 0)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -251,6 +254,9 @@ actual(check_name, actual_value) as (
   where nsp.nspname = 'public'
     and c.relkind = 'v'
     and c.reloptions is distinct from array['security_invoker=true']::text[]
+
+  union all
+  select 'bill_overpaid', count(*) from public.v_bill_due where due < -0.005
 )
 select
   e.check_name,

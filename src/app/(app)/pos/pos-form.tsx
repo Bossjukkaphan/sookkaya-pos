@@ -144,6 +144,9 @@ export function PosForm({
   const [creditUseInput, setCreditUseInput] = useState("0")
   // บรรทัดแบ่งจ่ายเพิ่มเติม (บรรทัดแรกคือปุ่มช่องทางหลักเดิม ยอด = ที่เหลือหลังหักบรรทัดเสริม)
   const [extraPayments, setExtraPayments] = useState<{ method: string; amount: string }[]>([])
+  // ยอดบรรทัดหลัก: null = auto (ยอดที่เหลือเป๊ะ) · พนักงานพิมพ์เอง = ตั้งใจรับน้อยกว่า (ค้างรับ) — หนีบไม่ให้เกินยอดที่เหลือ
+  // รีเซ็ตกลับ auto ทุกครั้งที่ฐานคำนวณ (ลูกค้า/เมนู/เครดิต) เปลี่ยน กันเลขค้างซากจากบิลก่อนหน้า
+  const [primaryInput, setPrimaryInput] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const service = useMemo(
@@ -249,9 +252,15 @@ export function PosForm({
     : 0
   const cashDue = Math.round((billTotalNet - creditUse) * 100) / 100
 
-  // แบ่งจ่ายหลายวิธี: บรรทัดแรก (ปุ่มช่องทางหลัก) กินยอดที่เหลือหลังหักบรรทัดเสริมทั้งหมด
+  // แบ่งจ่ายหลายวิธี: บรรทัดแรก (ปุ่มช่องทางหลัก) ปกติกินยอดที่เหลือหลังหักบรรทัดเสริมทั้งหมดอัตโนมัติ
   const extraTotal = extraPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
-  const primaryAmount = Math.max(0, Math.round((cashDue - extraTotal) * 100) / 100)
+  const primaryRemainder = Math.max(0, Math.round((cashDue - extraTotal) * 100) / 100)
+  // primaryInput = null → ใช้ยอดที่เหลือเป๊ะ (พฤติกรรมเดิม) · พนักงานพิมพ์เอง → รับได้น้อยกว่ายอดที่เหลือ
+  // (ตั้งใจปล่อยค้างรับ) แต่พิมพ์เกินยอดที่เหลือไม่ได้ (หนีบไว้ที่ primaryRemainder กันเก็บเกิน)
+  const primaryAmount =
+    primaryInput === null
+      ? primaryRemainder
+      : Math.min(primaryRemainder, Math.max(0, Number(primaryInput) || 0))
 
   // เครดิตใช้บางส่วนแล้วยังไม่ครบบิล — ต้องเก็บเงินจริงส่วนที่เหลือ ช่องทางที่ตัดเครดิตซ้ำ
   // (Member Credit) หรือรับเงินไม่ตรงจากลูกค้า (Gowabi/KOL) เลือกไม่ได้ตอนนี้ (server ก็ปฏิเสธเหมือนกัน)
@@ -314,6 +323,7 @@ export function PosForm({
     setCreditBalance(0)
     setCreditUseInput("0")
     setExtraPayments([])
+    setPrimaryInput(null)
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -465,6 +475,8 @@ export function PosForm({
           value={serviceId}
           onChange={(id) => {
             setServiceId(id)
+            // เปลี่ยนเมนู → ยอดที่เหลือ (cashDue) เปลี่ยน เลิกใช้ตัวเลขบรรทัดหลักที่แก้เองของเมนูก่อน กลับไป auto
+            setPrimaryInput(null)
             if (couponInfo) {
               // บิลแลกแต้ม: ส่วนลดต้องเต็มราคาเมนูที่เลือกเสมอ (เก็บ 0 บาท)
               const svc = services.find((s) => s.id === id)
@@ -510,13 +522,15 @@ export function PosForm({
           setCustomerId(c.id)
           setCustomerName(c.name)
           setCustomerPhone(c.phone ?? "")
-          // เปลี่ยนลูกค้า → เพดานเครดิตเปลี่ยน เลิกใช้ตัวเลขที่แก้เองของลูกค้าคนก่อน กลับไป "0" (ไม่ auto-fill)
+          // เปลี่ยนลูกค้า → เพดานเครดิต/ยอดที่เหลือเปลี่ยน เลิกใช้ตัวเลขที่แก้เองของลูกค้าคนก่อน กลับไป auto
           setCreditUseInput("0")
+          setPrimaryInput(null)
         }}
         onNameChange={(name) => {
           setCustomerName(name)
           setCustomerId("")
           setCreditUseInput("0")
+          setPrimaryInput(null)
         }}
         onPhoneChange={setCustomerPhone}
         onBalanceChange={setCreditBalance}
@@ -535,7 +549,11 @@ export function PosForm({
               inputMode="numeric"
               className="w-28 text-right"
               value={creditUseInput}
-              onChange={(e) => setCreditUseInput(e.target.value)}
+              onChange={(e) => {
+                setCreditUseInput(e.target.value)
+                // เครดิตเปลี่ยน → cashDue เปลี่ยน เลิกใช้ตัวเลขบรรทัดหลักที่แก้เองไว้ก่อนหน้า กลับไป auto
+                setPrimaryInput(null)
+              }}
             />
           </div>
           {/* เริ่มที่ "0" เสมอ — ปุ่มนี้กดแล้วค่อยเติมเพดานให้ (สเปก 2026-08-01 เลิก auto-fill) */}
@@ -543,7 +561,10 @@ export function PosForm({
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => setCreditUseInput(String(creditCap))}
+            onClick={() => {
+              setCreditUseInput(String(creditCap))
+              setPrimaryInput(null)
+            }}
           >
             ใช้เครดิต (เหลือ {formatBaht(creditBalance)} ฿)
           </Button>
@@ -661,6 +682,7 @@ export function PosForm({
                 if (m === GOWABI_METHOD || m === "KOL") {
                   setCreditUseInput("0")
                   setExtraPayments([])
+                  setPrimaryInput(null)
                 }
                 setPaymentMethod(m)
               }}
@@ -731,12 +753,27 @@ export function PosForm({
               + แบ่งจ่ายอีกวิธี
             </Button>
           )}
+          {/* บรรทัดหลัก — ปกติเป็นยอดที่เหลือ auto พิมพ์เองได้ถ้าตั้งใจรับน้อยกว่า (ค้างรับ) พิมพ์เกินยอดที่เหลือไม่ได้ (หนีบ) */}
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-sm font-medium">{effectivePaymentMethod || "—"}</span>
+            <Input
+              inputMode="numeric"
+              className="h-10 w-28 text-right"
+              aria-label="ยอดบรรทัดหลัก"
+              value={primaryInput ?? String(primaryRemainder)}
+              onChange={(e) => setPrimaryInput(e.target.value)}
+              onBlur={() => {
+                // เศษสตางค์/พิมพ์เกินยอดที่เหลือ — ปัดให้ตรงกับยอดจริงที่จะถูกส่ง (เหมือน discount onBlur)
+                if (primaryInput === null) return
+                setPrimaryInput(String(primaryAmount))
+              }}
+            />
+          </div>
           <p className="text-sm">
-            {effectivePaymentMethod || "—"} {formatBaht(primaryAmount)} ฿
             {extraPayments
               .filter((p) => Number(p.amount) > 0)
-              .map((p) => ` + ${p.method} ${formatBaht(Number(p.amount))} ฿`)
-              .join("")}
+              .map((p) => `+ ${p.method} ${formatBaht(Number(p.amount))} ฿`)
+              .join(" ")}
             {dueNow > 0 && (
               <span className="ml-1 font-medium text-red-600">
                 · ค้างรับ {formatBaht(dueNow)} ฿
