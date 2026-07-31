@@ -553,13 +553,12 @@ export function PosForm({
         requireMember={isMemberCredit}
       />
 
-      {/* แบ่งชำระด้วยเครดิตสมาชิก — โชว์เฉพาะเลือกลูกค้าที่มีเครดิต + ไม่ใช่ Gowabi/KOL/คูปองแลกแต้ม */}
-      {canUseCredit && (
+      {/* กล่องแก้ยอดเครดิตบางส่วน — โผล่หลังกดปุ่ม "เครดิต" ในแถวช่องทาง (แบบ ThaiHand)
+          ลูกค้าขอเก็บเครดิตไว้บางส่วน → แก้ตัวเลขตรงนี้ */}
+      {canUseCredit && creditUse > 0 && (
         <div className="rounded-lg border bg-amber-50/50 p-3 space-y-1">
           <div className="flex items-center justify-between gap-3">
-            <Label htmlFor="credit_use">
-              ใช้เครดิตสมาชิก (มี {creditBalance.toLocaleString()} บาท)
-            </Label>
+            <Label htmlFor="credit_use">ยอดเครดิตที่ใช้ (แก้ได้)</Label>
             <Input
               id="credit_use"
               inputMode="numeric"
@@ -572,18 +571,6 @@ export function PosForm({
               }}
             />
           </div>
-          {/* เริ่มที่ "0" เสมอ — ปุ่มนี้กดแล้วค่อยเติมเพดานให้ (สเปก 2026-08-01 เลิก auto-fill) */}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              setCreditUseInput(String(creditCap))
-              setPrimaryInput(null)
-            }}
-          >
-            ใช้เครดิต (เหลือ {formatBaht(creditBalance)} ฿)
-          </Button>
           <p className="text-sm font-medium">
             {cashDue > 0 ? (
               <>
@@ -671,50 +658,61 @@ export function PosForm({
             แถวรายการเสริม (extras loop ด้านล่าง) copy field นี้จาก formData ตรงๆ จึงได้ค่าเดียวกันอัตโนมัติ */}
         <input type="hidden" name="payment_method" value={submittedPaymentMethod} />
         <div className="grid grid-cols-3 gap-2">
-          {PAYMENT_METHODS.map((m) => (
-            <Button
-              key={m}
-              type="button"
-              variant="outline"
-              // ตอนถูกเลือกใช้สีประจำช่องทาง (ชุดเดียวกับ badge ทุกหน้า) แทนดำล้วน
-              // จะได้เห็นแวบเดียวว่ากดช่องทางไหนไป และจำสีไปอ่านหน้ารายงานต่อได้
-              className={cn(
-                "h-12 text-xs sm:text-sm",
-                effectivePaymentMethod === m && (PAY_SELECTED[m] ?? PAY_SELECTED_DEFAULT)
-              )}
-              // แบ่งชำระเครดิตบางส่วนค้างอยู่ (เก็บเพิ่ม > 0) — เปลี่ยนไปช่องทางที่ตัดเครดิตซ้ำ
-              // หรือรับเงินไม่ตรงจากลูกค้าไม่ได้ (server ก็ปฏิเสธเหมือนกัน) ต้องลดเครดิตเป็น 0 ก่อน
-              disabled={
-                partialCreditActive &&
-                (m === MEMBER_CREDIT_METHOD || m === GOWABI_METHOD || m === "KOL")
-              }
-              onClick={() => {
-                // ช่องนี้เปลี่ยนความหมายระหว่าง "รหัสจอง Gowabi" กับ "ชื่อโปรโมชั่น"
-                // ถ้าไม่ล้างค่าเดิม ค่าที่ค้างจะถูกบันทึกข้ามประเภทกันโดยไม่มีอะไรเตือน
-                if ((m === GOWABI_METHOD) !== isGowabi) {
-                  setCouponPromo("")
-                  setCustomPromo(false)
-                }
-                // Gowabi/KOL ใช้ร่วมกับเครดิตสมาชิกไม่ได้ (server ปฏิเสธ) — ล้างเครดิตที่กรอกไว้ทิ้ง
-                // และเลิก track บรรทัดชำระ (server ไม่รับ field payments กับสองช่องทางนี้) — ล้างบรรทัดเสริมด้วย
-                if (m === GOWABI_METHOD || m === "KOL") {
-                  setCreditUseInput("0")
-                  setExtraPayments([])
-                  setPrimaryInput(null)
-                }
-                setPaymentMethod(m)
-              }}
-              aria-pressed={effectivePaymentMethod === m}
-            >
-              <span
+          {PAYMENT_METHODS.map((m) => {
+            // ปุ่ม Member Credit = ปุ่ม "ใช้เครดิต" แบบ ThaiHand (แพ็กเกจเป็นตัวเลือกหนึ่งในแถว
+            // เดียวกัน) — กดสลับใช้/ไม่ใช้เครดิต ไม่ใช่เลือกเป็นช่องทางตรงๆ · เครดิตพอทั้งบิล
+            // ระบบตั้งช่องทางจริงเป็น Member Credit ให้เอง (fullCredit เดิม)
+            const isCreditToggle = m === MEMBER_CREDIT_METHOD
+            const creditActive = isCreditToggle && creditUse > 0
+            const selected = isCreditToggle ? creditActive : effectivePaymentMethod === m
+            return (
+              <Button
+                key={m}
+                type="button"
+                variant="outline"
                 className={cn(
-                  "mr-1 inline-block h-2 w-2 shrink-0 rounded-full",
-                  effectivePaymentMethod === m ? "bg-white/80" : (PAY_DOT[m] ?? PAY_DOT_DEFAULT)
+                  "h-12 text-xs sm:text-sm",
+                  selected && (PAY_SELECTED[m] ?? PAY_SELECTED_DEFAULT)
                 )}
-              />
-              {m}
-            </Button>
-          ))}
+                disabled={isCreditToggle && !canUseCredit}
+                onClick={() => {
+                  if (isCreditToggle) {
+                    // สลับใช้เครดิต: กดครั้งแรกเติมเต็มเพดาน · กดซ้ำเลิกใช้ (แก้ยอดบางส่วนได้ในกล่องด้านล่าง)
+                    setCreditUseInput(creditActive ? "0" : String(creditCap))
+                    setPrimaryInput(null)
+                    return
+                  }
+                  // ช่องนี้เปลี่ยนความหมายระหว่าง "รหัสจอง Gowabi" กับ "ชื่อโปรโมชั่น"
+                  // ถ้าไม่ล้างค่าเดิม ค่าที่ค้างจะถูกบันทึกข้ามประเภทกันโดยไม่มีอะไรเตือน
+                  if ((m === GOWABI_METHOD) !== isGowabi) {
+                    setCouponPromo("")
+                    setCustomPromo(false)
+                  }
+                  // Gowabi/KOL ใช้ร่วมกับเครดิตสมาชิกไม่ได้ (server ปฏิเสธ) — ล้างเครดิตที่กรอกไว้ทิ้ง
+                  // และเลิก track บรรทัดชำระ (server ไม่รับ field payments กับสองช่องทางนี้) — ล้างบรรทัดเสริมด้วย
+                  if (m === GOWABI_METHOD || m === "KOL") {
+                    setCreditUseInput("0")
+                    setExtraPayments([])
+                    setPrimaryInput(null)
+                  }
+                  setPaymentMethod(m)
+                }}
+                aria-pressed={selected}
+              >
+                <span
+                  className={cn(
+                    "mr-1 inline-block h-2 w-2 shrink-0 rounded-full",
+                    selected ? "bg-white/80" : (PAY_DOT[m] ?? PAY_DOT_DEFAULT)
+                  )}
+                />
+                {isCreditToggle
+                  ? canUseCredit
+                    ? `เครดิต (${formatBaht(creditBalance)})`
+                    : "เครดิตสมาชิก"
+                  : m}
+              </Button>
+            )
+          })}
         </div>
       </fieldset>
 
@@ -787,17 +785,66 @@ export function PosForm({
               }}
             />
           </div>
-          <p className="text-sm">
-            {extraPayments
-              .filter((p) => Number(p.amount) > 0)
-              .map((p) => `+ ${p.method} ${formatBaht(Number(p.amount))} ฿`)
-              .join(" ")}
-            {dueNow > 0 && (
-              <span className="ml-1 font-medium text-red-600">
-                · ค้างรับ {formatBaht(dueNow)} ฿
+        </div>
+      )}
+
+      {/* สรุปการชำระแบบลิสต์รวม (ตามแบบ ThaiHand) — เห็นทุกก้อนเงินในที่เดียวก่อนกดบันทึก */}
+      {!isGowabi && !isKol && billTotalNet > 0 && (
+        <div className="space-y-1 rounded-lg border bg-slate-50 p-3 text-sm">
+          <div className="flex justify-between font-medium">
+            <span>ยอดรวมสุทธิ</span>
+            <span>{formatBaht(billTotalNet)} ฿</span>
+          </div>
+          {creditUse > 0 && (
+            <div className="flex items-center justify-between text-amber-800">
+              <span className="flex items-center gap-1">
+                เครดิตเมมเบอร์
+                <button
+                  type="button"
+                  aria-label="เลิกใช้เครดิต"
+                  className="text-red-500"
+                  onClick={() => {
+                    setCreditUseInput("0")
+                    setPrimaryInput(null)
+                  }}
+                >
+                  🗑
+                </button>
               </span>
+              <span>−{formatBaht(creditUse)} ฿</span>
+            </div>
+          )}
+          {!fullCredit &&
+            (paymentLines ?? []).map((l, i) => (
+              <div key={i} className="flex items-center justify-between text-slate-600">
+                <span className="flex items-center gap-1">
+                  แบ่งจ่ายครั้งที่ {i + 1} ({l.method})
+                  {/* บรรทัดเสริมลบได้จากลิสต์เลย (บรรทัดแรกคือช่องทางหลัก แก้ที่ปุ่ม/ช่องยอดข้างบน) */}
+                  {i > 0 && (
+                    <button
+                      type="button"
+                      aria-label={`ลบแบ่งจ่ายครั้งที่ ${i + 1}`}
+                      className="text-red-500"
+                      onClick={() => setExtraPayments((a) => a.filter((_, j) => j !== i - 1))}
+                    >
+                      🗑
+                    </button>
+                  )}
+                </span>
+                <span>{formatBaht(l.amount)} ฿</span>
+              </div>
+            ))}
+          <div
+            className={cn(
+              "flex justify-between border-t pt-1 font-semibold",
+              fullCredit || dueNow <= 0 ? "text-emerald-700" : "text-red-600"
             )}
-          </p>
+          >
+            <span>เหลือยอดที่ต้องชำระ</span>
+            <span>
+              {fullCredit ? "0 ฿ — ชำระด้วยเครดิตครบแล้ว" : dueNow <= 0 ? "0 ฿ — ครบแล้ว" : `${formatBaht(dueNow)} ฿`}
+            </span>
+          </div>
         </div>
       )}
 
