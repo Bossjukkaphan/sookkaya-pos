@@ -69,18 +69,22 @@ create view public.v_bill_payments with (security_invoker = true) as
 
 -- ยอดค้างรับต่อบิล (เฉพาะบิลที่ track): due = net รวม − เครดิตรวม − รับแล้ว
 create view public.v_bill_due with (security_invoker = true) as
+with agg as (
   select coalesce(s.bill_id, s.id) as bill_key,
          min(s.sale_date) as sale_date,
          sum(s.net_amount) as net_total,
-         sum(coalesce(s.credit_used,0)) as credit_total,
-         coalesce((select sum(p.amount) from public.bill_payments p
-                   where p.bill_key = coalesce(s.bill_id, s.id)), 0) as paid_total,
-         sum(s.net_amount) - sum(coalesce(s.credit_used,0))
-           - coalesce((select sum(p.amount) from public.bill_payments p
-                       where p.bill_key = coalesce(s.bill_id, s.id)), 0) as due
+         sum(coalesce(s.credit_used,0)) as credit_total
   from public.sales s
   where s.payments_tracked
-  group by coalesce(s.bill_id, s.id);
+  group by coalesce(s.bill_id, s.id)
+)
+select a.bill_key, a.sale_date, a.net_total, a.credit_total,
+       coalesce(p.paid_total, 0) as paid_total,
+       a.net_total - a.credit_total - coalesce(p.paid_total, 0) as due
+from agg a
+left join (select bill_key, sum(amount) as paid_total
+           from public.bill_payments group by bill_key) p
+  on p.bill_key = a.bill_key;
 ```
 
 ## 2. Server actions

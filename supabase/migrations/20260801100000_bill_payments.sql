@@ -22,10 +22,10 @@ create index bill_payments_received_date_idx on public.bill_payments (received_d
 alter table public.sales add column payments_tracked boolean not null default false;
 
 alter table public.bill_payments enable row level security;
-create policy "authenticated read bill_payments" on public.bill_payments
-  for select to authenticated using (true);
-create policy "authenticated insert bill_payments" on public.bill_payments
-  for insert to authenticated with check (true);
+create policy "staff read bill_payments" on public.bill_payments
+  for select to authenticated using (public.app_role() in ('admin','manager','staff'));
+create policy "staff insert bill_payments" on public.bill_payments
+  for insert to authenticated with check (public.app_role() in ('admin','manager','staff'));
 -- ลบได้เฉพาะหัวหน้า — แนวเดียวกับสิทธิ์ลบบิล (app_role() มาจาก migration สิทธิ์เดิม)
 create policy "manager delete bill_payments" on public.bill_payments
   for delete to authenticated using (public.app_role() in ('admin','manager'));
@@ -43,15 +43,19 @@ create view public.v_bill_payments with (security_invoker = true) as
 
 -- ยอดค้างรับต่อบิล (เฉพาะบิลที่ track): due = net รวม − เครดิตรวม − รับแล้ว
 create view public.v_bill_due with (security_invoker = true) as
+with agg as (
   select coalesce(s.bill_id, s.id) as bill_key,
          min(s.sale_date) as sale_date,
          sum(s.net_amount) as net_total,
-         sum(coalesce(s.credit_used,0)) as credit_total,
-         coalesce((select sum(p.amount) from public.bill_payments p
-                   where p.bill_key = coalesce(s.bill_id, s.id)), 0) as paid_total,
-         sum(s.net_amount) - sum(coalesce(s.credit_used,0))
-           - coalesce((select sum(p.amount) from public.bill_payments p
-                       where p.bill_key = coalesce(s.bill_id, s.id)), 0) as due
+         sum(coalesce(s.credit_used,0)) as credit_total
   from public.sales s
   where s.payments_tracked
-  group by coalesce(s.bill_id, s.id);
+  group by coalesce(s.bill_id, s.id)
+)
+select a.bill_key, a.sale_date, a.net_total, a.credit_total,
+       coalesce(p.paid_total, 0) as paid_total,
+       a.net_total - a.credit_total - coalesce(p.paid_total, 0) as due
+from agg a
+left join (select bill_key, sum(amount) as paid_total
+           from public.bill_payments group by bill_key) p
+  on p.bill_key = a.bill_key;
