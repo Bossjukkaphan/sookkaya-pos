@@ -22,6 +22,8 @@ export type SaleResult =
       receiptNo: string
       /** เครดิตคงเหลือหลังบิลนี้ — มีค่าเฉพาะบิลที่จ่ายด้วยเครดิตสมาชิก */
       creditAfter: number | null
+      /** บันทึกบิลสำเร็จแต่มีบางอย่างพลาด (เช่น เขียนบรรทัดชำระไม่สำเร็จ) — ไม่ถึงขั้นล้มทั้งบิล แต่พนักงานควรรู้ */
+      warning?: string
     }
   | { ok: false; error: string }
 
@@ -321,6 +323,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
   // เขียนบรรทัดชำระครั้งเดียวต่อบิล — บิลชุด (bill_id ซ้ำกันหลายแถว) ให้แถวแรกของบิลเป็นผู้เขียน
   // แถวถัดไปของบิลเดียวกันเช็คแล้วพบบรรทัดของ bill_key นี้อยู่แล้ว จึงข้าม ไม่เขียนซ้ำ
+  let paymentsWarning: string | undefined
   if (wantsTracking) {
     const billKey = billId ?? inserted.id
     const isFirstOfBill =
@@ -334,7 +337,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
           .maybeSingle()
       ).data
     if (isFirstOfBill && parsedLines.lines.length > 0) {
-      await supabase.from("bill_payments").insert(
+      const { error: linesError } = await supabase.from("bill_payments").insert(
         parsedLines.lines.map((l) => ({
           bill_key: billKey,
           method: l.method,
@@ -343,6 +346,14 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
           created_by: profile?.full_name ?? user.email ?? null,
         }))
       )
+      if (linesError) {
+        // เขียนบรรทัดไม่สำเร็จ (RLS/ชั่วคราว) — ถ้าปล่อย payments_tracked=true ค้างไว้ บิลนี้จะโชว์
+        // ค้างรับเต็มยอดถาวรใน v_bill_due ทั้งที่ไม่มีใครรู้ ต้องถอนกลับเป็น false (best-effort)
+        // ถอนเฉพาะแถวนี้ — บิลชุด: แถวถัดไปเช็ค isFirstOfBill แล้วจะไม่เจอบรรทัดใน bill_payments เลย
+        // (เพราะ insert ครั้งนี้ล้มทั้งก้อน ไม่มีอะไรถูกเขียนเลยสักแถว) จึงลองเขียนใหม่เองอัตโนมัติที่แถวนั้น
+        await supabase.from("sales").update({ payments_tracked: false }).eq("id", inserted.id)
+        paymentsWarning = "บันทึกบิลแล้ว แต่บันทึกบรรทัดชำระไม่สำเร็จ — ยอดช่องทางอาจไม่ตรง แจ้งผู้ดูแล"
+      }
     }
   }
 
@@ -429,7 +440,12 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   revalidatePath("/")
   revalidatePath("/commission")
 
-  return { ok: true, receiptNo: inserted.receipt_no ?? "", creditAfter }
+  return {
+    ok: true,
+    receiptNo: inserted.receipt_no ?? "",
+    creditAfter,
+    warning: paymentsWarning,
+  }
 }
 
 export type SalePointsImpact = {

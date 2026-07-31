@@ -250,6 +250,7 @@ export function GroupPosForm({
         if (receipts.length > 0) router.refresh()
         return
       }
+      if (r.warning) toast.warning(r.warning)
       receipts.push(r.receiptNo)
     }
     setSavingIndex(null)

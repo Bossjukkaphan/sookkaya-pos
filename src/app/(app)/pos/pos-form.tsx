@@ -326,6 +326,7 @@ export function PosForm({
         toast.error(result.error)
         return
       }
+      if (result.warning) toast.warning(result.warning)
 
       let okCount = 1
       let creditAfter = result.creditAfter
@@ -362,6 +363,7 @@ export function PosForm({
         if (r.ok) {
           okCount++
           if (r.creditAfter !== null) creditAfter = r.creditAfter
+          if (r.warning) toast.warning(r.warning)
         } else {
           failedItems.push(i + 2)
           toast.error(`รายการที่ ${i + 2}: ${r.error}`)
