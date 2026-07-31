@@ -12,6 +12,7 @@ import {
 } from "../sale-actions"
 import {
   EditSaleButton,
+  type BillPaymentLine,
   type EditableSale,
   type MemberBalance,
   type Promotion,
@@ -37,6 +38,9 @@ export function SaleRowActions({
   promotions,
   balance,
   currentTherapistName,
+  payments,
+  due,
+  canDeletePayments,
   label,
 }: {
   sale: EditableSale
@@ -45,6 +49,9 @@ export function SaleRowActions({
   promotions: Promotion[]
   balance: MemberBalance | null
   currentTherapistName: string | null
+  payments: BillPaymentLine[]
+  due: number
+  canDeletePayments: boolean
   label: string
 }) {
   return (
@@ -56,6 +63,9 @@ export function SaleRowActions({
         promotions={promotions}
         balance={balance}
         currentTherapistName={currentTherapistName}
+        payments={payments}
+        due={due}
+        canDeletePayments={canDeletePayments}
       />
       <DeleteSaleButton id={sale.id} label={label} />
     </div>

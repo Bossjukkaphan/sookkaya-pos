@@ -6,6 +6,8 @@ import { Pencil } from "lucide-react"
 import { toast } from "sonner"
 
 import { updateSale } from "../sale-actions"
+import { deleteBillPayment } from "../payment-actions"
+import { CollectDueDialog } from "../collect-due-dialog"
 import { CustomerPicker } from "../pos/customer-picker"
 import { computeSaleAmounts } from "@/lib/sale-math"
 import {
@@ -42,9 +44,19 @@ export type MemberBalance = {
   cash_paid: number
 }
 
+/** บรรทัดชำระของบิล (bill_payments) — บิลเก่า/Gowabi/KOL ไม่ track จึงไม่มีบรรทัดให้แสดง */
+export type BillPaymentLine = {
+  id: string
+  method: string
+  amount: number
+  received_date: string
+}
+
 /** ข้อมูลรายการขายเท่าที่ฟอร์มแก้ไขต้องใช้ — แปลง numeric ของ postgres เป็น number มาแล้ว */
 export type EditableSale = {
   id: string
+  /** บิลชุด (หลายรายการจ่ายรวม) — ว่าง = บิลเดี่ยว กุญแจบรรทัดชำระคือ bill_id ?? id เสมอ */
+  bill_id: string | null
   receipt_no: string | null
   sale_time: string | null
   service_id: string | null
@@ -77,6 +89,9 @@ export function EditSaleButton({
   promotions,
   balance,
   currentTherapistName,
+  payments,
+  due,
+  canDeletePayments,
 }: {
   sale: EditableSale
   therapists: Therapist[]
@@ -86,6 +101,12 @@ export function EditSaleButton({
   balance: MemberBalance | null
   /** ชื่อหมอของรายการนี้ เผื่อหมอลาออกไปแล้วและไม่อยู่ในรายชื่อที่ใช้งานอยู่ */
   currentTherapistName: string | null
+  /** บรรทัดชำระของบิลนี้ (bill_payments) — ว่าง = บิลไม่ได้ track (เก่า/Gowabi/KOL/เครดิตเต็มบิล) */
+  payments: BillPaymentLine[]
+  /** ค้างรับของบิลนี้ (v_bill_due) — บวก = ค้างรับ · ลบ = เก็บเกิน · 0 = ครบ */
+  due: number
+  /** ลบบรรทัดชำระได้เฉพาะ role หัวหน้า (admin/manager) — server เช็คซ้ำอยู่แล้วแต่ซ่อนปุ่มให้ */
+  canDeletePayments: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -120,6 +141,9 @@ export function EditSaleButton({
               promotions={promotions}
               balance={balance}
               currentTherapistName={currentTherapistName}
+              payments={payments}
+              due={due}
+              canDeletePayments={canDeletePayments}
               onDone={() => setOpen(false)}
             />
           )}
@@ -136,6 +160,9 @@ function EditSaleForm({
   promotions,
   balance,
   currentTherapistName,
+  payments,
+  due,
+  canDeletePayments,
   onDone,
 }: {
   sale: EditableSale
@@ -144,10 +171,33 @@ function EditSaleForm({
   promotions: Promotion[]
   balance: MemberBalance | null
   currentTherapistName: string | null
+  payments: BillPaymentLine[]
+  due: number
+  canDeletePayments: boolean
   onDone: () => void
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
+  // กุญแจบิลของบรรทัดชำระ (ดู migration 20260801100000_bill_payments.sql): บิลชุดใช้ bill_id · บิลเดี่ยวใช้ id ตัวเอง
+  const billKey = sale.bill_id ?? sale.id
+  // แยก transition จากปุ่มบันทึกหลัก — ลบบรรทัดชำระไม่ควรทำให้ปุ่ม "บันทึกการแก้ไข" ค้างคำว่ากำลังบันทึก
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
+  const [paymentPending, startPaymentTransition] = useTransition()
+
+  function handleDeletePayment(p: BillPaymentLine) {
+    if (!window.confirm(`ลบบรรทัดชำระ ${p.method} ${formatBaht(p.amount)} ฿?`)) return
+    setDeletingPaymentId(p.id)
+    startPaymentTransition(async () => {
+      const r = await deleteBillPayment(p.id)
+      setDeletingPaymentId(null)
+      if (r.ok) {
+        toast.success("ลบบรรทัดชำระแล้ว")
+        router.refresh()
+      } else {
+        toast.error(r.error ?? "ลบไม่สำเร็จ")
+      }
+    })
+  }
 
   const [therapistId, setTherapistId] = useState(sale.therapist_id ?? "")
   const [serviceId, setServiceId] = useState(sale.service_id ?? "")
@@ -567,6 +617,54 @@ function EditSaleForm({
           </span>
         </CardContent>
       </Card>
+
+      {/* บรรทัดชำระของบิล (bill_payments) — เฉพาะบิลที่ track (บิลเก่า/Gowabi/KOL/เครดิตเต็มบิล ไม่มีบรรทัดให้แสดง) */}
+      {(payments.length > 0 || due !== 0) && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-medium">บรรทัดชำระของบิล</p>
+            {due > 0.001 ? (
+              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                ค้างรับ {formatBaht(due)} ฿
+              </span>
+            ) : due < -0.001 ? (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                เกินรับ {formatBaht(Math.abs(due))} ฿
+              </span>
+            ) : (
+              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                รับครบแล้ว
+              </span>
+            )}
+          </div>
+          {payments.length > 0 && (
+            <ul className="space-y-1">
+              {payments.map((p) => (
+                <li key={p.id} className="flex items-center justify-between text-sm">
+                  <span className="text-slate-600">
+                    {p.method} · {formatBaht(p.amount)} ฿ · {p.received_date}
+                  </span>
+                  {canDeletePayments && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600"
+                      disabled={paymentPending && deletingPaymentId === p.id}
+                      onClick={() => handleDeletePayment(p)}
+                    >
+                      {paymentPending && deletingPaymentId === p.id ? "กำลังลบ..." : "ลบ"}
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {due > 0.001 && (
+            <CollectDueDialog billKey={billKey} due={due} onDone={() => router.refresh()} />
+          )}
+        </div>
+      )}
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>

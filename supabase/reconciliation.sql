@@ -95,7 +95,12 @@ with expected(check_name, expected_value) as (values
   --   · 28/7 เตียง 1 ห้องนวดไทย — "จิราพิชญ์" นวดจริงที่เตียง 2 แก้ทั้งการ์ดและบิลแล้ว
   -- ขึ้นเป็น 1 เมื่อไหร่ = มีคนคีย์เวลาหรือเตียงผิด ให้ไล่หาว่าใบไหนแล้วถามพนักงาน
   ('bed_double_booked', 0),
-  ('therapist_double_booked', 0)
+  ('therapist_double_booked', 0),
+
+  -- บรรทัดชำระ (สเปก 2026-08-01): บรรทัดต้องมีบิลจริง · เกินรับต้องศูนย์เมื่อพัก · วิธีหลักตรงบรรทัด
+  ('bill_payments_orphaned', 0),
+  ('bill_overpaid', 0),
+  ('tracked_bill_method_mismatch', 0)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -251,6 +256,33 @@ actual(check_name, actual_value) as (
   where nsp.nspname = 'public'
     and c.relkind = 'v'
     and c.reloptions is distinct from array['security_invoker=true']::text[]
+
+  union all
+  select 'bill_payments_orphaned', count(*)
+  from public.bill_payments p
+  where not exists (select 1 from public.sales s where coalesce(s.bill_id, s.id) = p.bill_key)
+
+  union all
+  select 'bill_overpaid', count(*)
+  from public.v_bill_due where due < -0.005
+
+  union all
+  -- ผ่านเมื่อ payment_method ตรงกับ "หนึ่งในบรรทัด" ที่ยอดสูงสุดเท่ากัน ไม่ใช่แค่บรรทัดเดียวที่สุ่มได้
+  -- เดิม order by amount desc, created_at asc limit 1 หยิบมาแค่บรรทัดเดียว — บิลชุดที่แบ่งจ่ายเท่ากันเป๊ะ
+  -- (created_at เหมือนกันเพราะ insert ทีเดียวเป็นก้อน จึงเรียงลำดับไม่เที่ยง) จะสุ่มได้ผลลัพธ์คนละบรรทัด
+  -- แล้ว FAIL ทั้งที่ payment_method ถูกต้องอยู่แล้ว (445/445 ที่แบ่งจ่ายเท่ากันเป๊ะพังแบบสุ่ม)
+  select 'tracked_bill_method_mismatch', count(*)
+  from (
+    select d.bill_key
+    from public.v_bill_due d
+    join public.sales s on coalesce(s.bill_id, s.id) = d.bill_key
+    where d.paid_total > 0
+    group by d.bill_key
+    having min(s.payment_method) not in (
+      select p.method from public.bill_payments p
+      where p.bill_key = d.bill_key
+        and p.amount = (select max(p2.amount) from public.bill_payments p2 where p2.bill_key = d.bill_key))
+  ) bad
 )
 select
   e.check_name,

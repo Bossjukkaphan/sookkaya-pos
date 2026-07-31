@@ -108,6 +108,7 @@ export function QueueBoard({
   checkedInTherapistIds,
   turnAwayCount,
   autoOpenAdd = false,
+  dueBySaleId,
 }: {
   therapists: Therapist[]
   services: ServiceOption[]
@@ -120,6 +121,10 @@ export function QueueBoard({
   turnAwayCount: number
   /** มาจากปุ่ม "จองล่วงหน้า" หน้าบันทึกขาย — เปิดฟอร์มเพิ่มคิวให้เลย */
   autoOpenAdd?: boolean
+  /** ค้างรับของบิลที่ผูกกับการ์ดจ่ายแล้ว (sale_id → due) — โหลดเป็น batch จากหน้า page.tsx
+   * ไม่รีเฟรชตาม realtime ของ queue_entries (เก็บเงินเพิ่มไม่ได้แก้ queue_entries) —
+   * พนักงานไปกดเก็บเพิ่มที่ /today หรือ /history แทน ที่นี่มีแค่ชิพเตือน */
+  dueBySaleId: Record<string, number>
 }) {
   // มีข้อมูลเช็คอินของวันนั้นเมื่อไหร่ ค่อยบังคับ — วันที่ยังไม่ติ๊กเลย เปิดทุกแถวตามเดิม
   const hasCheckinData = checkedInTherapistIds.length > 0
@@ -581,6 +586,7 @@ export function QueueBoard({
                           ? entries.filter((s) => s.group_id === e.group_id).length
                           : 1
                       }
+                      due={e.sale_id ? (dueBySaleId[e.sale_id] ?? 0) : 0}
                       nowMin={nowMin}
                       isToday={isToday}
                       boardDateIsPast={boardDateIsPast}

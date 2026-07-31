@@ -12,6 +12,7 @@ import {
   PRIVATE_ROOM_FEE,
 } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
+import { parsePaymentLines, primaryMethod } from "@/lib/payments"
 import { pointExpiryDate, pointsForSale } from "@/lib/points"
 import { queueMirrorFromSale } from "@/lib/queue"
 
@@ -21,6 +22,8 @@ export type SaleResult =
       receiptNo: string
       /** เครดิตคงเหลือหลังบิลนี้ — มีค่าเฉพาะบิลที่จ่ายด้วยเครดิตสมาชิก */
       creditAfter: number | null
+      /** บันทึกบิลสำเร็จแต่มีบางอย่างพลาด (เช่น เขียนบรรทัดชำระไม่สำเร็จ) — ไม่ถึงขั้นล้มทั้งบิล แต่พนักงานควรรู้ */
+      warning?: string
     }
   | { ok: false; error: string }
 
@@ -205,6 +208,33 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     return { ok: false, error: "เครดิตที่ตัดเกินยอดบิล กรุณาตรวจสอบ" }
   }
 
+  // บิลชุด (ลูกค้าคนเดียวหลายรายการจ่ายรวม) — ต้องรู้ก่อนตรวจบรรทัดชำระด้านล่าง (ดูคอมเมนต์ mustCollect)
+  // ใช้เป็นกุญแจเขียนบรรทัดชำระร่วมกันทั้งบิลด้วย (ดูจุด insert bill_payments ท้ายฟังก์ชัน)
+  const billId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+    String(formData.get("bill_id") ?? "")
+  )
+    ? String(formData.get("bill_id"))
+    : null
+
+  // บรรทัดชำระ (สเปก 2026-08-01): มี field payments = บิลระบบใหม่ (tracked)
+  // ไม่มี = โค้ดเก่า/Gowabi/KOL/เครดิตเต็มบิล → พฤติกรรมเดิมทุกอย่าง
+  const paymentsRaw = formData.get("payments")
+  const wantsTracking =
+    paymentsRaw !== null && paymentMethod !== GOWABI_METHOD && paymentMethod !== "KOL"
+  const mustCollect = amounts.netAmount - amounts.creditUsed
+  // บิลชุด (billId ไม่ null): client ส่ง payments เป็นยอดรวม "ทั้งบิล" (รายการหลัก+รายการเสริม) มาที่แถว
+  // แรกแถวเดียว แต่ mustCollect ข้างบนรู้แค่ราคาของแถวนี้แถวเดียว (createSale ไม่รู้จักรายการเสริมที่ยังไม่ insert)
+  // เพดาน mustCollect เดิมจึงเตี้ยเกินไปเสมอสำหรับบิลชุดที่มีรายการเสริมยอดจริง → ปฏิเสธทุกบิลชุดที่แบ่งจ่าย
+  // ทางแก้: บิลชุดยกเว้น cap (ตรวจแค่วิธี/จำนวน>0/ไม่เกิน 3 บรรทัดเหมือนเดิม) แล้วให้ด่านหลังบ้านจับยอดเกินแทน
+  // — reconciliation.sql เช็ค 'bill_overpaid' (v_bill_due.due < 0) เป็นตาข่ายรองรับความถูกต้องของยอดรวมทั้งบิล
+  const parsedLines: ReturnType<typeof parsePaymentLines> = wantsTracking
+    ? parsePaymentLines(String(paymentsRaw), billId ? Number.POSITIVE_INFINITY : mustCollect)
+    : { ok: true, lines: [] }
+  if (!parsedLines.ok) return { ok: false, error: parsedLines.error }
+  // วิธีหลักจากบรรทัด — บรรทัดว่าง (ค้างรับเต็มยอด/เครดิตเต็มบิล) คงวิธีที่ฟอร์มส่งมา
+  const linePrimary = wantsTracking ? primaryMethod(parsedLines.lines) : null
+  if (linePrimary) paymentMethod = linePrimary
+
   // แบ่งจ่ายที่ขอตัดเครดิตพอดีเต็มบิล (creditUsed === netAmount) แต่ช่องทางที่เลือกยังเป็นเงินจริง
   // (เช่น QR) — ต้อง normalize เป็น "Member Credit" เพื่อรักษากติกาเดิม "Member Credit = เครดิตเต็มบิล
   // เท่านั้น" ที่ข้อมูลเก่า/รายงานพึ่งพาไว้แปะป้ายช่องทาง ไม่งั้นบิลจะถูกนับเป็นช่องทางเงินจริงทั้งที่ไม่มี
@@ -276,11 +306,9 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
         ? String(formData.get("group_id"))
         : null,
       // บิลชุด (ลูกค้าคนเดียวหลายรายการจ่ายรวม) — ไม่กระทบสูตรเงินเช่นกัน
-      bill_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-        String(formData.get("bill_id") ?? "")
-      )
-        ? String(formData.get("bill_id"))
-        : null,
+      bill_id: billId,
+      // บรรทัดชำระ (สเปก 2026-08-01): มี field payments (แม้ "[]") และไม่ใช่ Gowabi/KOL → tracked
+      payments_tracked: wantsTracking,
       // metadata ของบิล (ที่มา/ช่องทางย่อย/เตียง/หมายเหตุ) — ไม่กระทบสูตรเงิน
       // ค่าเพี้ยนจาก client เก่า → null (ไม่ทราบ) ดีกว่าเดาผิด
       source: (() => {
@@ -298,6 +326,44 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .single()
 
   if (error) return { ok: false, error: `บันทึกไม่สำเร็จ: ${error.message}` }
+
+  // เขียนบรรทัดชำระครั้งเดียวต่อบิล — บิลชุด (bill_id ซ้ำกันหลายแถว) ให้แถวแรกของบิลเป็นผู้เขียน
+  // แถวถัดไปของบิลเดียวกันเช็คแล้วพบบรรทัดของ bill_key นี้อยู่แล้ว จึงข้าม ไม่เขียนซ้ำ
+  let paymentsWarning: string | undefined
+  if (wantsTracking) {
+    const billKey = billId ?? inserted.id
+    const isFirstOfBill =
+      !billId ||
+      !(
+        await supabase
+          .from("bill_payments")
+          .select("id")
+          .eq("bill_key", billKey)
+          .limit(1)
+          .maybeSingle()
+      ).data
+    if (isFirstOfBill && parsedLines.lines.length > 0) {
+      const { error: linesError } = await supabase.from("bill_payments").insert(
+        parsedLines.lines.map((l) => ({
+          bill_key: billKey,
+          method: l.method,
+          amount: l.amount,
+          received_date: todayInShopTz(),
+          created_by: profile?.full_name ?? user.email ?? null,
+        }))
+      )
+      if (linesError) {
+        // เขียนบรรทัดไม่สำเร็จ (RLS/ชั่วคราว) — ถ้าปล่อย payments_tracked=true ค้างไว้ บิลนี้จะโชว์
+        // ค้างรับเต็มยอดถาวรใน v_bill_due ทั้งที่ไม่มีใครรู้ ต้องถอนกลับเป็น false (best-effort)
+        // ถอนเฉพาะแถวนี้ (row ปัจจุบัน) — แถวถัดไปของบิลชุดเดียวกันไม่ retry ให้ เพราะส่ง payments="[]"
+        // (parsedLines.lines.length===0 ที่แถวนั้น เงื่อนไข isFirstOfBill && length>0 เลยข้ามไปเฉยๆ)
+        // โอกาสเกิดจริงต่ำ เพราะ insert นี้ใช้ RLS เดียวกับ insert บิล (sales) ที่เพิ่งผ่านไปหมาดๆ ข้างบน
+        // ถ้าพลาดขึ้นจริง ด่าน recon 'bill_overpaid'/'tracked_bill_method_mismatch' จับบิล phantom ค้างรับได้อยู่ดี
+        await supabase.from("sales").update({ payments_tracked: false }).eq("id", inserted.id)
+        paymentsWarning = "บันทึกบิลแล้ว แต่บันทึกบรรทัดชำระไม่สำเร็จ — ยอดช่องทางอาจไม่ตรง แจ้งผู้ดูแล"
+      }
+    }
+  }
 
   // แต้มสะสม: บิลผูกลูกค้า + จ่ายจริง → ทุก 100฿ = 1 แต้ม (เครดิตสมาชิกได้ตอนเติมไปแล้ว)
   await syncSalePoints(supabase, {
@@ -382,7 +448,12 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   revalidatePath("/")
   revalidatePath("/commission")
 
-  return { ok: true, receiptNo: inserted.receipt_no ?? "", creditAfter }
+  return {
+    ok: true,
+    receiptNo: inserted.receipt_no ?? "",
+    creditAfter,
+    warning: paymentsWarning,
+  }
 }
 
 export type SalePointsImpact = {
@@ -442,7 +513,7 @@ export async function deleteSale(
 
   const { data: existing } = await supabase
     .from("sales")
-    .select("sale_date, customer_id")
+    .select("sale_date, customer_id, bill_id")
     .eq("id", id)
     .single()
 
@@ -466,6 +537,18 @@ export async function deleteSale(
   const { error } = await supabase.from("sales").delete().eq("id", id)
 
   if (error) return { ok: false, error: error.message }
+
+  // แถวสุดท้ายของบิลถูกลบ → บรรทัดชำระของบิลต้องไปด้วย (กัน orphan)
+  // bill_key เดียวกับที่ createSale ใช้เขียน: บิลชุดใช้ bill_id · บิลเดี่ยวใช้ id ตัวเอง
+  const billKey = existing.bill_id ?? id
+  const { data: remain } = await supabase
+    .from("sales")
+    .select("id")
+    .or(`bill_id.eq.${billKey},id.eq.${billKey}`)
+    .limit(1)
+  if (!remain || remain.length === 0) {
+    await supabase.from("bill_payments").delete().eq("bill_key", billKey)
+  }
 
   // แต้มบิลนี้ถูกถอนไปพร้อมการลบ (FK cascade) — ถ้ายอดลูกค้าติดลบต้องบอกพนักงาน
   const warning = await pointsWarningAfterSync(supabase, existing.customer_id)

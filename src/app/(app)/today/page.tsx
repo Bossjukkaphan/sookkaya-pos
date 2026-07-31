@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
 import { billTotal, groupSalesByBill } from "@/lib/bill"
@@ -9,6 +10,7 @@ import { MONEY_INFO } from "@/lib/money-info"
 import { Button } from "@/components/ui/button"
 import { SaleRowActions } from "./sale-row-actions"
 import type {
+  BillPaymentLine,
   EditableSale,
   MemberBalance,
   Promotion,
@@ -26,6 +28,7 @@ import {
 } from "@/lib/payment-colors"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { DueBadge } from "../due-badge"
 
 export const metadata = { title: "ยอดขาย · สุขกายา POS" }
 
@@ -60,11 +63,13 @@ export default async function TodayPage({
     { data: sales },
     { data: therapists },
     { data: dailySummary },
+    { data: paymentLines },
     { data: therapistDaily },
     { data: services },
     { data: promotions },
     { data: memberBalances },
     { data: topups },
+    profile,
   ] = await Promise.all([
     supabase
       .from("sales")
@@ -81,6 +86,14 @@ export default async function TodayPage({
       .select("sale_date, sessions, volume, net_revenue, cash_in, discount_total")
       .gte("sale_date", from)
       .lte("sale_date", to),
+    // เงินจริงตามบรรทัดชำระ (บิลเก่า/Gowabi/KOL ถูก view สังเคราะห์ให้เป็นบรรทัดเดียวเท่าสูตรเดิม) —
+    // กรองด้วย received_date (วันเงินเข้าจริง) ไม่ใช่ sale_date เพื่อให้บิลค้างรับที่มาจ่ายวันหลัง
+    // ขึ้นในวันที่จ่ายจริง ไม่ใช่วันบิล
+    supabase
+      .from("v_bill_payments")
+      .select("bill_key, method, amount")
+      .gte("received_date", from)
+      .lte("received_date", to),
     supabase
       .from("v_therapist_daily")
       .select("work_date, therapist_id, sessions, request_fee, total_income")
@@ -109,11 +122,54 @@ export default async function TodayPage({
       .gte("topup_date", from)
       .lte("topup_date", to)
       .order("topup_date", { ascending: false }),
+    // ลบบรรทัดชำระได้เฉพาะหัวหน้า — ใช้เช็คสิทธิ์ในหน้านี้เท่านั้น server action เช็คซ้ำเสมอ
+    getMyProfile(),
   ])
+  const canDeletePayments = profile?.role === "admin" || profile?.role === "manager"
 
   const rows = sales ?? []
   const truncated = rows.length === ROW_CAP
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
+
+  // บรรทัดชำระของบิล (bill_payments) + ยอดค้างรับ (v_bill_due) ของบิลที่แสดงอยู่ในหน้านี้ —
+  // ต้องรู้ bill_key (bill_id ?? id) จาก rows ก่อน จึงดึงเป็นรอบสองต่อจาก sales (เหมือน topupCustomers ด้านล่าง)
+  // ไม่ query รายแถว กันยิง N+1 ไปที่ view/ตารางนี้
+  // ไม่กรองด้วย editable — ป้ายค้างรับต้องขึ้นแม้เดือนก่อนที่แก้ไม่ได้แล้ว (บิลยังค้างเงินจริงอยู่)
+  const billKeys = [...new Set(rows.map((s) => String(s.bill_id ?? s.id)))]
+  const [{ data: billPayments }, { data: billDues }] = billKeys.length
+    ? await Promise.all([
+        supabase
+          .from("bill_payments")
+          .select("id, bill_key, method, amount, received_date")
+          .in("bill_key", billKeys)
+          .order("received_at"),
+        supabase.from("v_bill_due").select("bill_key, due").in("bill_key", billKeys),
+      ])
+    : [{ data: [] }, { data: [] }]
+
+  const paymentsByBillKey = new Map<string, BillPaymentLine[]>()
+  for (const p of billPayments ?? []) {
+    const key = String(p.bill_key)
+    const arr = paymentsByBillKey.get(key) ?? []
+    arr.push({
+      id: p.id,
+      method: p.method,
+      amount: Number(p.amount),
+      received_date: String(p.received_date),
+    })
+    paymentsByBillKey.set(key, arr)
+  }
+  const dueByBillKey = new Map<string, number>(
+    (billDues ?? []).map((d) => [String(d.bill_key), Number(d.due)])
+  )
+
+  // การ์ดเตือนรวมของหัวหน้า (admin/manager) — นับเฉพาะบิลที่ "ค้างรับ" จริง (due>0)
+  // ไม่นับบิลเกินรับ (due<0) เพราะไม่ใช่เงินที่ต้องตามเก็บ · มาจากบิลใน rows หน้านี้เท่านั้น
+  // (เหมือน byPayment ด้านล่าง — ถ้าโดนตัดที่ ROW_CAP ยอดนี้ก็อาจไม่ครบเช่นกัน)
+  const dueSummary = [...dueByBillKey.values()].reduce(
+    (acc, due) => (due > 0.005 ? { count: acc.count + 1, total: acc.total + due } : acc),
+    { count: 0, total: 0 }
+  )
 
   // ตัวเลือกในฟอร์มแก้ไขใช้เฉพาะหมอที่ยังทำงานอยู่ ส่วนการแสดงผลใช้ map ด้านบนที่ครบทุกคน
   const activeTherapists: Therapist[] = (therapists ?? [])
@@ -136,6 +192,9 @@ export default async function TodayPage({
     services: (services ?? []) as Service[],
     promotions: (promotions ?? []) as Promotion[],
     balanceByCustomer,
+    paymentsByBillKey,
+    dueByBillKey,
+    canDeletePayments,
   }
 
   // ยอดสรุปทุกตัวเป็นผลรวมของยอดรายวัน จึงบวกข้ามวันได้ตรงๆ ไม่ซ้ำซ้อน
@@ -197,10 +256,14 @@ export default async function TodayPage({
 
   // สมการรายรับเดียวกับหน้ารายงาน แต่ถอดจากยอด view รายวันล้วนๆ (นิยามใน sale-math):
   //   net_revenue = volume − bonus_used  →  bonus_used = volume − net_revenue
-  //   cash_in = (volume − credit_used) + topup  →  credit_used = volume + topup − cash_in
   // จึงแม่นเสมอแม้รายการด้านล่างโดนตัดที่ ROW_CAP
   const bonusUsedTotal = totalVolume - totalNetRevenue
-  const creditUsedTotal = totalVolume + totalTopup - totalCashIn
+  // F3: "จ่ายด้วยเครดิตสมาชิก" ห้ามถอดจาก identity cash_in = (volume − credit_used) + topup อีกต่อไป
+  // เพราะ cash_in นับตามวันเงินเข้าจริง (received_date) ไม่ใช่วันขาย (sale_date) — บิลค้างรับที่มาจ่าย
+  // ทีหลังจะทำให้ identity เพี้ยน (เช่น ค้างรับ 240 ที่ยังไม่ได้รับเงินจะโผล่เป็น "เครดิต 240" ปลอมๆ ทั้งที่
+  // ไม่มีเครดิตเกี่ยวข้องเลย) ใช้ยอดรวมจากแถวขาย (credit_used) ตรงๆ แทน — ตัวเดียวกับที่ byPayment ด้านล่าง
+  // ใช้โชว์ "Member Credit" (มี ROW_CAP caveat เดียวกัน: โหมดช่วงวันที่รายการเกิน ROW_CAP จะถูกตัด)
+  const creditTotal = rows.reduce((s, r) => s + Number(r.credit_used ?? 0), 0)
   // ต่อยอด waterfall ขึ้นไปถึงมูลค่าเต็มตามเมนู: gross = volume + ส่วนลด
   const totalDiscount = summaryRows.reduce(
     (sum, d) => sum + Number(d.discount_total ?? 0),
@@ -210,15 +273,13 @@ export default async function TodayPage({
 
   // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
   // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
-  // แบ่งชำระ: เงินจริงเข้าช่องทางของบิล เครดิตเข้าช่อง Member Credit
-  // บิลเก่าถูกอัตโนมัติ: บิลปกติ credit_used=0 · บิลเครดิตเต็ม credit_used=net (พิสูจน์บน production แล้ว)
-  const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
-    const credit = Number(s.credit_used ?? 0)
-    const cash = Number(s.net_amount) - credit
-    if (cash !== 0) acc[s.payment_method] = (acc[s.payment_method] ?? 0) + cash
-    if (credit !== 0) acc["Member Credit"] = (acc["Member Credit"] ?? 0) + credit
-    return acc
-  }, {})
+  // เงินจริงตามบรรทัดชำระ (บิลเก่า view สังเคราะห์ให้เท่าสูตรเดิมเป๊ะ) + เครดิตจาก credit_used เหมือนเดิม —
+  // ช่วงเดียวกับ dailySummary/paymentLines ด้านบน (received_date ไม่ใช่ sale_date)
+  const byPayment: Record<string, number> = {}
+  for (const p of paymentLines ?? []) {
+    byPayment[p.method] = (byPayment[p.method] ?? 0) + Number(p.amount)
+  }
+  if (creditTotal > 0) byPayment["Member Credit"] = creditTotal
 
   // โหมดช่วงวัน: จัดกลุ่มตามวัน เพื่อไม่ให้เผลอแก้รายการผิดวัน
   const byDate: { date: string; rows: typeof rows }[] = []
@@ -263,6 +324,19 @@ export default async function TodayPage({
         </Card>
       )}
 
+      {/* การ์ดเตือนรวมค้างรับ — เห็นเฉพาะหัวหน้า (admin/manager) ให้ตามทวงเงิน
+          ป้ายค้างรับต่อบิลด้านล่างเห็นได้ทุก role — พนักงานเป็นคนกดเก็บเพิ่มจริง */}
+      {canDeletePayments && dueSummary.count > 0 && (
+        <Card className="border-red-300 bg-red-50">
+          <CardContent className="py-3 text-sm text-red-900">
+            <span className="font-semibold">
+              บิลค้างรับ{isSingleDay ? "วันนี้" : "ในช่วงนี้"} {dueSummary.count} ใบ
+            </span>{" "}
+            รวม {formatBaht(dueSummary.total)} ฿
+          </CardContent>
+        </Card>
+      )}
+
       {/* คู่การ์ดหลักสไตล์เดียวกับหน้ารายงาน: รายรับ (เขียว) · เงินเข้าจริง (ม่วง)
           ทุกตัวเลขมาจาก view รายวัน ไม่ใช่รายการด้านล่างที่อาจถูกตัดเพดาน */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -302,7 +376,7 @@ export default async function TodayPage({
             </div>
             <div className="flex justify-between pl-3 text-xs text-slate-500">
               <span>ในนี้จ่ายด้วยเครดิตสมาชิก</span>
-              <span>{formatBaht(creditUsedTotal)}</span>
+              <span>{formatBaht(creditTotal)}</span>
             </div>
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">
@@ -618,6 +692,7 @@ export default async function TodayPage({
 
 type SaleRecord = {
   id: string
+  bill_id: string | null
   sale_time: string | null
   receipt_no: string | null
   service_id: string | null
@@ -647,6 +722,9 @@ type EditOptions = {
   services: Service[]
   promotions: Promotion[]
   balanceByCustomer: Map<string, MemberBalance>
+  paymentsByBillKey: Map<string, BillPaymentLine[]>
+  dueByBillKey: Map<string, number>
+  canDeletePayments: boolean
 }
 
 function SaleRow({
@@ -665,11 +743,14 @@ function SaleRow({
   const commission = Number(s.commission ?? 0)
   const requestFee = Number(s.request_fee ?? 0)
   const roomFee = Number(s.room_fee ?? 0)
+  const billKey = String(s.bill_id ?? s.id)
+  const due = editOptions.dueByBillKey.get(billKey) ?? 0
 
   // numeric ของ postgres มาเป็น string — แปลงให้ครบก่อนส่งเข้าฟอร์ม
   // ไม่งั้นการบวกในกล่องแก้ไขจะกลายเป็นการต่อสตริง
   const editableSale: EditableSale = {
     id: s.id,
+    bill_id: s.bill_id,
     receipt_no: s.receipt_no,
     sale_time: s.sale_time,
     service_id: s.service_id,
@@ -733,6 +814,7 @@ function SaleRow({
               ลด {formatBaht(discount)} ฿{s.coupon_promo ? ` (${s.coupon_promo})` : ""}
             </span>
           )}
+          <DueBadge billKey={billKey} due={due} />
         </div>
 
         {s.notes && <p className="text-xs text-slate-400">📝 {s.notes}</p>}
@@ -755,6 +837,9 @@ function SaleRow({
             }
             currentTherapistName={therapistName.get(s.therapist_id ?? "") ?? null}
             label={`${s.service_name} ${formatBaht(netAmount)} บาท`}
+            payments={editOptions.paymentsByBillKey.get(billKey) ?? []}
+            due={due}
+            canDeletePayments={editOptions.canDeletePayments}
           />
         )}
       </div>

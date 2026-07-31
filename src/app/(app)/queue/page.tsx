@@ -67,6 +67,37 @@ export default async function QueuePage({
     .select("id", { count: "exact", head: true })
     .eq("queue_date", boardDate)
 
+  // ค้างรับต่อการ์ด (เฉพาะการ์ดที่จ่ายแล้วและผูกบิลขาย) — โหลดเป็น batch เดียวจากบิลของวันนี้เท่านั้น
+  // ห้าม query ต่อการ์ด: การ์ดคิวมีเป็นสิบใบต่อวัน ยิงทีละใบจะช้าและถล่ม DB โดยไม่จำเป็น
+  const paidSaleIds = [
+    ...new Set(
+      (entries ?? [])
+        .filter((e) => e.status === "paid" && e.sale_id)
+        .map((e) => e.sale_id as string)
+    ),
+  ]
+  const dueBySaleId: Record<string, number> = {}
+  if (paidSaleIds.length) {
+    const { data: paidSales } = await supabase
+      .from("sales")
+      .select("id, bill_id")
+      .in("id", paidSaleIds)
+    const billKeyBySaleId = new Map(
+      (paidSales ?? []).map((s) => [s.id, String(s.bill_id ?? s.id)])
+    )
+    const billKeys = [...new Set(billKeyBySaleId.values())]
+    const { data: billDues } = billKeys.length
+      ? await supabase.from("v_bill_due").select("bill_key, due").in("bill_key", billKeys)
+      : { data: [] }
+    const dueByBillKey = new Map(
+      (billDues ?? []).map((d) => [String(d.bill_key), Number(d.due)])
+    )
+    for (const saleId of paidSaleIds) {
+      const billKey = billKeyBySaleId.get(saleId)
+      dueBySaleId[saleId] = billKey ? (dueByBillKey.get(billKey) ?? 0) : 0
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* ถูกพากลับมาจากหน้าบันทึกขายเดิม — บอกขั้นตอนใหม่ให้ชัดว่าต้องเริ่มจากคิว */}
@@ -108,6 +139,7 @@ export default async function QueuePage({
           .filter((id): id is string => Boolean(id))}
         turnAwayCount={turnAwayCount ?? 0}
         autoOpenAdd={params.add === "1"}
+        dueBySaleId={dueBySaleId}
       />
     </div>
   )

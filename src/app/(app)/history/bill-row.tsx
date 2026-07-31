@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 
 import { formatBaht } from "@/lib/constants"
 import {
@@ -11,6 +12,9 @@ import {
 } from "@/lib/customer-source"
 import { PAY_COLOR, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { formatThaiDate } from "@/lib/datetime"
+import { DueChip } from "../due-badge"
+import { CollectDueDialog } from "../collect-due-dialog"
+import type { BillPaymentLine } from "../today/edit-sale-dialog"
 import {
   Dialog,
   DialogContent,
@@ -81,8 +85,21 @@ function Row({ label, value }: { label: string; value: string | null }) {
   )
 }
 
-export function BillRow({ bill }: { bill: BillRecord }) {
+export function BillRow({
+  bill,
+  payments,
+  due,
+}: {
+  bill: BillRecord
+  /** บรรทัดชำระของบิลนี้ (bill_payments) — ว่าง = บิลไม่ได้ track (เก่า/Gowabi/KOL/เครดิตเต็มบิล) */
+  payments: BillPaymentLine[]
+  /** ค้างรับของบิลนี้ (v_bill_due) — บวก = ค้างรับ · ลบ = เก็บเกิน · 0 = ครบ */
+  due: number
+}) {
   const [open, setOpen] = useState(false)
+  const router = useRouter()
+  // กุญแจบิลของบรรทัดชำระ (ดู migration 20260801100000_bill_payments.sql): บิลชุดใช้ bill_id · บิลเดี่ยวใช้ id ตัวเอง
+  const billKey = bill.bill_id ?? bill.id
 
   const sourceLabel =
     bill.source && isCustomerSource(bill.source)
@@ -121,6 +138,9 @@ export function BillRow({ bill }: { bill: BillRecord }) {
         >
           {bill.payment_method}
         </span>
+        {/* ป้ายเฉยๆ ไม่มีปุ่ม — ทั้งแถวเป็น <button> อยู่แล้ว ห้ามซ้อนปุ่มเก็บเพิ่มในนี้
+            (กดเก็บเพิ่มได้จริงในกล่องรายละเอียดที่เปิดจากแถวนี้ด้านล่าง) */}
+        <DueChip due={due} />
         <span className="shrink-0 text-base font-bold whitespace-nowrap text-emerald-800">
           {formatBaht(bill.net_amount)} ฿
         </span>
@@ -193,6 +213,40 @@ export function BillRow({ bill }: { bill: BillRecord }) {
               label="รายได้รับรู้ (P&L)"
               value={`${formatBaht(bill.revenue_recognize)} ฿`}
             />
+
+            {/* บรรทัดชำระของบิล (bill_payments) — บิลเก่า/Gowabi/KOL/เครดิตเต็มบิล ไม่ track จึงไม่มีอะไรให้แสดง */}
+            {(payments.length > 0 || Math.abs(due) > 0.001) && (
+              <div className="my-2 space-y-2 rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">บรรทัดชำระของบิล</p>
+                  {due > 0.001 ? (
+                    <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+                      ค้างรับ {formatBaht(due)} ฿
+                    </span>
+                  ) : due < -0.001 ? (
+                    <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700">
+                      เกินรับ {formatBaht(Math.abs(due))} ฿
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                      รับครบแล้ว
+                    </span>
+                  )}
+                </div>
+                {payments.length > 0 && (
+                  <ul className="space-y-1">
+                    {payments.map((p) => (
+                      <li key={p.id} className="text-sm text-slate-600">
+                        {p.method} · {formatBaht(p.amount)} ฿ · {p.received_date}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {due > 0.001 && (
+                  <CollectDueDialog billKey={billKey} due={due} onDone={() => router.refresh()} />
+                )}
+              </div>
+            )}
 
             <div className="my-2 border-t" />
 

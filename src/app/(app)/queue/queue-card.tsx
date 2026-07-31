@@ -217,6 +217,7 @@ export function QueueCard({
   siblings,
   groupSize = 1,
   bedConflict = false,
+  due = 0,
   nowMin,
   isToday,
   boardDateIsPast = false,
@@ -238,6 +239,9 @@ export function QueueCard({
   bedConflict?: boolean
   /** จำนวนคนทั้งกลุ่มของการ์ดนี้ (นับตัวเองด้วย) — 1 = มาคนเดียว */
   groupSize?: number
+  /** ค้างรับของบิลที่ผูกกับการ์ดนี้ (v_bill_due ผ่าน sale_id) — มีความหมายเฉพาะการ์ดที่จ่ายแล้ว
+   * (status==="paid") การ์ดเล็กเกินจะโชว์ปุ่มเก็บเพิ่ม — พนักงานไปกดที่ /today หรือ /history แทน */
+  due?: number
   /** นาทีปัจจุบัน (เวลาไทย) — ใช้เช็คคำขอค้าง (pending) ที่เลยเวลานัดแล้ว */
   nowMin: number
   isToday: boolean
@@ -418,6 +422,13 @@ export function QueueCard({
                 }`}
               >
                 {derived.paid ? "ชำระแล้ว" : "ค้างจ่าย"}
+              </span>
+            )}
+            {/* บิลนี้ "ชำระแล้ว" ในหน้าคิว แต่ยังมีค้างรับจริง (ต่อเวลา/แก้ยอดหลังปิดบิล) —
+                การ์ดเล็กเกินจะโชว์จำนวนเงิน/ปุ่มเก็บเพิ่ม พนักงานไปกดที่ /today หรือ /history แทน */}
+            {entry.status === "paid" && due > 0.005 && (
+              <span className="rounded border border-red-400 bg-red-100 px-1 text-[10px] font-medium text-red-700">
+                ค้างรับ
               </span>
             )}
           </p>

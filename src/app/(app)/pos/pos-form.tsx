@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { checkPointCoupon, createSale, type CouponCheck } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { allocateCredit } from "@/lib/bill"
+import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
@@ -138,9 +139,14 @@ export function PosForm({
   const [couponInfo, setCouponInfo] = useState<(CouponCheck & { ok: true }) | null>(null)
   const [checkingCoupon, setCheckingCoupon] = useState(false)
   // แบ่งชำระ: เครดิตสมาชิกของลูกค้าที่เลือก (มาจาก CustomerPicker) + ค่าที่พนักงานแก้เอง
-  // null = ยังไม่แตะ ใช้ค่าอัตโนมัติ (min(เครดิต, ยอดบิล))
   const [creditBalance, setCreditBalance] = useState(0)
-  const [creditUseInput, setCreditUseInput] = useState<string | null>(null)
+  // เริ่ม "0" เสมอ — ไม่ auto-fill เพดานเครดิตให้แล้ว (สเปก 2026-08-01) พนักงานต้องกดปุ่ม "ใช้เครดิต" เอง
+  const [creditUseInput, setCreditUseInput] = useState("0")
+  // บรรทัดแบ่งจ่ายเพิ่มเติม (บรรทัดแรกคือปุ่มช่องทางหลักเดิม ยอด = ที่เหลือหลังหักบรรทัดเสริม)
+  const [extraPayments, setExtraPayments] = useState<{ method: string; amount: string }[]>([])
+  // ยอดบรรทัดหลัก: null = auto (ยอดที่เหลือเป๊ะ) · พนักงานพิมพ์เอง = ตั้งใจรับน้อยกว่า (ค้างรับ) — หนีบไม่ให้เกินยอดที่เหลือ
+  // รีเซ็ตกลับ auto ทุกครั้งที่ฐานคำนวณ (ลูกค้า/เมนู/เครดิต) เปลี่ยน กันเลขค้างซากจากบิลก่อนหน้า
+  const [primaryInput, setPrimaryInput] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
   const service = useMemo(
@@ -242,12 +248,19 @@ export function PosForm({
     Boolean(customerId) && creditBalance > 0 && !isGowabi && !isKol && !couponInfo
   const creditCap = Math.min(creditBalance, billTotalNet)
   const creditUse = canUseCredit
-    ? Math.min(
-        creditUseInput === null ? creditCap : Math.max(0, Number(creditUseInput) || 0),
-        creditCap
-      )
+    ? Math.min(Math.max(0, Number(creditUseInput) || 0), creditCap)
     : 0
   const cashDue = Math.round((billTotalNet - creditUse) * 100) / 100
+
+  // แบ่งจ่ายหลายวิธี: บรรทัดแรก (ปุ่มช่องทางหลัก) ปกติกินยอดที่เหลือหลังหักบรรทัดเสริมทั้งหมดอัตโนมัติ
+  const extraTotal = extraPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0)
+  const primaryRemainder = Math.max(0, Math.round((cashDue - extraTotal) * 100) / 100)
+  // primaryInput = null → ใช้ยอดที่เหลือเป๊ะ (พฤติกรรมเดิม) · พนักงานพิมพ์เอง → รับได้น้อยกว่ายอดที่เหลือ
+  // (ตั้งใจปล่อยค้างรับ) แต่พิมพ์เกินยอดที่เหลือไม่ได้ (หนีบไว้ที่ primaryRemainder กันเก็บเกิน)
+  const primaryAmount =
+    primaryInput === null
+      ? primaryRemainder
+      : Math.min(primaryRemainder, Math.max(0, Number(primaryInput) || 0))
 
   // เครดิตใช้บางส่วนแล้วยังไม่ครบบิล — ต้องเก็บเงินจริงส่วนที่เหลือ ช่องทางที่ตัดเครดิตซ้ำ
   // (Member Credit) หรือรับเงินไม่ตรงจากลูกค้า (Gowabi/KOL) เลือกไม่ได้ตอนนี้ (server ก็ปฏิเสธเหมือนกัน)
@@ -269,6 +282,31 @@ export function PosForm({
     : isMemberCredit
       ? MEMBER_CREDIT_METHOD
       : paymentMethod
+
+  // เครดิตครอบคลุมทั้งบิล → ไม่มีเงินจริงให้ track เป็นบรรทัดชำระ (เหมือน Gowabi/KOL — server ก็ไม่รับ field payments)
+  const fullCredit = isMemberCredit
+
+  // บรรทัดชำระที่จะส่งจริง — undefined = ไม่ส่ง field "payments" เลย (Gowabi/KOL/เครดิตเต็มบิล คงพฤติกรรม
+  // untracked เดิม) · บิลเงินจริงปกติส่งเสมอแม้บรรทัดเดียว เพื่อให้บิลนี้เข้า tracked (payments_tracked=true)
+  const paymentLines: { method: string; amount: number }[] | undefined =
+    isGowabi || isKol || fullCredit
+      ? undefined
+      : [
+          { method: effectivePaymentMethod, amount: primaryAmount },
+          ...extraPayments.map((p) => ({ method: p.method, amount: Number(p.amount) || 0 })),
+        ].filter((l) => l.amount > 0)
+
+  // ค้างรับ ณ ตอนนี้ (ถ้าพนักงานลบ/ลดบรรทัดจนรวม < ต้องเก็บ) — ใช้ทั้งโชว์สดในฟอร์มและเช็คก่อน submit
+  const dueNow = paymentLines ? dueAmount(cashDue, paymentLines) : 0
+
+  // F1: server เขียน payment_method ของ "แถวแรก" ของบิลชุดเป็น primaryMethod(lines) เสมอ (sale-actions.ts
+  // linePrimary) แต่แถวที่ 2 เป็นต้นไปส่ง payments="[]" (ไม่มีบรรทัดให้ derive) จึง fallback ไปใช้ค่าดิบที่
+  // ฟอร์มส่งมา — ถ้าปุ่มที่กดไม่ตรงกับ "วิธีที่ยอดสูงสุด" ในบรรทัดแบ่งจ่าย (เช่น กดเงินสดแต่บรรทัดเสริมบัตร
+  // เครดิตยอดสูงกว่า) แถวแรกกับแถวอื่นจะได้ payment_method คนละค่า → recon FAIL (bill_overpaid/mismatch)
+  // ต้องคำนวณค่าเดียวกับที่ server จะเขียนที่แถวแรกไว้ล่วงหน้า แล้วส่งค่านี้ให้ทุกแถวของบิลชุด
+  const submittedPaymentMethod = paymentLines
+    ? primaryMethod(paymentLines) ?? effectivePaymentMethod
+    : effectivePaymentMethod
 
   function resetForm() {
     setTherapistId("")
@@ -292,7 +330,9 @@ export function PosForm({
     setCouponInfo(null)
     setCouponCode("")
     setCreditBalance(0)
-    setCreditUseInput(null)
+    setCreditUseInput("0")
+    setExtraPayments([])
+    setPrimaryInput(null)
   }
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -318,6 +358,22 @@ export function PosForm({
     const perItemCredit = allocateCredit(nets, isMemberCredit ? 0 : creditUse)
     formData.set("credit_requested", String(perItemCredit[0]))
 
+    // F2: บิลชุด (billId) เพดาน server เป็น Infinity โดยตั้งใจ (ดูคอมเมนต์ mustCollect ใน sale-actions.ts)
+    // เพราะแถวแรกยังไม่รู้ยอดรวมของรายการเสริมที่ยังไม่ insert — ฝั่ง client จึงต้องกันเก็บเกินเอง ก่อนยิง network
+    if (dueNow < -0.005) {
+      toast.error("ยอดรับรวมเกินยอดบิล — ตรวจบรรทัดแบ่งจ่าย")
+      return
+    }
+
+    // บิลเงินจริง (ไม่ใช่ Gowabi/KOL/เครดิตเต็มบิล) → ส่ง field "payments" เสมอ (แม้บรรทัดเดียว) ให้เข้า tracked
+    if (paymentLines) formData.set("payments", JSON.stringify(paymentLines))
+
+    // ค้างรับ > 0 (พนักงานลบ/ลดบรรทัดจนรวมไม่ครบ) — ยืนยันก่อนบันทึกว่าตั้งใจปล่อยค้าง
+    // (โปรเจกต์นี้ยังไม่มี confirm dialog component กลาง — window.confirm พอสำหรับรอบแรก)
+    if (dueNow > 0 && !window.confirm(`บันทึกแบบค้างรับ ${dueNow} ฿? ลูกค้าจะจ่ายส่วนนี้ทีหลัง`)) {
+      return
+    }
+
     startTransition(async () => {
       // บิลชุด: ทุกรายการแชร์ bill_id เดียว — สร้างฝั่ง client เพราะต้องใส่ตั้งแต่แถวแรก
       if (extras.length > 0) formData.set("bill_id", crypto.randomUUID())
@@ -326,6 +382,7 @@ export function PosForm({
         toast.error(result.error)
         return
       }
+      if (result.warning) toast.warning(result.warning)
 
       let okCount = 1
       let creditAfter = result.creditAfter
@@ -358,10 +415,15 @@ export function PosForm({
           fd.set("request_fee", String(REQUEST_FEE))
         }
         if (x.privateRoom) fd.set("private_room", "on")
+        // บิลนี้ track บรรทัดชำระ (payments ถูกส่งที่รายการหลักแล้ว) — รายการเสริมต้อง tracked ด้วย
+        // ไม่งั้น v_bill_due จะไม่นับ net_amount ของรายการนี้เข้ายอดบิล (query กรอง payments_tracked)
+        // ส่ง "[]" ไม่ใช่บรรทัดจริง เพราะบรรทัดชำระของทั้งบิลถูกเขียนครั้งเดียวที่รายการแรกแล้ว (ดู sale-actions.ts)
+        if (paymentLines) fd.set("payments", "[]")
         const r = await createSale(fd)
         if (r.ok) {
           okCount++
           if (r.creditAfter !== null) creditAfter = r.creditAfter
+          if (r.warning) toast.warning(r.warning)
         } else {
           failedItems.push(i + 2)
           toast.error(`รายการที่ ${i + 2}: ${r.error}`)
@@ -429,6 +491,8 @@ export function PosForm({
           value={serviceId}
           onChange={(id) => {
             setServiceId(id)
+            // เปลี่ยนเมนู → ยอดที่เหลือ (cashDue) เปลี่ยน เลิกใช้ตัวเลขบรรทัดหลักที่แก้เองของเมนูก่อน กลับไป auto
+            setPrimaryInput(null)
             if (couponInfo) {
               // บิลแลกแต้ม: ส่วนลดต้องเต็มราคาเมนูที่เลือกเสมอ (เก็บ 0 บาท)
               const svc = services.find((s) => s.id === id)
@@ -474,13 +538,15 @@ export function PosForm({
           setCustomerId(c.id)
           setCustomerName(c.name)
           setCustomerPhone(c.phone ?? "")
-          // เปลี่ยนลูกค้า → เพดานเครดิตเปลี่ยน เลิกใช้ตัวเลขที่แก้เองของลูกค้าคนก่อน กลับไปค่าอัตโนมัติ
-          setCreditUseInput(null)
+          // เปลี่ยนลูกค้า → เพดานเครดิต/ยอดที่เหลือเปลี่ยน เลิกใช้ตัวเลขที่แก้เองของลูกค้าคนก่อน กลับไป auto
+          setCreditUseInput("0")
+          setPrimaryInput(null)
         }}
         onNameChange={(name) => {
           setCustomerName(name)
           setCustomerId("")
-          setCreditUseInput(null)
+          setCreditUseInput("0")
+          setPrimaryInput(null)
         }}
         onPhoneChange={setCustomerPhone}
         onBalanceChange={setCreditBalance}
@@ -498,10 +564,26 @@ export function PosForm({
               id="credit_use"
               inputMode="numeric"
               className="w-28 text-right"
-              value={creditUseInput === null ? String(creditCap) : creditUseInput}
-              onChange={(e) => setCreditUseInput(e.target.value)}
+              value={creditUseInput}
+              onChange={(e) => {
+                setCreditUseInput(e.target.value)
+                // เครดิตเปลี่ยน → cashDue เปลี่ยน เลิกใช้ตัวเลขบรรทัดหลักที่แก้เองไว้ก่อนหน้า กลับไป auto
+                setPrimaryInput(null)
+              }}
             />
           </div>
+          {/* เริ่มที่ "0" เสมอ — ปุ่มนี้กดแล้วค่อยเติมเพดานให้ (สเปก 2026-08-01 เลิก auto-fill) */}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCreditUseInput(String(creditCap))
+              setPrimaryInput(null)
+            }}
+          >
+            ใช้เครดิต (เหลือ {formatBaht(creditBalance)} ฿)
+          </Button>
           <p className="text-sm font-medium">
             {cashDue > 0 ? (
               <>
@@ -585,7 +667,9 @@ export function PosForm({
       {/* ช่องทางชำระเงิน */}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">ช่องทางชำระเงิน</legend>
-        <input type="hidden" name="payment_method" value={effectivePaymentMethod} />
+        {/* F1: ส่งค่าที่ server จะเขียนจริงที่แถวแรกของบิลชุด (ดูคอมเมนต์ submittedPaymentMethod ด้านบน)
+            แถวรายการเสริม (extras loop ด้านล่าง) copy field นี้จาก formData ตรงๆ จึงได้ค่าเดียวกันอัตโนมัติ */}
+        <input type="hidden" name="payment_method" value={submittedPaymentMethod} />
         <div className="grid grid-cols-3 gap-2">
           {PAYMENT_METHODS.map((m) => (
             <Button
@@ -612,8 +696,11 @@ export function PosForm({
                   setCustomPromo(false)
                 }
                 // Gowabi/KOL ใช้ร่วมกับเครดิตสมาชิกไม่ได้ (server ปฏิเสธ) — ล้างเครดิตที่กรอกไว้ทิ้ง
+                // และเลิก track บรรทัดชำระ (server ไม่รับ field payments กับสองช่องทางนี้) — ล้างบรรทัดเสริมด้วย
                 if (m === GOWABI_METHOD || m === "KOL") {
                   setCreditUseInput("0")
+                  setExtraPayments([])
+                  setPrimaryInput(null)
                 }
                 setPaymentMethod(m)
               }}
@@ -630,6 +717,89 @@ export function PosForm({
           ))}
         </div>
       </fieldset>
+
+      {/* แบ่งจ่ายหลายวิธีในบิลเดียว — บรรทัดแรกคือปุ่มช่องทางข้างบน (ยอด = ที่เหลือหลังหักบรรทัดเสริม)
+          ไม่โชว์กับ Gowabi/KOL/เครดิตเต็มบิล เพราะบิลพวกนี้ไม่ track บรรทัดชำระ (server ไม่รับ field payments) */}
+      {!isGowabi && !isKol && !fullCredit && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm font-medium">แบ่งจ่ายหลายวิธี (ไม่บังคับ)</p>
+          {extraPayments.map((p, i) => (
+            <div key={i} className="flex items-center gap-2">
+              <select
+                value={p.method}
+                aria-label={`วิธีชำระบรรทัดที่ ${i + 2}`}
+                className="h-10 flex-1 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                onChange={(e) =>
+                  setExtraPayments((a) =>
+                    a.map((x, j) => (j === i ? { ...x, method: e.target.value } : x))
+                  )
+                }
+              >
+                {PAYMENT_LINE_METHODS.map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+              <Input
+                inputMode="numeric"
+                className="h-10 w-28 text-right"
+                aria-label={`ยอดบรรทัดที่ ${i + 2}`}
+                value={p.amount}
+                onChange={(e) =>
+                  setExtraPayments((a) =>
+                    a.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x))
+                  )
+                }
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-red-600"
+                onClick={() => setExtraPayments((a) => a.filter((_, j) => j !== i))}
+              >
+                ✕
+              </Button>
+            </div>
+          ))}
+          {extraPayments.length < MAX_PAYMENT_LINES - 1 && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setExtraPayments((a) => [...a, { method: "QR Code", amount: "" }])}
+            >
+              + แบ่งจ่ายอีกวิธี
+            </Button>
+          )}
+          {/* บรรทัดหลัก — ปกติเป็นยอดที่เหลือ auto พิมพ์เองได้ถ้าตั้งใจรับน้อยกว่า (ค้างรับ) พิมพ์เกินยอดที่เหลือไม่ได้ (หนีบ) */}
+          <div className="flex items-center gap-2">
+            <span className="flex-1 text-sm font-medium">{effectivePaymentMethod || "—"}</span>
+            <Input
+              inputMode="numeric"
+              className="h-10 w-28 text-right"
+              aria-label="ยอดบรรทัดหลัก"
+              value={primaryInput ?? String(primaryRemainder)}
+              onChange={(e) => setPrimaryInput(e.target.value)}
+              onBlur={() => {
+                // เศษสตางค์/พิมพ์เกินยอดที่เหลือ — ปัดให้ตรงกับยอดจริงที่จะถูกส่ง (เหมือน discount onBlur)
+                if (primaryInput === null) return
+                setPrimaryInput(String(primaryAmount))
+              }}
+            />
+          </div>
+          <p className="text-sm">
+            {extraPayments
+              .filter((p) => Number(p.amount) > 0)
+              .map((p) => `+ ${p.method} ${formatBaht(Number(p.amount))} ฿`)
+              .join(" ")}
+            {dueNow > 0 && (
+              <span className="ml-1 font-medium text-red-600">
+                · ค้างรับ {formatBaht(dueNow)} ฿
+              </span>
+            )}
+          </p>
+        </div>
+      )}
 
       {/* คูปองแลกแต้มจากไลน์ — ลูกค้าโชว์รหัส 6 ตัว */}
       <div className="space-y-2 rounded-lg border border-violet-200 p-3">
