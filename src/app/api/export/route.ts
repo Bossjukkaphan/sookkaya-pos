@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { todayInShopTz } from "@/lib/datetime"
 import { ilikeOr } from "@/lib/search"
+import { formatBaht } from "@/lib/constants"
 
 function lastDayOfMonth(ym: string): string {
   const [y, m] = ym.split("-").map(Number)
@@ -109,6 +110,31 @@ export async function GET(request: NextRequest) {
     supabase.from("beds").select("id, room, name"),
   ])
 
+  // สรุปบรรทัดชำระต่อบิล (bill_key = bill_id ?? id) — join แบบแบตช์ครั้งเดียว กัน N+1
+  // ต่อแถวขาย บิลเก่า/Gowabi/KOL ได้บรรทัดสังเคราะห์บรรทัดเดียวจาก v_bill_payments เหมือนกันหมด
+  const billKeys = [...new Set((sales ?? []).map((s) => String(s.bill_id ?? s.id)))]
+  const { data: paymentLines } = billKeys.length
+    ? await supabase
+        .from("v_bill_payments")
+        .select("bill_key, method, amount")
+        .in("bill_key", billKeys)
+    : { data: [] }
+  const linesByBillKey = new Map<string, { method: string; amount: number }[]>()
+  for (const p of paymentLines ?? []) {
+    const key = String(p.bill_key)
+    const arr = linesByBillKey.get(key) ?? []
+    arr.push({ method: p.method, amount: Number(p.amount) })
+    linesByBillKey.set(key, arr)
+  }
+  const paymentSummaryByBillKey = new Map<string, string>()
+  for (const [key, lines] of linesByBillKey) {
+    const sorted = [...lines].sort((a, b) => b.amount - a.amount)
+    paymentSummaryByBillKey.set(
+      key,
+      sorted.map((l) => `${l.method} ${formatBaht(l.amount)}`).join(" + ")
+    )
+  }
+
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
   const bedName = new Map((beds ?? []).map((b) => [b.id, `${b.room} ${b.name}`]))
   const SOURCE_TH: Record<string, string> = {
@@ -122,7 +148,7 @@ export async function GET(request: NextRequest) {
     [
       "เลขที่ใบเสร็จ", "วันที่", "เวลา", "ลูกค้า", "เบอร์โทร", "หมอนวด",
       "บริการ", "ราคาปกติ", "คูปอง/โปรโมชั่น", "ส่วนลด", "ยอดรับจริง",
-      "ค่ามือ", "ช่องทางชำระ", "รีเควส", "ค่ารีเควส", "เครดิตที่ใช้",
+      "ค่ามือ", "ช่องทางชำระ", "บรรทัดชำระ", "รีเควส", "ค่ารีเควส", "เครดิตที่ใช้",
       "โบนัสที่ใช้", "ที่มาลูกค้า", "ช่องทางจอง", "เตียง", "หมายเหตุ",
       "ผู้บันทึก", "ผู้แก้ไข",
     ],
@@ -130,7 +156,9 @@ export async function GET(request: NextRequest) {
       s.receipt_no, s.sale_date, s.sale_time, s.customer_name, s.customer_phone,
       therapistName.get(s.therapist_id ?? "") ?? "",
       s.service_name, s.price_normal, s.coupon_promo, s.discount, s.net_amount,
-      s.commission, s.payment_method, s.is_request ? "ใช่" : "ไม่",
+      s.commission, s.payment_method,
+      paymentSummaryByBillKey.get(String(s.bill_id ?? s.id)) ?? "",
+      s.is_request ? "ใช่" : "ไม่",
       s.request_fee, s.credit_used, s.bonus_used,
       s.source ? (SOURCE_TH[s.source] ?? s.source) : "",
       s.booking_channel ? (CHANNEL_TH[s.booking_channel] ?? s.booking_channel) : "",

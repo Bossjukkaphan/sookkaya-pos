@@ -99,8 +99,13 @@ export default async function ReportsPage({
 
   // เงินเข้าบัญชีเอาจาก view สูตรกลาง (ยอดขายไม่รวมเครดิต + เงินเติมสมาชิก)
   // ห้ามคิดสูตรเงินใหม่ในหน้านี้ — แยกช่องทางค่อยประกอบจากข้อมูลดิบให้ผลรวมตรงกัน
-  const [{ data: dailySummary }, { data: topups }, { data: promos }, { data: promoAliases }] =
-    await Promise.all([
+  const [
+    { data: dailySummary },
+    { data: topups },
+    { data: promos },
+    { data: promoAliases },
+    { data: paymentLines },
+  ] = await Promise.all([
       supabase
         .from("v_daily_summary")
         .select("cash_in")
@@ -115,6 +120,14 @@ export default async function ReportsPage({
       // ต้อง map ผ่าน aliases ไม่งั้นโปรเดียวกันแตกเป็นหลายบรรทัด
       supabase.from("promotions").select("id, name"),
       supabase.from("promotion_aliases").select("raw_key, promotion_id"),
+      // เงินจริงตามบรรทัดชำระ (บิลเก่า view สังเคราะห์ให้เท่าสูตรเดิมเป๊ะ) — กรองด้วย
+      // received_date (วันเงินเข้าจริง) ไม่ใช่ sale_date เพื่อให้บิลค้างรับที่มาจ่ายวันหลัง
+      // ขึ้นในวันที่จ่ายจริง ไม่ใช่วันบิล
+      supabase
+        .from("v_bill_payments")
+        .select("bill_key, method, amount")
+        .gte("received_date", from)
+        .lte("received_date", to),
     ])
 
   const rows = sales ?? []
@@ -165,12 +178,11 @@ export default async function ReportsPage({
     (sum, d) => sum + Number(d.cash_in ?? 0),
     0
   )
-  // แยกช่องทางของเงินเข้าบัญชี: ยอดขายที่ไม่ใช่เครดิต + เงินเติมสมาชิกตามช่องทางที่จ่าย
+  // แยกช่องทางของเงินเข้าบัญชี: เงินจริงตามบรรทัดชำระ (v_bill_payments) + เงินเติมสมาชิกตามช่องทางที่จ่าย
+  // เครดิตไม่ใช่เงินเข้า จึงไม่อยู่ใน v_bill_payments อยู่แล้ว (ตัด Member Credit ออกตั้งแต่ต้นทาง)
   const cashByChannel = new Map<string, number>()
-  for (const s of rows) {
-    const cash = Number(s.net_amount) - Number(s.credit_used ?? 0)
-    if (cash === 0) continue // เครดิตไม่ใช่เงินเข้า
-    cashByChannel.set(s.payment_method, (cashByChannel.get(s.payment_method) ?? 0) + cash)
+  for (const p of paymentLines ?? []) {
+    cashByChannel.set(p.method, (cashByChannel.get(p.method) ?? 0) + Number(p.amount))
   }
   for (const t of topups ?? []) {
     const m = t.payment_method
@@ -209,15 +221,13 @@ export default async function ReportsPage({
   const expenseTotal = payrollPaid + otherExpenses
   const grossProfit = revenue - commissionCost - otherExpenses
 
-  // แบ่งชำระ: เงินจริงเข้าช่องทางของบิล เครดิตเข้าช่อง Member Credit
-  // บิลเก่าถูกอัตโนมัติ: บิลปกติ credit_used=0 · บิลเครดิตเต็ม credit_used=net (พิสูจน์บน production แล้ว)
-  const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
-    const credit = Number(s.credit_used ?? 0)
-    const cash = Number(s.net_amount) - credit
-    if (cash !== 0) acc[s.payment_method] = (acc[s.payment_method] ?? 0) + cash
-    if (credit !== 0) acc["Member Credit"] = (acc["Member Credit"] ?? 0) + credit
-    return acc
-  }, {})
+  // เงินจริงตามบรรทัดชำระ (บิลเก่า view สังเคราะห์ให้เท่าสูตรเดิมเป๊ะ) + เครดิตจาก credit_used เหมือนเดิม
+  const byPayment: Record<string, number> = {}
+  for (const p of paymentLines ?? []) {
+    byPayment[p.method] = (byPayment[p.method] ?? 0) + Number(p.amount)
+  }
+  const creditTotal = rows.reduce((s, r) => s + Number(r.credit_used ?? 0), 0)
+  if (creditTotal > 0) byPayment["Member Credit"] = creditTotal
 
   const byService = rows.reduce<Record<string, { count: number; revenue: number }>>(
     (acc, s) => {

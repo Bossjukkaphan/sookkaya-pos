@@ -63,6 +63,7 @@ export default async function TodayPage({
     { data: sales },
     { data: therapists },
     { data: dailySummary },
+    { data: paymentLines },
     { data: therapistDaily },
     { data: services },
     { data: promotions },
@@ -85,6 +86,14 @@ export default async function TodayPage({
       .select("sale_date, sessions, volume, net_revenue, cash_in, discount_total")
       .gte("sale_date", from)
       .lte("sale_date", to),
+    // เงินจริงตามบรรทัดชำระ (บิลเก่า/Gowabi/KOL ถูก view สังเคราะห์ให้เป็นบรรทัดเดียวเท่าสูตรเดิม) —
+    // กรองด้วย received_date (วันเงินเข้าจริง) ไม่ใช่ sale_date เพื่อให้บิลค้างรับที่มาจ่ายวันหลัง
+    // ขึ้นในวันที่จ่ายจริง ไม่ใช่วันบิล
+    supabase
+      .from("v_bill_payments")
+      .select("bill_key, method, amount")
+      .gte("received_date", from)
+      .lte("received_date", to),
     supabase
       .from("v_therapist_daily")
       .select("work_date, therapist_id, sessions, request_fee, total_income")
@@ -260,15 +269,14 @@ export default async function TodayPage({
 
   // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
   // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
-  // แบ่งชำระ: เงินจริงเข้าช่องทางของบิล เครดิตเข้าช่อง Member Credit
-  // บิลเก่าถูกอัตโนมัติ: บิลปกติ credit_used=0 · บิลเครดิตเต็ม credit_used=net (พิสูจน์บน production แล้ว)
-  const byPayment = rows.reduce<Record<string, number>>((acc, s) => {
-    const credit = Number(s.credit_used ?? 0)
-    const cash = Number(s.net_amount) - credit
-    if (cash !== 0) acc[s.payment_method] = (acc[s.payment_method] ?? 0) + cash
-    if (credit !== 0) acc["Member Credit"] = (acc["Member Credit"] ?? 0) + credit
-    return acc
-  }, {})
+  // เงินจริงตามบรรทัดชำระ (บิลเก่า view สังเคราะห์ให้เท่าสูตรเดิมเป๊ะ) + เครดิตจาก credit_used เหมือนเดิม —
+  // ช่วงเดียวกับ dailySummary/paymentLines ด้านบน (received_date ไม่ใช่ sale_date)
+  const byPayment: Record<string, number> = {}
+  for (const p of paymentLines ?? []) {
+    byPayment[p.method] = (byPayment[p.method] ?? 0) + Number(p.amount)
+  }
+  const creditTotal = rows.reduce((s, r) => s + Number(r.credit_used ?? 0), 0)
+  if (creditTotal > 0) byPayment["Member Credit"] = creditTotal
 
   // โหมดช่วงวัน: จัดกลุ่มตามวัน เพื่อไม่ให้เผลอแก้รายการผิดวัน
   const byDate: { date: string; rows: typeof rows }[] = []

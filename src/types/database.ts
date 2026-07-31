@@ -1621,6 +1621,18 @@ export type Database = {
         }
         Relationships: []
       }
+      // เพิ่มด้วยมือ — view v_bill_payments ยังไม่ apply ขึ้น production (ดู
+      // supabase/migrations/20260801100000_bill_payments.sql) จะถูกแทนที่ด้วย
+      // generated types หลัง apply จริง (npx supabase gen types ...) — Task 8
+      v_bill_payments: {
+        Row: {
+          bill_key: string
+          method: string
+          amount: number
+          received_date: string
+        }
+        Relationships: []
+      }
     }
     Functions: {
       app_role: { Args: never; Returns: string }
