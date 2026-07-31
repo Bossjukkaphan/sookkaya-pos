@@ -65,7 +65,8 @@ create view public.v_bill_payments with (security_invoker = true) as
   from public.sales s
   where not s.payments_tracked
   group by coalesce(s.bill_id, s.id), s.payment_method, s.sale_date
-  having sum(s.net_amount - coalesce(s.credit_used, 0)) > 0;
+  having sum(s.net_amount - coalesce(s.credit_used, 0)) <> 0;
+  -- หมายเหตุ: ใช้ <> 0 แทน > 0 เพื่อรักษา parity กับสูตรเงินเดิม (รวมบิลยอดติดลบ)
 
 -- ยอดค้างรับต่อบิล (เฉพาะบิลที่ track): due = net รวม − เครดิตรวม − รับแล้ว
 create view public.v_bill_due with (security_invoker = true) as
