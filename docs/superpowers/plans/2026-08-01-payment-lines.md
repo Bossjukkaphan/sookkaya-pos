@@ -48,7 +48,7 @@
 - Produces: ตาราง `public.bill_payments(id, bill_key, method, amount, received_date, received_at, note, created_by, created_at)` · คอลัมน์ `sales.payments_tracked boolean not null default false` · view `v_bill_payments(bill_key, method, amount, received_date)` · view `v_bill_due(bill_key, sale_date, net_total, credit_total, paid_total, due)`
 - Controller (คนคุมแผน) เป็นผู้ apply บน production — task นี้เขียนไฟล์อย่างเดียว
 
-- [ ] **Step 1: เขียนไฟล์ migration** — เนื้อหาตามสเปกส่วน "1. ข้อมูล" ทั้งก้อน (copy SQL จากสเปกได้ตรงๆ) บวก:
+- [x] **Step 1: เขียนไฟล์ migration** — เนื้อหาตามสเปกส่วน "1. ข้อมูล" ทั้งก้อน (copy SQL จากสเปกได้ตรงๆ) บวก:
 
 ```sql
 alter table public.sales add column payments_tracked boolean not null default false;
@@ -65,9 +65,9 @@ create policy "manager delete bill_payments" on public.bill_payments
 
 หมายเหตุ: ตรวจชื่อฟังก์ชัน role จริงด้วย `grep -rn "app_role" supabase/migrations | head -3` — ถ้าชื่อ/ลายเซ็นต่างให้ใช้ตามของจริง
 
-- [ ] **Step 2: ตรวจ SQL แห้ง** — `grep -c "security_invoker = true" supabase/migrations/20260801100000_bill_payments.sql` ต้องได้ ≥ 2 (สอง view)
+- [x] **Step 2: ตรวจ SQL แห้ง** — `grep -c "security_invoker = true" supabase/migrations/20260801100000_bill_payments.sql` ต้องได้ ≥ 2 (สอง view)
 
-- [ ] **Step 3: Commit** — `git add supabase/migrations/20260801100000_bill_payments.sql && git commit -m "feat(db): ตาราง bill_payments + สถานะค้างรับ (ยังไม่ apply)"`
+- [x] **Step 3: Commit** — `git add supabase/migrations/20260801100000_bill_payments.sql && git commit -m "feat(db): ตาราง bill_payments + สถานะค้างรับ (ยังไม่ apply)"`
 
 ---
 
@@ -91,7 +91,7 @@ export function primaryMethod(lines: PaymentLine[]): string | null
 export function dueAmount(mustCollect: number, lines: PaymentLine[]): number
 ```
 
-- [ ] **Step 1: เทสแดงก่อน** — `src/lib/payments.test.ts`:
+- [x] **Step 1: เทสแดงก่อน** — `src/lib/payments.test.ts`:
 
 ```ts
 import { describe, expect, it } from "vitest"
@@ -152,9 +152,9 @@ describe("dueAmount", () => {
 })
 ```
 
-- [ ] **Step 2: รันให้แดง** — `npx vitest run src/lib/payments.test.ts` → FAIL (module not found)
+- [x] **Step 2: รันให้แดง** — `npx vitest run src/lib/payments.test.ts` → FAIL (module not found)
 
-- [ ] **Step 3: implement `src/lib/payments.ts`**
+- [x] **Step 3: implement `src/lib/payments.ts`**
 
 ```ts
 /** บรรทัดชำระของบิล — เงินจริงเท่านั้น เครดิตเมมเบอร์อยู่ที่ credit_used ไม่ใช่บรรทัด (สเปก 2026-08-01) */
@@ -205,9 +205,9 @@ export function dueAmount(mustCollect: number, lines: PaymentLine[]): number {
 }
 ```
 
-- [ ] **Step 4: รันให้เขียว** — `npx vitest run src/lib/payments.test.ts` → PASS · `npx tsc --noEmit` → ผ่าน
+- [x] **Step 4: รันให้เขียว** — `npx vitest run src/lib/payments.test.ts` → PASS · `npx tsc --noEmit` → ผ่าน
 
-- [ ] **Step 5: Commit** — `git commit -am "feat(payments): logic บรรทัดชำระ — parse/วิธีหลัก/ยอดค้างรับ"`
+- [x] **Step 5: Commit** — `git commit -am "feat(payments): logic บรรทัดชำระ — parse/วิธีหลัก/ยอดค้างรับ"`
 
 ---
 
@@ -220,9 +220,9 @@ export function dueAmount(mustCollect: number, lines: PaymentLine[]): number {
 - Consumes: `parsePaymentLines`, `primaryMethod` (Task 2) — import จาก `@/lib/payments`
 - Produces: FormData field `payments` (JSON string) — Task 5/6 ส่งมา · บิลที่ส่ง payments (แม้ []) จะถูก set `payments_tracked = true` · แถวแรกของบิลเป็นผู้เขียนบรรทัดทั้งบิล (`bill_key = bill_id ?? saleId`)
 
-- [ ] **Step 1: อ่าน createSale ทั้งฟังก์ชันก่อน** — โครงปัจจุบัน: parse form → ด่านเครดิต → computeSaleAmounts → normalize MC เต็มบิล → insert → syncSalePoints → mirror คิว
+- [x] **Step 1: อ่าน createSale ทั้งฟังก์ชันก่อน** — โครงปัจจุบัน: parse form → ด่านเครดิต → computeSaleAmounts → normalize MC เต็มบิล → insert → syncSalePoints → mirror คิว
 
-- [ ] **Step 2: เพิ่มการ parse + validate** หลังบล็อกด่านเครดิต (หลังคำนวณ `amounts`):
+- [x] **Step 2: เพิ่มการ parse + validate** หลังบล็อกด่านเครดิต (หลังคำนวณ `amounts`):
 
 ```ts
   // บรรทัดชำระ (สเปก 2026-08-01): มี field payments = บิลระบบใหม่ (tracked)
@@ -242,7 +242,7 @@ export function dueAmount(mustCollect: number, lines: PaymentLine[]): number {
 
 (หมายเหตุ: `paymentMethod` เป็น `let` อยู่แล้วจากงาน normalize รอบก่อน · บล็อก normalize "เครดิตเต็มบิล → Member Credit" ต้องอยู่**หลัง**บรรทัดนี้ เพื่อให้เครดิตเต็มชนะเสมอ — ตรวจลำดับแล้วขยับถ้าจำเป็น)
 
-- [ ] **Step 3: เขียนบรรทัดหลัง insert สำเร็จ** (จุดที่ได้ `inserted.id` แล้ว):
+- [x] **Step 3: เขียนบรรทัดหลัง insert สำเร็จ** (จุดที่ได้ `inserted.id` แล้ว):
 
 ```ts
   // เขียนบรรทัดชำระครั้งเดียวต่อบิล — บิลชุดให้แถวแรก (ไม่มี bill_id ซ้ำใน bill_payments)
@@ -264,7 +264,7 @@ export function dueAmount(mustCollect: number, lines: PaymentLine[]): number {
 
 ปรับตามจริง: ชื่อตัวแปร bill id / จุดอ่าน profile ที่ฟังก์ชันมีอยู่แล้ว — grep ก่อน อย่าประกาศซ้ำ · ถ้า insert แถว sales รวม field ได้ ให้ใส่ `payments_tracked: wantsTracking` ตั้งแต่ insert แทน update ซ้ำ (ดีกว่า)
 
-- [ ] **Step 4: deleteSale ลบบรรทัดของบิลเมื่อแถวสุดท้ายถูกลบ** — ใน `deleteSale` เพิ่มการ select `bill_id` ตอนอ่าน existing แล้วหลังลบสำเร็จ:
+- [x] **Step 4: deleteSale ลบบรรทัดของบิลเมื่อแถวสุดท้ายถูกลบ** — ใน `deleteSale` เพิ่มการ select `bill_id` ตอนอ่าน existing แล้วหลังลบสำเร็จ:
 
 ```ts
   // แถวสุดท้ายของบิลถูกลบ → บรรทัดชำระของบิลต้องไปด้วย (กัน orphan — มีด่านตรวจซ้ำ)
@@ -276,9 +276,9 @@ export function dueAmount(mustCollect: number, lines: PaymentLine[]): number {
   }
 ```
 
-- [ ] **Step 5: ตรวจ** — `npx tsc --noEmit` + `npx vitest run` เขียวหมด (server action ไม่มี harness — ความถูกต้องพิสูจน์ผ่าน lib เทส + trace ใน report)
+- [x] **Step 5: ตรวจ** — `npx tsc --noEmit` + `npx vitest run` เขียวหมด (server action ไม่มี harness — ความถูกต้องพิสูจน์ผ่าน lib เทส + trace ใน report)
 
-- [ ] **Step 6: Commit** — `git commit -am "feat(pos): createSale รับบรรทัดชำระหลายวิธี + deleteSale เก็บกวาดบรรทัด"`
+- [x] **Step 6: Commit** — `git commit -am "feat(pos): createSale รับบรรทัดชำระหลายวิธี + deleteSale เก็บกวาดบรรทัด"`
 
 ---
 
@@ -290,7 +290,7 @@ export function dueAmount(mustCollect: number, lines: PaymentLine[]): number {
 **Interfaces:**
 - Produces: `addBillPayment(billKey: string, method: string, amount: number, note?: string): Promise<{ ok: true; due: number } | { ok: false; error: string }>` · `deleteBillPayment(paymentId: string): Promise<{ ok: boolean; error?: string }>` — Task 6/7 เรียก
 
-- [ ] **Step 1: เขียนไฟล์**
+- [x] **Step 1: เขียนไฟล์**
 
 ```ts
 "use server"
@@ -346,7 +346,7 @@ export async function deleteBillPayment(
 
 ตรวจก่อนใช้: ค่า role จริงในระบบ (`grep -rn "role ===\|role)" src/lib/auth.ts src/app/(app)/settings | head`) — ถ้าชื่อ role ไม่ใช่ admin/manager ใช้ตามจริง · types ของ `v_bill_due` ต้อง generate ก่อน (`npx supabase gen types` ไม่มี — โปรเจกต์นี้ใช้ MCP generate: ให้ controller รันตอน apply migration แล้วแจ้งใน dispatch ว่า types พร้อม)
 
-- [ ] **Step 2: ตรวจ + Commit** — `npx tsc --noEmit` ผ่าน · `git commit -am "feat(pos): action เก็บเงินเพิ่ม/ลบบรรทัดชำระ"`
+- [x] **Step 2: ตรวจ + Commit** — `npx tsc --noEmit` ผ่าน · `git commit -am "feat(pos): action เก็บเงินเพิ่ม/ลบบรรทัดชำระ"`
 
 ---
 
@@ -359,7 +359,7 @@ export async function deleteBillPayment(
 - Consumes: `PaymentLine`, `MAX_PAYMENT_LINES`, `dueAmount` จาก `@/lib/payments` · FormData field `payments` (Task 3)
 - กติกา UI: เครดิตเริ่ม 0 — `creditUseInput` เปลี่ยน default จาก null(=cap) เป็น `"0"` + ปุ่ม "ใช้เครดิต (เหลือ X ฿)" set เป็น cap · บรรทัดแรก = ปุ่มช่องทางเดิม (ยอด default = ต้องเก็บทั้งหมด) · "+ แบ่งจ่าย" เพิ่มบรรทัด (เลือกวิธี + จำนวน) สูงสุด 3 · สรุปสด "รวมรับ / ต้องเก็บ / ค้างรับ" · ค้างรับ > 0 → dialog ยืนยันก่อนบันทึก
 
-- [ ] **Step 1: เปลี่ยน default เครดิต** — `creditUseInput` เริ่ม `"0"` · ที่กล่องเครดิตเพิ่มปุ่ม:
+- [x] **Step 1: เปลี่ยน default เครดิต** — `creditUseInput` เริ่ม `"0"` · ที่กล่องเครดิตเพิ่มปุ่ม:
 
 ```tsx
   <Button type="button" variant="outline" size="sm"
@@ -370,7 +370,7 @@ export async function deleteBillPayment(
 
 ระวัง: ตรรกะ `creditUse` ปัจจุบันตีความ `null` = cap — เปลี่ยนเป็น: `null` ไม่มีแล้ว ใช้ค่าจาก input ตรงๆ (เริ่ม "0") · เช็คทุกจุดที่อ้าง `creditUseInput === null` (มีทั้งใน pos-form และตรรกะ reset ตอนสลับลูกค้า — สลับลูกค้าแล้ว reset เป็น "0")
 
-- [ ] **Step 2: state บรรทัดชำระ**
+- [x] **Step 2: state บรรทัดชำระ**
 
 ```tsx
   // บรรทัดแบ่งจ่ายเพิ่มเติม (บรรทัดแรกคือปุ่มช่องทางหลักเดิม ยอด = ที่เหลือหลังหักบรรทัดเสริม)
@@ -381,7 +381,7 @@ export async function deleteBillPayment(
 
 submit สร้าง payments: `[{ method: effectivePaymentMethod, amount: primaryAmount }, ...extras]` กรอง amount > 0 · ถ้า `fullCredit` หรือ Gowabi/KOL → ไม่ส่ง field `payments` เลย (undefined ไม่ใช่ "[]") — คงพฤติกรรม untracked ตามสเปก... **ยกเว้น** บิลเงินจริงปกติต้องส่งเสมอ (แม้บรรทัดเดียว) เพื่อเข้า tracked
 
-- [ ] **Step 3: UI บรรทัดเสริม** — ใต้ปุ่มช่องทาง:
+- [x] **Step 3: UI บรรทัดเสริม** — ใต้ปุ่มช่องทาง:
 
 ```tsx
   {!isGowabi && !isKol && !fullCredit && (
@@ -413,9 +413,9 @@ submit สร้าง payments: `[{ method: effectivePaymentMethod, amount: pri
   )}
 ```
 
-- [ ] **Step 4: ยืนยันค้างรับ** — คำนวณ `dueNow = dueAmount(cashDue, [...tracked lines])` ก่อน submit — เกิดได้เมื่อพนักงานลบ/ลดบรรทัดจนรวม < ต้องเก็บ (primaryAmount หนีบ 0 แล้ว extras รวมน้อย) · ถ้า `dueNow > 0` เปิด `window.confirm(\`บันทึกแบบค้างรับ ${dueNow} ฿? ลูกค้าจะจ่ายส่วนนี้ทีหลัง\`)` — ไม่ผ่านไม่ส่ง (โปรเจกต์นี้ยังไม่มี confirm dialog component กลาง — `window.confirm` พอสำหรับรอบแรก ใส่คอมเมนต์ไว้)
+- [x] **Step 4: ยืนยันค้างรับ** — คำนวณ `dueNow = dueAmount(cashDue, [...tracked lines])` ก่อน submit — เกิดได้เมื่อพนักงานลบ/ลดบรรทัดจนรวม < ต้องเก็บ (primaryAmount หนีบ 0 แล้ว extras รวมน้อย) · ถ้า `dueNow > 0` เปิด `window.confirm(\`บันทึกแบบค้างรับ ${dueNow} ฿? ลูกค้าจะจ่ายส่วนนี้ทีหลัง\`)` — ไม่ผ่านไม่ส่ง (โปรเจกต์นี้ยังไม่มี confirm dialog component กลาง — `window.confirm` พอสำหรับรอบแรก ใส่คอมเมนต์ไว้)
 
-- [ ] **Step 5: gates + commit** — `npx tsc --noEmit` · `npx eslint "src/app/(app)/pos"` · `npx vitest run` เขียว · `git commit -am "feat(pos): เครดิตเริ่มศูนย์ + แบ่งจ่ายหลายวิธี + ยืนยันค้างรับ"`
+- [x] **Step 5: gates + commit** — `npx tsc --noEmit` · `npx eslint "src/app/(app)/pos"` · `npx vitest run` เขียว · `git commit -am "feat(pos): เครดิตเริ่มศูนย์ + แบ่งจ่ายหลายวิธี + ยืนยันค้างรับ"`
 
 ---
 
@@ -442,10 +442,10 @@ export function CollectDueDialog({ billKey, due, onDone }: {
 - Consumes: `addBillPayment`/`deleteBillPayment` (Task 4) · field `payments` (Task 3)
 - Produces: `CollectDueDialog({ billKey, due, onDone })` — Task 7 ใช้บนการ์ดคิว/หน้า today
 
-- [ ] **Step 1: group form** — ตามข้างบน (อ่านไฟล์ก่อน ตรรกะเครดิต/`fullCredit` มีอยู่แล้วจากงานรอบก่อน)
-- [ ] **Step 2: CollectDueDialog** — เขียนไฟล์ใหม่ตามโครง turn-away-button
-- [ ] **Step 3: edit-sale-dialog** — เพิ่ม props + ส่วนแสดงบรรทัด · หน้า today (ผู้เรียก dialog) โหลด `bill_payments` + `v_bill_due` ของบิลที่แก้ (แถม select เดิม)
-- [ ] **Step 4: gates + commit** — tsc/eslint/vitest เขียว · `git commit -am "feat(pos): กลุ่ม+แก้บิลรองรับบรรทัดชำระ + กล่องเก็บเพิ่ม"`
+- [x] **Step 1: group form** — ตามข้างบน (อ่านไฟล์ก่อน ตรรกะเครดิต/`fullCredit` มีอยู่แล้วจากงานรอบก่อน)
+- [x] **Step 2: CollectDueDialog** — เขียนไฟล์ใหม่ตามโครง turn-away-button
+- [x] **Step 3: edit-sale-dialog** — เพิ่ม props + ส่วนแสดงบรรทัด · หน้า today (ผู้เรียก dialog) โหลด `bill_payments` + `v_bill_due` ของบิลที่แก้ (แถม select เดิม)
+- [x] **Step 4: gates + commit** — tsc/eslint/vitest เขียว · `git commit -am "feat(pos): กลุ่ม+แก้บิลรองรับบรรทัดชำระ + กล่องเก็บเพิ่ม"`
 
 ---
 
@@ -458,8 +458,8 @@ export function CollectDueDialog({ billKey, due, onDone }: {
 
 **Interfaces:** Consumes `CollectDueDialog` (Task 6) · `v_bill_due` (Task 1)
 
-- [ ] **Step 1-3: ทีละหน้า (today → history → queue)** ตามข้างบน — แต่ละหน้าจบด้วย tsc + eslint เฉพาะโฟลเดอร์
-- [ ] **Step 4: Commit** — `git commit -am "feat(ui): ป้ายค้างรับบนคิว/วันนี้/ประวัติ + การ์ดเตือนรวม"`
+- [x] **Step 1-3: ทีละหน้า (today → history → queue)** ตามข้างบน — แต่ละหน้าจบด้วย tsc + eslint เฉพาะโฟลเดอร์
+- [x] **Step 4: Commit** — `git commit -am "feat(ui): ป้ายค้างรับบนคิว/วันนี้/ประวัติ + การ์ดเตือนรวม"`
 
 ---
 
@@ -470,7 +470,7 @@ export function CollectDueDialog({ billKey, due, onDone }: {
 - Modify: `src/app/api/export/route.ts` — เพิ่มคอลัมน์ "บรรทัดชำระ" (join v_bill_payments ต่อ bill_key สรุปเป็น "เงินสด 500 + QR 300")
 - Create: `supabase/migrations/20260801110000_cash_in_from_payment_lines.sql` — `v_daily_summary`: `sales_cash` เปลี่ยนเป็นอ่านจาก `v_bill_payments` group ตาม `received_date` (คง security_invoker + คอลัมน์/ลำดับเดิมทุกตัว) — **controller เป็นผู้ apply + ตรวจ parity**
 
-- [ ] **Step 1: byPayment ทั้งสองหน้า** — แทน reducer ปัจจุบัน (สูตร net−credit ต่อแถว) ด้วยอ่านจาก `v_bill_payments` ช่วงวันเดียวกัน:
+- [x] **Step 1: byPayment ทั้งสองหน้า** — แทน reducer ปัจจุบัน (สูตร net−credit ต่อแถว) ด้วยอ่านจาก `v_bill_payments` ช่วงวันเดียวกัน:
 
 ```ts
   // เงินจริงตามบรรทัดชำระ (บิลเก่า view สังเคราะห์ให้เท่าสูตรเดิมเป๊ะ) + เครดิตจาก credit_used เหมือนเดิม
@@ -481,7 +481,7 @@ export function CollectDueDialog({ billKey, due, onDone }: {
   if (creditTotal > 0) byPayment["Member Credit"] = creditTotal
 ```
 
-- [ ] **Step 2: migration v_daily_summary** — sales_day CTE เดิมคงทุกคอลัมน์ ยกเว้น `sales_cash` ย้ายไปอีก CTE:
+- [x] **Step 2: migration v_daily_summary** — sales_day CTE เดิมคงทุกคอลัมน์ ยกเว้น `sales_cash` ย้ายไปอีก CTE:
 
 ```sql
 pay_day as (
@@ -491,7 +491,7 @@ pay_day as (
 -- แล้ว join pay_day แทนที่ค่า sales_cash เดิม (คอลัมน์ output ชื่อ/ลำดับเดิมเป๊ะ)
 ```
 
-- [ ] **Step 3: gates + commit** — tsc/eslint/vitest + `npm run build` เขียว · `git commit -am "feat(reports): ยอดช่องทาง+เงินเข้าอ่านจากบรรทัดชำระ"`
+- [x] **Step 3: gates + commit** — tsc/eslint/vitest + `npm run build` เขียว · `git commit -am "feat(reports): ยอดช่องทาง+เงินเข้าอ่านจากบรรทัดชำระ"`
 
 ---
 
@@ -500,7 +500,7 @@ pay_day as (
 **Files:**
 - Modify: `supabase/reconciliation.sql`
 
-- [ ] **Step 1: เพิ่ม 3 ด่าน**
+- [x] **Step 1: เพิ่ม 3 ด่าน**
 
 expected:
 ```sql
@@ -536,7 +536,23 @@ actual:
   ) bad
 ```
 
-- [ ] **Step 2 (controller): apply migrations ทั้งสองไฟล์บน production + generate types + parity check** — `sum(cash_in)` และ `sum(net_revenue)` ทั้งตาราง ก่อน/หลัง ต้องเท่ากันเป๊ะ · reconciliation 34 ข้อ PASS
-- [ ] **Step 3: gates เต็ม + deploy** — tsc/eslint/vitest/build → merge main → push → Vercel Ready → runtime errors ว่าง
-- [ ] **Step 4: ตรวจของจริง** — บิลทดสอบ: บัตร+โอนแบ่งจ่าย → ดู /today ช่องทางแยกถูก → ลบบิลทดสอบ → recon ยัง PASS
-- [ ] **Step 5: ติ๊กแผน + บันทึกผลปิดงาน + push**
+- [x] **Step 2 (controller): apply migrations ทั้งสองไฟล์บน production + generate types + parity check** — `sum(cash_in)` และ `sum(net_revenue)` ทั้งตาราง ก่อน/หลัง ต้องเท่ากันเป๊ะ · reconciliation 34 ข้อ PASS
+- [x] **Step 3: gates เต็ม + deploy** — tsc/eslint/vitest/build → merge main → push → Vercel Ready → runtime errors ว่าง
+- [x] **Step 4: ตรวจของจริง** — บิลทดสอบ: บัตร+โอนแบ่งจ่าย → ดู /today ช่องทางแยกถูก → ลบบิลทดสอบ → recon ยัง PASS
+- [x] **Step 5: ติ๊กแผน + บันทึกผลปิดงาน + push**
+
+---
+
+## ผลปิดงาน — 1/8/2569
+
+- 9 tasks + final review (opus) + fix wave 6 ข้อ — ทุกขั้นผ่านรีวิว
+- บั๊กที่รีวิวจับได้ก่อนถึงหน้าร้าน: v_bill_due SQL ในสเปกพังบน Postgres (42803) · RLS หลุด invariant ·
+  insert บรรทัดพังเงียบ · บิลชุดถูก server ปฏิเสธ (cap ต่อแถว) · dueNow confirm ตายเพราะสูตรในแผน ·
+  บิลชุด method ต่อแถวไม่ตรง · เลขผีเครดิต /today · กลุ่ม 1 คนเครดิตเต็มเซฟไม่ได้ · F5 SQL text=text[]
+- **parity จับของจริง:** cash_in +100 หลัง apply → root cause บิล import ติดลบ #34139-949 กับ having>0
+  → แก้เป็น <> 0 → parity เป๊ะ 1,604,914 / 0 วันต่าง
+- migrations 3 ตัวบน production · reconciliation **34/34 PASS** · gates เขียวครบ · deploy Ready ไม่มี error
+- ส่งต่อเจ้าของร้าน: (1) เครดิตเมมเบอร์ตอนนี้เริ่ม 0 ต้องกดปุ่ม "ใช้เครดิต" เอง (ตามที่ขอ)
+  (2) บิลค้างรับที่มาจ่ายวันหลัง เงินเข้ารายงานวันที่จ่ายจริง (3) แจ้งพนักงาน: ปุ่มเก็บเพิ่มอยู่บนป้ายแดง
+- deferred ไว้ใน ledger: F4 (staff ลบบิล tracked — วันนี้ไม่มีบัญชี staff) · F6 (disable ช่องทางเมื่อมีบรรทัด)
+  · F9-F12 — ดู .superpowers/sdd บันทึกสุดท้ายก่อนลบ workspace
