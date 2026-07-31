@@ -278,10 +278,10 @@ actual(check_name, actual_value) as (
     join public.sales s on coalesce(s.bill_id, s.id) = d.bill_key
     where d.paid_total > 0
     group by d.bill_key
-    having not (min(s.payment_method) = any(
-      select array_agg(p.method) from public.bill_payments p
+    having min(s.payment_method) not in (
+      select p.method from public.bill_payments p
       where p.bill_key = d.bill_key
-        and p.amount = (select max(p2.amount) from public.bill_payments p2 where p2.bill_key = d.bill_key)))
+        and p.amount = (select max(p2.amount) from public.bill_payments p2 where p2.bill_key = d.bill_key))
   ) bad
 )
 select
