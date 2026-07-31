@@ -5,15 +5,18 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
-import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import {
   BOARD_END_MIN,
   BOARD_START_MIN,
   bedStartMin,
+  canMoveCardWindow,
   minToTime,
   overlaps,
   timeToMin,
 } from "@/lib/queue"
+import { computeSaleAmounts } from "@/lib/sale-math"
+import { GOWABI_METHOD, REQUEST_FEE } from "@/lib/constants"
 import { pushLineMessage } from "@/lib/line"
 import { pushAssistantMessage } from "@/lib/line-assistant"
 import {
@@ -899,4 +902,111 @@ export async function rejectBooking(id: string, reason: string): Promise<Result>
   })
   revalidatePath("/queue")
   return { ok: true, warning }
+}
+
+
+/**
+ * ย้ายเตียง/เปลี่ยนหมอของการ์ดที่ชำระแล้ว โดยไม่ยกเลิกบิล (เคสจริง 1/8/2569: ลูกค้าต่อเวลา
+ * แล้วห้องเดิมติดจองลูกค้าอื่น — ThaiHand ทำได้ ระบบเราต้องทำได้)
+ *
+ * กติกาเจ้าของร้าน: ย้ายได้ภายใน 15 นาทีแรกของการนวดจริงเท่านั้น (canMoveCardWindow)
+ * · ค่ามือ+ค่ารีเควสตามหมอใหม่ · รีเควสให้พนักงานติ๊กตามจริงทุกครั้ง
+ * ทิศทางข้อมูล: แก้บิลก่อนแล้วมิเรอร์ลงการ์ด — บิลคือความจริง ด่าน paid_queue_mismatch เฝ้าอยู่
+ */
+export async function movePaidCard(
+  id: string,
+  input: { bedId: string | null; therapistId: string; isRequest: boolean }
+): Promise<Result> {
+  if (!input.therapistId) return { ok: false, error: "เลือกหมอนวดก่อน" }
+  const supabase = await createClient()
+  const { data: entry } = await supabase
+    .from("queue_entries")
+    .select("id, queue_date, start_time, duration_min, started_at, status, sale_id")
+    .eq("id", id)
+    .maybeSingle()
+  if (!entry?.sale_id)
+    return { ok: false, error: "การ์ดนี้ยังไม่ผูกบิล — แก้ผ่านฟอร์มแก้คิวปกติได้เลย" }
+
+  // หน้าต่าง 15 นาทีเช็คกับ "เวลาปัจจุบัน" ได้เฉพาะคิวของวันนี้ — วันอื่นเทียบนาทีข้ามวันไม่ได้
+  if (entry.queue_date !== todayInShopTz())
+    return { ok: false, error: "ย้ายได้เฉพาะคิวของวันนี้" }
+  const [nh, nm] = nowTimeInShopTz().split(":").map(Number)
+  const win = canMoveCardWindow(entry, nh * 60 + nm)
+  if (!win.allowed) return { ok: false, error: win.reason ?? "เลยเวลาที่ย้ายได้แล้ว" }
+
+  // เตียง/หมอปลายทางต้องว่างตลอดช่วงการนวดนี้ (นับจากเวลาเริ่มจริง) — ชนใครบอกชื่อ
+  const startMin = bedStartMin(entry)
+  const bedErr = await bedConflictError(
+    supabase, input.bedId, entry.queue_date, startMin, entry.duration_min, [entry.id])
+  if (bedErr) return { ok: false, error: bedErr }
+  const thErr = await therapistConflictError(
+    supabase, input.therapistId, entry.queue_date, startMin, entry.duration_min, [entry.id])
+  if (thErr) return { ok: false, error: thErr }
+
+  const { data: sale } = await supabase
+    .from("sales")
+    .select(
+      "id, price_normal, discount, payment_method, net_amount, credit_used, bonus_used, room_fee, commission, is_request"
+    )
+    .eq("id", entry.sale_id)
+    .single()
+  if (!sale) return { ok: false, error: "ไม่พบบิลของการ์ดนี้" }
+
+  // เงินที่ขยับได้มีแค่ค่ารีเควส — แต่ตัวเลขทุกตัวต้องออกจากสูตรกลางเท่านั้น (กฎบัญชีข้อ 3)
+  // สร้าง input จากบิลจริงแล้วให้สูตรยืนยันก่อนว่า net/เครดิต/โบนัสเดิมตรงเป๊ะ ไม่ตรง = ห้ามแตะ
+  const roomFee = Number(sale.room_fee ?? 0)
+  const creditUsed = Number(sale.credit_used ?? 0)
+  const bonusUsed = Number(sale.bonus_used ?? 0)
+  const amounts = computeSaleAmounts({
+    priceNormal: Number(sale.price_normal),
+    discount: Number(sale.discount ?? 0),
+    paymentMethod: sale.payment_method,
+    gowabiNet:
+      sale.payment_method === GOWABI_METHOD ? Number(sale.net_amount) - roomFee : null,
+    isRequest: input.isRequest,
+    requestFee: REQUEST_FEE,
+    roomFee,
+    serviceCommission: Number(sale.commission ?? 0),
+    // ratio คืนรูปจากบิลเดิม: bonus = credit × (1−ratio) — ให้สูตรผลิตเลขเดิมเป๊ะ
+    memberRatio: creditUsed > 0 ? 1 - bonusUsed / creditUsed : null,
+    creditRequested: creditUsed,
+  })
+  if (
+    Math.abs(amounts.netAmount - Number(sale.net_amount)) > 0.005 ||
+    Math.abs(amounts.creditUsed - creditUsed) > 0.005 ||
+    Math.abs(amounts.bonusUsed - bonusUsed) > 0.005
+  )
+    return { ok: false, error: "ตัวเลขบิลไม่ตรงสูตรกลาง — แจ้งผู้ดูแลก่อนย้าย" }
+
+  const { error: saleErr } = await supabase
+    .from("sales")
+    .update({
+      therapist_id: input.therapistId,
+      bed_id: input.bedId,
+      is_request: input.isRequest,
+      request_fee: amounts.requestFee,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sale.id)
+  if (saleErr) return { ok: false, error: saleErr.message }
+
+  // มิเรอร์ลงการ์ด — ฟิลด์เดียวกับที่บิลเป็นเจ้าของ (ด่าน paid_queue_mismatch ต้องเป็นศูนย์เสมอ)
+  const { error: qErr } = await supabase
+    .from("queue_entries")
+    .update({
+      therapist_id: input.therapistId,
+      bed_id: input.bedId,
+      is_request: input.isRequest,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", entry.id)
+  if (qErr)
+    return {
+      ok: false,
+      error: "บิลย้ายแล้วแต่การ์ดยังไม่ขยับ — รีเฟรชแล้วลองใหม่ (" + qErr.message + ")",
+    }
+
+  revalidatePath("/queue")
+  revalidatePath("/today")
+  return { ok: true }
 }

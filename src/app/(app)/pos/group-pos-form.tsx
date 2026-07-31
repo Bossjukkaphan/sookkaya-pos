@@ -21,6 +21,7 @@ import {
   promoDiscountBaht,
   promoKey,
 } from "@/lib/promo"
+import { type Bed } from "@/lib/beds"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Time24Field } from "@/components/time24-field"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
@@ -86,12 +87,14 @@ export function GroupPosForm({
   therapists,
   services,
   promotions,
+  beds,
   people: initialPeople,
   standalone = false,
 }: {
   therapists: Therapist[]
   services: Service[]
   promotions: Promotion[]
+  beds: Bed[]
   people: GroupPerson[]
   /** เปิดจากหน้า POS ตรงๆ (ไม่ผ่านคิว) — เพิ่ม/ลบคน + แก้ชื่อได้ */
   standalone?: boolean
@@ -409,6 +412,34 @@ export function GroupPosForm({
                       aria-label={`เมนูคนที่ ${i + 1}`}
                       triggerClassName="h-11 text-sm"
                     />
+                  </div>
+
+                  {/* เตียงรายคน (ไม่บังคับ) — เคสจริง 1/8/2569: กลุ่ม 2 คนชื่อเดียว
+                      คนที่สองไม่มีที่เลือกเตียงเลย เพราะฟอร์มนี้เคยส่งต่อเฉพาะเตียงที่ติดมากับการ์ด
+                      แบบเดียวกับฟอร์มขายเดี่ยว — เตียงที่มีคนในกลุ่มนี้เลือกไปแล้วขึ้นจาง */}
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-slate-600">
+                      เตียง <span className="font-normal text-slate-400">(ไม่บังคับ)</span>
+                    </p>
+                    <select
+                      value={p.bedId}
+                      onChange={(e) => setPerson(i, { bedId: e.target.value })}
+                      className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                      aria-label={`เตียงคนที่ ${i + 1}`}
+                    >
+                      <option value="">— ไม่ระบุเตียง —</option>
+                      {beds.map((b) => {
+                        const takenBy = people.findIndex(
+                          (x, j) => j !== i && x.bedId === b.id
+                        )
+                        return (
+                          <option key={b.id} value={b.id} disabled={takenBy >= 0}>
+                            {b.room} · {b.name}
+                            {takenBy >= 0 ? ` (คนที่ ${takenBy + 1} ใช้อยู่)` : ""}
+                          </option>
+                        )
+                      })}
+                    </select>
                   </div>
 
                   {/* เวลาใช้บริการรายคน — โหมดกลุ่มเคยตั้งไม่ได้ (มีเฉพาะที่ติดมาจากคิว) */}
