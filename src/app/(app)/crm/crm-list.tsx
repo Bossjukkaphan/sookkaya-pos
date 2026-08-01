@@ -17,6 +17,8 @@ export type CrmRow = {
   phone: string
   /** เหตุผลที่ขึ้นลิสต์ เช่น "วันเกิดพรุ่งนี้" / "หายไป 74 วัน · ยอดสะสม 5,200฿" */
   reason: string
+  /** มีค่า = ลูกค้าเคยผูกไลน์ → โชว์ปุ่มส่งไลน์ (ผูกหลายไลน์ใช้ตัวล่าสุด) */
+  lineUserId?: string
 }
 
 const RESULT_LABEL: Record<ContactResult, string> = {
