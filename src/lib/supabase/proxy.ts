@@ -4,7 +4,8 @@ import { createServerClient } from "@supabase/ssr"
 import type { Database } from "@/types/database"
 
 // /api/line-assistant/webhook: LINE เรียกเข้ามาโดยไม่มี session — คุมสิทธิ์ด้วยลายเซ็น x-line-signature ในตัว route เอง
-const PUBLIC_ROUTES = ["/login", "/auth", "/book", "/api/line-assistant/webhook"]
+// /api/cron: Vercel Cron เรียกโดยไม่มี session — คุมสิทธิ์ด้วย Bearer CRON_SECRET ในตัว route เอง
+const PUBLIC_ROUTES = ["/login", "/auth", "/book", "/api/line-assistant/webhook", "/api/cron"]
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
