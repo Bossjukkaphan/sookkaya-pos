@@ -5,10 +5,17 @@ import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
-import { saveCrmContact, type ContactResult } from "./crm-actions"
-import { msgBirthday, msgNewFollow, msgWinback } from "@/lib/crm"
+import { saveCrmContact, sendCrmLineMessage, type ContactResult } from "./crm-actions"
+import { crmMessage, LINE_MESSAGE_MAX } from "@/lib/crm"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 export type CrmRow = {
   customerId: string
@@ -41,14 +48,40 @@ export function CrmList({
   const [savingId, setSavingId] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
+  // dialog ส่งไลน์: เก็บทั้งแถวที่กำลังจะส่ง + ข้อความที่แก้ได้
+  const [lineTarget, setLineTarget] = useState<CrmRow | null>(null)
+  const [lineText, setLineText] = useState("")
+  const [sending, setSending] = useState(false)
+
+  function openLineDialog(row: CrmRow) {
+    setLineTarget(row)
+    setLineText(crmMessage(listType, row.nickname || row.name))
+  }
+
+  function sendLine() {
+    if (!lineTarget?.lineUserId) return
+    const target = lineTarget
+    setSending(true)
+    startTransition(async () => {
+      const r = await sendCrmLineMessage(
+        target.customerId,
+        listType,
+        target.lineUserId!,
+        lineText
+      )
+      if (r.ok) {
+        toast.success(`ส่งไลน์หา ${target.nickname || target.name} แล้ว 💬`)
+        setLineTarget(null)
+        router.refresh()
+      } else {
+        toast.error(r.error)
+      }
+      setSending(false)
+    })
+  }
+
   function copyMessage(row: CrmRow) {
-    const name = row.nickname || row.name
-    const msg =
-      listType === "birthday"
-        ? msgBirthday(name)
-        : listType === "winback"
-          ? msgWinback(name)
-          : msgNewFollow(name)
+    const msg = crmMessage(listType, row.nickname || row.name)
     navigator.clipboard
       .writeText(msg)
       .then(() => toast.success("คัดลอกข้อความแล้ว — ไปวางในไลน์/SMS ได้เลย"))
@@ -79,6 +112,7 @@ export function CrmList({
   }
 
   return (
+    <>
     <ul className="space-y-2">
       {rows.map((row) => (
         <li key={row.customerId}>
@@ -127,6 +161,11 @@ export function CrmList({
                 </div>
               ) : (
                 <div className="flex gap-2">
+                  {row.lineUserId && (
+                    <Button size="sm" variant="default" onClick={() => openLineDialog(row)}>
+                      💬 ส่งไลน์
+                    </Button>
+                  )}
                   <Button size="sm" variant="outline" onClick={() => copyMessage(row)}>
                     📋 คัดลอกข้อความ
                   </Button>
@@ -144,5 +183,35 @@ export function CrmList({
         </li>
       ))}
     </ul>
+
+    <Dialog open={lineTarget !== null} onOpenChange={(o) => !o && setLineTarget(null)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            ส่งไลน์หา {lineTarget ? lineTarget.nickname || lineTarget.name : ""}
+          </DialogTitle>
+        </DialogHeader>
+        {/* แก้ข้อความได้ก่อนส่ง — ส่งผ่าน OA ร้าน ลูกค้าเห็นเป็นแชทจากร้านทันที */}
+        <textarea
+          value={lineText}
+          onChange={(e) => setLineText(e.target.value)}
+          rows={7}
+          maxLength={LINE_MESSAGE_MAX}
+          className="w-full rounded-md border border-slate-200 p-3 text-sm"
+        />
+        <p className="text-right text-xs text-slate-400">
+          {lineText.length}/{LINE_MESSAGE_MAX}
+        </p>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setLineTarget(null)} disabled={sending}>
+            ยกเลิก
+          </Button>
+          <Button onClick={sendLine} disabled={sending || !lineText.trim()}>
+            {sending ? "กำลังส่ง..." : "ยืนยันส่ง 💬"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }
