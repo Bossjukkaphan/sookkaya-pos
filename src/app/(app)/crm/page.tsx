@@ -28,7 +28,7 @@ export default async function CrmPage({
   const cooldownSince = new Date(
     Date.parse(`${today}T00:00:00Z`) - CONTACT_COOLDOWN_DAYS * 86400000
   ).toISOString()
-  const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }] =
+  const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }, { data: lineAccounts }] =
     await Promise.all([
       supabase
         .from("customers")
@@ -55,11 +55,21 @@ export default async function CrmPage({
         .from("crm_contacts")
         .select("customer_id, list_type")
         .gte("created_at", cooldownSince),
+      supabase
+        .from("line_accounts")
+        .select("line_user_id, customer_id, created_at")
+        .order("created_at", { ascending: true }),
     ])
 
   const contacted = new Set(
     (recentContacts ?? []).map((c) => `${c.list_type}|${c.customer_id}`)
   )
+
+  // ลูกค้าหนึ่งคนอาจผูกหลายไลน์ — เรียงเก่า→ใหม่แล้ว set ทับ เหลือตัวล่าสุด
+  const lineByCustomer = new Map<string, string>()
+  for (const a of lineAccounts ?? []) {
+    if (a.customer_id) lineByCustomer.set(a.customer_id, a.line_user_id)
+  }
 
   const birthdayRows: CrmRow[] = (birthdayCustomers ?? [])
     .filter((c) => c.birthday && birthdayWithinDays(c.birthday, today, 7))
@@ -79,6 +89,7 @@ export default async function CrmPage({
               : days === 1
                 ? "🎂 วันเกิดพรุ่งนี้"
                 : `🎂 วันเกิดอีก ${days} วัน (${formatThaiDate(c.birthday!)})`,
+          lineUserId: lineByCustomer.get(c.id),
         } satisfies CrmRow,
       }
     })
@@ -95,6 +106,7 @@ export default async function CrmPage({
       nickname: c.nickname,
       phone: c.phone!,
       reason: `💤 หายไป ${daysSince(c.last_visit!, today)} วัน · มา ${c.visits} ครั้ง · ยอดสะสม ${formatBaht(Number(c.lifetime_value))} ฿`,
+      lineUserId: lineByCustomer.get(c.customer_id!),
     }))
 
   const newRows: CrmRow[] = (newcomers ?? [])
@@ -106,6 +118,7 @@ export default async function CrmPage({
       nickname: c.nickname,
       phone: c.phone!,
       reason: `🌱 มาครั้งแรกเมื่อ ${daysSince(c.first_visit!, today)} วันก่อน — โทรตามผล ชวนกลับ`,
+      lineUserId: lineByCustomer.get(c.customer_id!),
     }))
 
   return (
