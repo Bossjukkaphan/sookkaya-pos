@@ -1,6 +1,8 @@
 import { getMyProfile } from "@/lib/auth"
 import { signOut } from "@/app/actions"
 import { createClient } from "@/lib/supabase/server"
+import { birthdayTodayCustomers } from "@/lib/crm-birthday"
+import { todayInShopTz } from "@/lib/datetime"
 import { AppShell } from "@/components/app-shell"
 import {
   QueueBell,
@@ -27,15 +29,22 @@ export default async function AppLayout({
   // รายการที่ค้างข้ามวันไปแล้ว (ร้านลืมตัดสินใจ) จะหายจากป้ายทั้งที่ลูกค้ายังเห็น
   // "รอร้านยืนยัน" อยู่ฝั่งไลน์ตลอด — ต้องนับทุก pending จนกว่าพนักงานจะรับ/ปฏิเสธเอง
   const supabase = await createClient()
-  const { count: pendingCount } = await supabase
-    .from("queue_entries")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "pending")
+  const [{ count: pendingCount }, birthdays] = await Promise.all([
+    supabase
+      .from("queue_entries")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "pending"),
+    // วันเกิดวันนี้ที่ยังไม่อวยพร — โชว์บนกระดิ่ง (กติกาเดียวกับลิสต์ /crm)
+    birthdayTodayCustomers(supabase, todayInShopTz()),
+  ])
 
   return (
     // ตัวแจ้งเตือนคิวจองไลน์แบบสด — ครอบทั้งโซนพนักงาน ให้เสียง/toast/ป้ายเมนู
     // ทำงานทุกหน้าโดย subscribe realtime ชุดเดียว (ค่าเริ่มจาก server กันป้ายกระพริบ)
-    <QueueNotificationsProvider initialCount={pendingCount ?? 0}>
+    <QueueNotificationsProvider
+      initialCount={pendingCount ?? 0}
+      birthdayCount={birthdays.length}
+    >
       <div className="flex min-h-full flex-1 flex-col sm:flex-row">
         <AppShell role={profile?.role ?? "staff"} pendingCount={pendingCount ?? 0} />
 

@@ -59,6 +59,8 @@ type QueueNotificationsValue = {
   pendingCount: number
   /** รายการรออนุมัติ เรียงใหม่สุดก่อน */
   pending: PendingRequest[]
+  /** วันเกิดลูกค้าวันนี้ที่ยังไม่อวยพร (นับจาก server ตอนโหลด — กติกาเดียวกับ /crm) */
+  birthdayCount: number
 }
 
 /** export ไว้ให้หน้า preview/เทสต์ mock ค่าได้ — โค้ดจริงใช้ผ่าน hook ข้างล่าง */
@@ -85,10 +87,13 @@ function shortTime(t: string): string {
  */
 export function QueueNotificationsProvider({
   initialCount,
+  birthdayCount = 0,
   children,
 }: {
   /** ค่าจาก server ตอนโหลดหน้า — กันป้ายกระพริบ 0 ก่อนดึงรายการจริงเสร็จ */
   initialCount: number
+  /** วันเกิดวันนี้ที่ยังไม่อวยพร — ไม่มี realtime อัปเดตตอน server render เท่านั้น */
+  birthdayCount?: number
   children: ReactNode
 }) {
   const router = useRouter()
@@ -248,7 +253,7 @@ export function QueueNotificationsProvider({
   const pendingCount = loaded ? pending.length : initialCount + pending.length
 
   return (
-    <QueueNotificationsContext.Provider value={{ pendingCount, pending }}>
+    <QueueNotificationsContext.Provider value={{ pendingCount, pending, birthdayCount }}>
       {children}
     </QueueNotificationsContext.Provider>
   )
@@ -278,7 +283,9 @@ export function QueueBell() {
     return () => document.removeEventListener("pointerdown", onPointerDown)
   }, [open])
 
-  const count = live?.pendingCount ?? 0
+  const birthdays = live?.birthdayCount ?? 0
+  // ป้ายรวมทุกเรื่องที่ควรเหลือบมอง — คิวรออนุมัติ + วันเกิดวันนี้ที่ยังไม่อวยพร
+  const count = (live?.pendingCount ?? 0) + birthdays
   const items = live?.pending ?? []
 
   return (
@@ -306,6 +313,21 @@ export function QueueBell() {
 
       {open && (
         <div className="absolute right-0 z-50 mt-2 w-80 max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-lg border bg-white shadow-lg">
+          {birthdays > 0 && (
+            // แถบวันเกิด — พาไปหน้า /crm ที่มีปุ่มโทร/ส่งไลน์/บันทึกผลครบ
+            <Link
+              href="/crm"
+              onClick={() => setOpen(false)}
+              className="block border-b bg-pink-50 px-3 py-2.5 hover:bg-pink-100"
+            >
+              <span className="block text-sm font-medium text-pink-900">
+                🎂 วันเกิดลูกค้าวันนี้ {birthdays} คน
+              </span>
+              <span className="block text-xs text-pink-700">
+                แตะเพื่อเปิดหน้าดูแลลูกค้า — โทร/ส่งคำอวยพรได้เลย
+              </span>
+            </Link>
+          )}
           <p className="border-b bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
             คำขอจองจากไลน์ที่รออนุมัติ
           </p>
