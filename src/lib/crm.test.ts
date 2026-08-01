@@ -5,6 +5,7 @@ import {
   daysUntilBirthday,
   LINE_MESSAGE_MAX,
   msgBirthday,
+  msgBirthdayReminder,
   msgWinback,
   msgNewFollow,
   validateCrmLineText,
@@ -47,6 +48,20 @@ describe("crmMessage", () => {
     expect(crmMessage("birthday", "ส้ม")).toBe(msgBirthday("ส้ม"))
     expect(crmMessage("winback", "ส้ม")).toBe(msgWinback("ส้ม"))
     expect(crmMessage("new_follow", "ส้ม")).toBe(msgNewFollow("ส้ม"))
+  })
+})
+
+describe("msgBirthdayReminder", () => {
+  it("คนเดียว — มีชื่อ จำนวน และลิงก์ /crm", () => {
+    const m = msgBirthdayReminder(["ส้ม"])
+    expect(m).toContain("วันเกิดลูกค้า 1 คน")
+    expect(m).toContain("คุณส้ม")
+    expect(m).toContain("https://sookkaya-pos.vercel.app/crm")
+  })
+  it("หลายคน — คั่นด้วย · ครบทุกชื่อ", () => {
+    const m = msgBirthdayReminder(["ส้ม", "ฟ้า", "ตั้ม"])
+    expect(m).toContain("วันเกิดลูกค้า 3 คน")
+    expect(m).toContain("คุณส้ม · คุณฟ้า · คุณตั้ม")
   })
 })
 

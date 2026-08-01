@@ -78,6 +78,15 @@ export function crmMessage(
       : msgNewFollow(name)
 }
 
+/** เตือนทีมร้านตอนเช้าว่าวันนี้มีลูกค้าวันเกิด — ส่งเข้ากลุ่มไลน์ทีมร้านผ่าน OA ผู้ช่วย */
+export function msgBirthdayReminder(names: string[]): string {
+  return (
+    `🎂 วันนี้วันเกิดลูกค้า ${names.length} คน: ` +
+    names.map((n) => `คุณ${n}`).join(" · ") +
+    `\nเปิดเมนู "ดูแลลูกค้า" เพื่อส่งคำอวยพรได้เลย → https://sookkaya-pos.vercel.app/crm`
+  )
+}
+
 /** เพดานความยาวข้อความส่งไลน์ — LINE รับ 5,000 แต่กันเผลอวางยาว */
 export const LINE_MESSAGE_MAX = 500
 
