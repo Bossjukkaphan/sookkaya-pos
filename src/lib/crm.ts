@@ -57,3 +57,31 @@ export function msgNewFollow(name: string | null | undefined): string {
     `ถ้าถูกใจ แวะมาอีกได้เสมอนะคะ จองคิวได้ที่ ${BOOKING_LINK} ค่ะ`
   )
 }
+
+export type CrmListType = "birthday" | "winback" | "new_follow"
+
+/** เลือกเทมเพลตตามประเภทลิสต์ — ที่เดียว ใช้ทั้งปุ่มคัดลอกและปุ่มส่งไลน์ */
+export function crmMessage(
+  listType: CrmListType,
+  name: string | null | undefined
+): string {
+  return listType === "birthday"
+    ? msgBirthday(name)
+    : listType === "winback"
+      ? msgWinback(name)
+      : msgNewFollow(name)
+}
+
+/** เพดานความยาวข้อความส่งไลน์ — LINE รับ 5,000 แต่กันเผลอวางยาว */
+export const LINE_MESSAGE_MAX = 500
+
+/** ตรวจข้อความก่อนส่งไลน์: trim แล้วต้องไม่ว่างและไม่ยาวเกิน */
+export function validateCrmLineText(
+  text: string
+): { ok: true; text: string } | { ok: false; error: string } {
+  const t = text.trim()
+  if (!t) return { ok: false, error: "ข้อความว่าง — พิมพ์ก่อนส่งนะคะ" }
+  if (t.length > LINE_MESSAGE_MAX)
+    return { ok: false, error: `ข้อความยาวเกิน ${LINE_MESSAGE_MAX} ตัวอักษร` }
+  return { ok: true, text: t }
+}

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest"
 import {
   birthdayWithinDays,
+  crmMessage,
   daysUntilBirthday,
+  LINE_MESSAGE_MAX,
   msgBirthday,
   msgWinback,
   msgNewFollow,
+  validateCrmLineText,
 } from "./crm"
 
 describe("daysUntilBirthday / birthdayWithinDays", () => {
@@ -36,5 +39,27 @@ describe("เทมเพลตข้อความ", () => {
   it("ไม่มีชื่อ → คุณลูกค้า", () => {
     expect(msgBirthday("")).toContain("คุณลูกค้า")
     expect(msgWinback(null)).toContain("คุณลูกค้า")
+  })
+})
+
+describe("crmMessage", () => {
+  it("เลือกเทมเพลตตามประเภทลิสต์", () => {
+    expect(crmMessage("birthday", "ส้ม")).toBe(msgBirthday("ส้ม"))
+    expect(crmMessage("winback", "ส้ม")).toBe(msgWinback("ส้ม"))
+    expect(crmMessage("new_follow", "ส้ม")).toBe(msgNewFollow("ส้ม"))
+  })
+})
+
+describe("validateCrmLineText", () => {
+  it("ข้อความปกติ → ok พร้อม trim", () => {
+    expect(validateCrmLineText("  สวัสดีค่ะ  ")).toEqual({ ok: true, text: "สวัสดีค่ะ" })
+  })
+  it("ว่าง/ช่องว่างล้วน → error", () => {
+    expect(validateCrmLineText("   ").ok).toBe(false)
+    expect(validateCrmLineText("").ok).toBe(false)
+  })
+  it("ยาวเกิน 500 → error, พอดี 500 → ok", () => {
+    expect(validateCrmLineText("ก".repeat(LINE_MESSAGE_MAX + 1)).ok).toBe(false)
+    expect(validateCrmLineText("ก".repeat(LINE_MESSAGE_MAX)).ok).toBe(true)
   })
 })
