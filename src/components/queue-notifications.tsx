@@ -20,6 +20,7 @@ import { formatThaiDate } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import type { Tables } from "@/types/database"
+import type { ExpenseReminder } from "@/lib/expense-reminders"
 
 type QueueRow = Tables<"queue_entries">
 
@@ -61,6 +62,8 @@ type QueueNotificationsValue = {
   pending: PendingRequest[]
   /** วันเกิดลูกค้าวันนี้ที่ยังไม่อวยพร (นับจาก server ตอนโหลด — กติกาเดียวกับ /crm) */
   birthdayCount: number
+  /** ค่ามือหมอ/เงินเดือนรอบล่าสุดที่ยังไม่บันทึก — ค้างจนกว่าจะลงจริง */
+  expenseReminders: ExpenseReminder[]
 }
 
 /** export ไว้ให้หน้า preview/เทสต์ mock ค่าได้ — โค้ดจริงใช้ผ่าน hook ข้างล่าง */
@@ -88,12 +91,15 @@ function shortTime(t: string): string {
 export function QueueNotificationsProvider({
   initialCount,
   birthdayCount = 0,
+  expenseReminders = [],
   children,
 }: {
   /** ค่าจาก server ตอนโหลดหน้า — กันป้ายกระพริบ 0 ก่อนดึงรายการจริงเสร็จ */
   initialCount: number
   /** วันเกิดวันนี้ที่ยังไม่อวยพร — ไม่มี realtime อัปเดตตอน server render เท่านั้น */
   birthdayCount?: number
+  /** เตือนบันทึกค่าใช้จ่ายรอบใหญ่ที่ยังค้าง — server render เท่านั้นเช่นกัน */
+  expenseReminders?: ExpenseReminder[]
   children: ReactNode
 }) {
   const router = useRouter()
@@ -253,7 +259,9 @@ export function QueueNotificationsProvider({
   const pendingCount = loaded ? pending.length : initialCount + pending.length
 
   return (
-    <QueueNotificationsContext.Provider value={{ pendingCount, pending, birthdayCount }}>
+    <QueueNotificationsContext.Provider
+      value={{ pendingCount, pending, birthdayCount, expenseReminders }}
+    >
       {children}
     </QueueNotificationsContext.Provider>
   )
@@ -284,8 +292,9 @@ export function QueueBell() {
   }, [open])
 
   const birthdays = live?.birthdayCount ?? 0
-  // ป้ายรวมทุกเรื่องที่ควรเหลือบมอง — คิวรออนุมัติ + วันเกิดวันนี้ที่ยังไม่อวยพร
-  const count = (live?.pendingCount ?? 0) + birthdays
+  const expenses = live?.expenseReminders ?? []
+  // ป้ายรวมทุกเรื่องที่ควรเหลือบมอง — คิวรออนุมัติ + วันเกิดวันนี้ + ค่าใช้จ่ายค้างบันทึก
+  const count = (live?.pendingCount ?? 0) + birthdays + expenses.length
   const items = live?.pending ?? []
 
   return (
@@ -328,6 +337,20 @@ export function QueueBell() {
               </span>
             </Link>
           )}
+          {expenses.map((r) => (
+            // แถบเหลือง — ค่าใช้จ่ายรอบใหญ่ที่ยังไม่ลงบันทึก ค้างจนกว่าจะลงจริงใน /expenses
+            <Link
+              key={r.duty}
+              href="/expenses"
+              onClick={() => setOpen(false)}
+              className="block border-b bg-amber-50 px-3 py-2.5 hover:bg-amber-100"
+            >
+              <span className="block text-sm font-medium text-amber-900">{r.label}</span>
+              <span className="block text-xs text-amber-700">
+                แตะเพื่อเปิดหน้าค่าใช้จ่าย — บันทึกแล้วเตือนหายเอง
+              </span>
+            </Link>
+          ))}
           <p className="border-b bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
             คำขอจองจากไลน์ที่รออนุมัติ
           </p>
