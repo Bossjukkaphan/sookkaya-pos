@@ -2,6 +2,7 @@ import { getMyProfile } from "@/lib/auth"
 import { signOut } from "@/app/actions"
 import { createClient } from "@/lib/supabase/server"
 import { birthdayTodayCustomers } from "@/lib/crm-birthday"
+import { expenseReminders } from "@/lib/expense-reminders"
 import { todayInShopTz } from "@/lib/datetime"
 import { AppShell } from "@/components/app-shell"
 import {
@@ -29,13 +30,16 @@ export default async function AppLayout({
   // รายการที่ค้างข้ามวันไปแล้ว (ร้านลืมตัดสินใจ) จะหายจากป้ายทั้งที่ลูกค้ายังเห็น
   // "รอร้านยืนยัน" อยู่ฝั่งไลน์ตลอด — ต้องนับทุก pending จนกว่าพนักงานจะรับ/ปฏิเสธเอง
   const supabase = await createClient()
-  const [{ count: pendingCount }, birthdays] = await Promise.all([
+  const today = todayInShopTz()
+  const [{ count: pendingCount }, birthdays, expenseDue] = await Promise.all([
     supabase
       .from("queue_entries")
       .select("id", { count: "exact", head: true })
       .eq("status", "pending"),
     // วันเกิดวันนี้ที่ยังไม่อวยพร — โชว์บนกระดิ่ง (กติกาเดียวกับลิสต์ /crm)
-    birthdayTodayCustomers(supabase, todayInShopTz()),
+    birthdayTodayCustomers(supabase, today),
+    // ค่ามือหมอ/เงินเดือนรอบล่าสุดที่ยังไม่บันทึก — ค้างบนกระดิ่งจนกว่าจะลงจริง
+    expenseReminders(supabase, today),
   ])
 
   return (
@@ -44,6 +48,7 @@ export default async function AppLayout({
     <QueueNotificationsProvider
       initialCount={pendingCount ?? 0}
       birthdayCount={birthdays.length}
+      expenseReminders={expenseDue}
     >
       <div className="flex min-h-full flex-1 flex-col sm:flex-row">
         <AppShell role={profile?.role ?? "staff"} pendingCount={pendingCount ?? 0} />
