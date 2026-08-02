@@ -578,7 +578,7 @@ export default async function OverviewPage({
           <Link href={`/finance?month=${month}`}>ดูการเงินละเอียด</Link>
         </Button>
         <Button asChild variant="outline" size="sm">
-          <Link href="/insights/customers">ลูกค้าและคนที่หายไป</Link>
+          <Link href="/crm?tab=insights">วิเคราะห์ลูกค้า (ในดูแลลูกค้า)</Link>
         </Button>
         <Button asChild variant="outline" size="sm">
           <Link href="/members">สมาชิก</Link>
