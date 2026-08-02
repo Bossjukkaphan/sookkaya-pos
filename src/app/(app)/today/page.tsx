@@ -5,7 +5,7 @@ import { getMyProfile } from "@/lib/auth"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
 import { billTotal, groupSalesByBill } from "@/lib/bill"
-import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
+import { TIER_COLOR, TIER_COLOR_DEFAULT, tierLabel } from "@/lib/tier-colors"
 import { MONEY_INFO } from "@/lib/money-info"
 import { Button } from "@/components/ui/button"
 import { SaleRowActions } from "./sale-row-actions"
@@ -604,7 +604,7 @@ export default async function TodayPage({
                     <p className="truncate font-medium">
                       {topupName.get(t.customer_id) ?? "ไม่ระบุชื่อ"}{" "}
                       <Badge variant="outline" className={TIER_COLOR[t.tier] ?? TIER_COLOR_DEFAULT}>
-                        {t.tier}
+                        {tierLabel(t.tier)}
                       </Badge>
                     </p>
                     <p className="text-xs text-slate-500">

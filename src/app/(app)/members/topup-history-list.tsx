@@ -7,7 +7,7 @@ import { toast } from "sonner"
 import { deleteTopup } from "./member-actions"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
-import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
+import { TIER_COLOR, TIER_COLOR_DEFAULT, tierLabel } from "@/lib/tier-colors"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -78,7 +78,7 @@ export function TopupHistoryList({ topups }: { topups: TopupRow[] }) {
                 <p className="font-medium">
                   {t.customerName}{" "}
                   <Badge variant="outline" className={TIER_COLOR[t.tier] ?? TIER_COLOR_DEFAULT}>
-                    {t.tier}
+                    {tierLabel(t.tier)}
                   </Badge>
                 </p>
                 <p className="text-xs text-slate-500">

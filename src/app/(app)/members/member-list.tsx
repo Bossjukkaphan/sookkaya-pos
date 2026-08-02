@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 
 import { filterMembers, sortMembers, type MemberListItem, type MemberSort } from "@/lib/member-list"
+import { tierLabel } from "@/lib/tier-colors"
 import { MemberRow } from "./member-row"
 import { Input } from "@/components/ui/input"
 
@@ -64,7 +65,7 @@ export function MemberList({
             <option value="">ทุกระดับ</option>
             {tiers.map((t) => (
               <option key={t} value={t}>
-                {t}
+                {tierLabel(t)}
               </option>
             ))}
           </select>

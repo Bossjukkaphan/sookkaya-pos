@@ -15,6 +15,7 @@ import {
 import { GroupedBarChart } from "@/components/charts/grouped-bar-chart"
 import { LineChart } from "@/components/charts/line-chart"
 import { InfoDot } from "@/components/info-dot"
+import { tierLabel } from "@/lib/tier-colors"
 import { MONEY_INFO } from "@/lib/money-info"
 import { StatCard } from "@/components/stat-card"
 import { InsightsAccessDenied, canSeeInsights } from "../insights/shared"
@@ -76,11 +77,12 @@ export default async function OverviewPage({
     // member_balances มีหนึ่งแถวต่อ "ลูกค้าทุกคน" (พันกว่าแถว) ไม่ใช่ต่อสมาชิก
     // ถ้าดึงทั้ง view supabase-js จะตัดที่ 1000 แถวเงียบๆ แล้วยอดคงค้างจะขาด
     // และ 960 กว่าคนที่ยอดศูนย์คือลูกค้าเดินเข้าร้านที่ไม่เคยเติมเงิน
-    // ไม่ใช่ "สมาชิกที่เครดิตหมด" — จึงต้องคัดจากรายชื่อสมาชิกก่อน
+    // ไม่ใช่ "สมาชิกที่เครดิตหมด" — จึงต้องคัดคนที่เคยมีใบเติมเงินก่อน
+    // คัดจากใบเติมเงิน ไม่ใช่ customer_type='สมาชิก' เพราะ "เครดิตคงเหลือ" ของลูกค้าทั่วไป
+    // (ยอดจ่ายล่วงหน้าที่ใช้ไม่ครบ) ก็เป็นหนี้ที่ร้านค้างลูกค้าเหมือนกัน ต้องนับด้วย
     supabase
-      .from("customers")
-      .select("id", { count: "exact" })
-      .eq("customer_type", "สมาชิก")
+      .from("member_topups")
+      .select("customer_id", { count: "exact" })
       .limit(MEMBER_LIMIT),
     // หนึ่งเดือนมี ~31 วัน × จำนวนหมอนวด (ปัจจุบัน 6 คน) — ห่างจากเพดาน 1000 มาก
     supabase
@@ -91,10 +93,15 @@ export default async function OverviewPage({
       .limit(1000),
   ])
 
-  const memberIds = (memberRows ?? [])
-    .map((m) => m.id)
-    .filter((id): id is string => id !== null)
-  const memberTruncated = (memberCount ?? 0) > memberIds.length
+  // ลูกค้าคนเดียวเติมได้หลายใบ — ตัดซ้ำก่อนนับ
+  const memberIds = [
+    ...new Set(
+      (memberRows ?? [])
+        .map((m) => m.customer_id)
+        .filter((id): id is string => id !== null)
+    ),
+  ]
+  const memberTruncated = (memberCount ?? 0) > (memberRows ?? []).length
 
   const { data: balanceRows } =
     memberIds.length > 0
@@ -499,7 +506,7 @@ export default async function OverviewPage({
                           {m.name}
                           {tier && (
                             <span className="ml-1.5 text-[11px] font-normal text-slate-500">
-                              {tier}
+                              {tierLabel(tier)}
                             </span>
                           )}
                         </p>

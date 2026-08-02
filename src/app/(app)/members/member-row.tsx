@@ -3,7 +3,7 @@ import Link from "next/link"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
 import { creditBucket } from "@/lib/member-credit"
-import { TIER_COLOR, TIER_COLOR_DEFAULT } from "@/lib/tier-colors"
+import { TIER_COLOR, TIER_COLOR_DEFAULT, tierLabel } from "@/lib/tier-colors"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -47,7 +47,7 @@ export function MemberRow({
                   variant="outline"
                   className={`shrink-0 ${TIER_COLOR[tier] ?? TIER_COLOR_DEFAULT}`}
                 >
-                  {tier}
+                  {tierLabel(tier)}
                 </Badge>
               )}
             </div>
