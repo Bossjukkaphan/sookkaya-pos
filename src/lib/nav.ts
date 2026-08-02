@@ -100,7 +100,8 @@ export const NAV_SECTIONS: { title: string; links: NavLink[] }[] = [
         href: "/crm",
         label: "ดูแลลูกค้า",
         icon: HeartHandshake,
-        description: "รายชื่อที่ควรโทรหา วันเกิด และคนที่หายไป",
+        description:
+          "รายชื่อที่ควรโทรหา วันเกิด คนที่หายไป · ผู้จัดการดูวิเคราะห์ยอดสะสมได้",
       },
       {
         href: "/expenses",
@@ -167,13 +168,6 @@ export const NAV_SECTIONS: { title: string; links: NavLink[] }[] = [
         label: "ROI ส่วนลด",
         icon: BadgePercent,
         description: "โปรฯ ไหนคุ้ม โปรฯ ไหนแค่แจกส่วนลด",
-        minRole: "manager",
-      },
-      {
-        href: "/insights/customers",
-        label: "ลูกค้าและคนที่หายไป",
-        icon: Users,
-        description: "ยอดสะสมรายคน และคนที่ควรตามกลับ",
         minRole: "manager",
       },
     ],

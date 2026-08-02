@@ -1,12 +1,15 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { todayInShopTz, formatThaiDate } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
 import { birthdayWithinDays, daysUntilBirthday } from "@/lib/crm"
 import { daysSince, dormantCutoff } from "@/lib/insights"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { canSeeInsights, InsightsAccessDenied } from "../insights/shared"
 import { CrmList, type CrmRow } from "./crm-list"
+import { CustomerInsights } from "./customer-insights"
 
 export const metadata = { title: "ดูแลลูกค้า · สุขกายา POS" }
 
@@ -14,12 +17,54 @@ const LIST_CAP = 30
 /** ติดต่อแล้ว (ไม่ว่าผลอะไร) เว้น 30 วันก่อนขึ้นลิสต์ประเภทเดิมอีก */
 const CONTACT_COOLDOWN_DAYS = 30
 
+/** แท็บบนหัวหน้าดูแลลูกค้า — ลงมือ (ทุกคน) / วิเคราะห์ (manager+) */
+function PageTabs({ active, showInsights }: { active: "contact" | "insights"; showInsights: boolean }) {
+  const cls = (a: boolean) =>
+    `flex-1 rounded-md border px-3 py-2 text-center text-sm ${
+      a
+        ? "border-[#664343] bg-[#FFF0D1]/60 font-medium text-[#664343]"
+        : "text-slate-600 hover:bg-slate-50"
+    }`
+  return (
+    <div className="flex gap-2">
+      <Link href="/crm" className={cls(active === "contact")}>
+        📞 ต้องติดต่อวันนี้
+      </Link>
+      {showInsights && (
+        <Link href="/crm?tab=insights" className={cls(active === "insights")}>
+          📈 วิเคราะห์ลูกค้า
+        </Link>
+      )}
+    </div>
+  )
+}
+
 export default async function CrmPage({
   searchParams,
 }: {
-  searchParams: Promise<{ gone?: string }>
+  searchParams: Promise<{ gone?: string; tab?: string; sub?: string; days?: string }>
 }) {
-  const { gone } = await searchParams
+  const { gone, tab, sub, days } = await searchParams
+  const profile = await getMyProfile()
+  const showInsights = canSeeInsights(profile?.role)
+
+  // แท็บวิเคราะห์ — เนื้อหาเดิมของ /insights/customers ย้ายมาอยู่ที่นี่ (สเปก 2026-08-02)
+  if (tab === "insights") {
+    if (!showInsights) return <InsightsAccessDenied title="วิเคราะห์ลูกค้า" />
+    return (
+      <div className="mx-auto max-w-3xl space-y-5">
+        <div>
+          <h1 className="text-xl font-bold">ดูแลลูกค้า 💚</h1>
+          <p className="text-sm text-slate-600">
+            มุมวิเคราะห์ — ใครมียอดสะสมสูง ใครหายไปนานควรตามกลับ
+          </p>
+        </div>
+        <PageTabs active="insights" showInsights />
+        <CustomerInsights sub={sub} days={days} />
+      </div>
+    )
+  }
+
   const goneDays = [30, 60, 90].includes(Number(gone)) ? Number(gone) : 60
   const supabase = await createClient()
   const today = todayInShopTz()
@@ -129,6 +174,8 @@ export default async function CrmPage({
           รายชื่อที่ควรติดต่อวันนี้ — โทร/ทักแล้วกดบันทึกผล ชื่อจะไม่ขึ้นซ้ำ 30 วัน
         </p>
       </div>
+
+      <PageTabs active="contact" showInsights={showInsights} />
 
       <Card className="border-pink-200">
         <CardHeader className="pb-2">
