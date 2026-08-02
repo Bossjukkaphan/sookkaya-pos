@@ -48,7 +48,9 @@ export function AppShell({
     <nav
       className={cn(
         // จอแคบ: แถบล่างเหมือนเดิม — ใช้ order ดันลงล่างแทนการย้ายตำแหน่งใน DOM
-        "order-last sticky bottom-0 z-10 border-t bg-white",
+        // z-40: ต้องสูงกว่าคอลัมน์ชื่อหมอของบอร์ดคิว (sticky z-20) ไม่งั้นชื่อหมอทับแถบเมนูบนมือถือ
+        // และสูงกว่าการ์ดที่กำลังลาก (z-30) แต่ยังต่ำกว่า Dialog/toast (z-50) ที่ต้องคลุมทั้งจอ
+        "order-last sticky bottom-0 z-40 border-t bg-white",
         // จอกว้าง: แถบข้างแนวตั้งติดซ้าย เลื่อนได้เมื่อรายการยาวเกินจอ
         "sm:order-first sm:top-0 sm:bottom-auto sm:h-dvh sm:w-56 sm:shrink-0 sm:overflow-y-auto sm:border-t-0 sm:border-r"
       )}
