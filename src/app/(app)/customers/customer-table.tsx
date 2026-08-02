@@ -61,6 +61,24 @@ function MemberBadge({ row }: { row: CustomerIssueRow }) {
   )
 }
 
+/**
+ * ลูกค้าทั่วไปที่ยังมีเครดิตเหลือ — เงินที่จ่ายล่วงหน้าไว้แล้วใช้บริการไม่ครบ
+ * ไม่ใช่สมาชิก จึงต้องไม่ใช้ป้ายม่วงชุดเดียวกับสมาชิก
+ * ฟ้า + เส้นประ ชุดเดียวกับป้ายในระบบสมาชิก (ดู lib/tier-colors.ts) — เห็นแล้วรู้ว่าคนละกลุ่ม
+ */
+function LeftoverCreditBadge({ row }: { row: CustomerIssueRow }) {
+  if (row.customer_type === "สมาชิก") return null
+  if ((row.credit_balance ?? 0) <= 0) return null
+  return (
+    <Badge
+      variant="outline"
+      className="shrink-0 border-dashed border-sky-400 bg-sky-50 text-sky-700"
+    >
+      ◇ มีเครดิตเหลือ
+    </Badge>
+  )
+}
+
 /** ผูกบัญชีไลน์แล้ว — เขียวโทนไลน์ · ลูกค้ากลุ่มนี้จองผ่านไลน์และรับแจ้งเตือนได้ */
 function LineBadge({ row }: { row: CustomerIssueRow }) {
   if (!row.has_line) return null
@@ -173,6 +191,7 @@ export function CustomerTable({
                 <td className="px-2 py-2">
                   <span className="flex flex-wrap items-center gap-1">
                     <MemberBadge row={r} />
+                    <LeftoverCreditBadge row={r} />
                     <LineBadge row={r} />
                     {r.customer_type !== "สมาชิก" && (
                       <span className="text-slate-400">ทั่วไป</span>
@@ -217,6 +236,7 @@ export function CustomerTable({
                     <NameCell row={r} />
                   </p>
                   <MemberBadge row={r} />
+                  <LeftoverCreditBadge row={r} />
                   <LineBadge row={r} />
                 </div>
                 <p className="text-sm text-slate-500">

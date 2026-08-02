@@ -67,6 +67,9 @@ export default async function CustomerDetailPage({
 
   const credit = balance?.credit_balance ?? 0
   const bonusGranted = balance?.bonus_granted ?? 0
+  // ลูกค้าทั่วไปที่ยังมีเครดิตเหลือ = เงินจ่ายล่วงหน้าที่ใช้บริการไม่ครบ ไม่ใช่แพ็กเกจสมาชิก
+  // ต้องบอกให้ชัดตรงนี้ ไม่งั้นพนักงานเห็นการ์ดเครดิตแล้วนึกว่าเป็นสมาชิก
+  const isLeftoverCredit = customer.customer_type !== "สมาชิก" && credit > 0
   const totalSpent = (sales ?? []).reduce(
     (sum, s) => sum + Number(s.net_amount),
     0
@@ -111,8 +114,16 @@ export default async function CustomerDetailPage({
             เปลี่ยนเป็นชื่อจริงได้ (การผูกไลน์และชื่อไลน์ยังอยู่ครบ)
           </p>
         )}
-        <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
           <Badge variant="secondary">{customer.customer_type}</Badge>
+          {isLeftoverCredit && (
+            <Badge
+              variant="outline"
+              className="border-dashed border-sky-400 bg-sky-50 text-sky-700"
+            >
+              ◇ มีเครดิตเหลือ
+            </Badge>
+          )}
           <CustomerForm customer={customer} />
           <MergeCustomers targetId={customer.id} targetName={customer.name} />
         </div>
@@ -125,6 +136,12 @@ export default async function CustomerDetailPage({
             <p className="text-2xl font-bold text-emerald-800">
               {formatBaht(credit)} ฿
             </p>
+            {isLeftoverCredit && (
+              <p className="mt-1 rounded-md border border-dashed border-sky-300 bg-sky-50 px-2 py-1 text-xs text-sky-800">
+                ◇ ลูกค้าทั่วไปที่มีเครดิตเหลือ — เงินที่จ่ายล่วงหน้าไว้แล้วใช้บริการไม่ครบ
+                ไม่ใช่แพ็กเกจสมาชิก จึงไม่มีโบนัส
+              </p>
+            )}
             {bonusGranted > 0 && (
               <p className="text-xs text-slate-500">
                 (เคยได้โบนัสรวม {formatBaht(bonusGranted)} ฿ — รวมอยู่ในเครดิตแล้ว)
