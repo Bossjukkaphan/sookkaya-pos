@@ -198,9 +198,30 @@ export type Database = {
         }
         Relationships: []
       }
-      // เพิ่มด้วยมือ — ตาราง bill_payments ยังไม่ apply ขึ้น production (ดู
-      // supabase/migrations/20260801100000_bill_payments.sql) จะถูกแทนที่ด้วย
-      // generated types หลัง apply จริง (npx supabase gen types ...)
+      beds: {
+        Row: {
+          id: string
+          is_active: boolean
+          name: string
+          room: string
+          sort: number
+        }
+        Insert: {
+          id?: string
+          is_active?: boolean
+          name: string
+          room: string
+          sort: number
+        }
+        Update: {
+          id?: string
+          is_active?: boolean
+          name?: string
+          room?: string
+          sort?: number
+        }
+        Relationships: []
+      }
       bill_payments: {
         Row: {
           amount: number
@@ -234,30 +255,6 @@ export type Database = {
           note?: string | null
           received_at?: string
           received_date?: string
-        }
-        Relationships: []
-      }
-      beds: {
-        Row: {
-          id: string
-          is_active: boolean
-          name: string
-          room: string
-          sort: number
-        }
-        Insert: {
-          id?: string
-          is_active?: boolean
-          name: string
-          room: string
-          sort: number
-        }
-        Update: {
-          id?: string
-          is_active?: boolean
-          name?: string
-          room?: string
-          sort?: number
         }
         Relationships: []
       }
@@ -569,6 +566,48 @@ export type Database = {
             referencedColumns: ["customer_id"]
           },
         ]
+      }
+      payout_confirmations: {
+        Row: {
+          computed_amount: number
+          endorsed_at: string | null
+          endorsed_by: string | null
+          id: string
+          kind: string
+          month: string
+          paid_at: string
+          paid_by: string
+          period_no: number
+          recorded_amount: number
+          variance_reason: string | null
+        }
+        Insert: {
+          computed_amount: number
+          endorsed_at?: string | null
+          endorsed_by?: string | null
+          id?: string
+          kind: string
+          month: string
+          paid_at?: string
+          paid_by: string
+          period_no?: number
+          recorded_amount: number
+          variance_reason?: string | null
+        }
+        Update: {
+          computed_amount?: number
+          endorsed_at?: string | null
+          endorsed_by?: string | null
+          id?: string
+          kind?: string
+          month?: string
+          paid_at?: string
+          paid_by?: string
+          period_no?: number
+          recorded_amount?: number
+          variance_reason?: string | null
+        }
+        Relationships: []
       }
       point_redemptions: {
         Row: {
@@ -1052,7 +1091,6 @@ export type Database = {
           net_amount: number
           notes: string | null
           payment_method: string
-          // เพิ่มด้วยมือ — คอลัมน์ยังไม่ apply ขึ้น production (ดู migration bill_payments)
           payments_tracked: boolean
           price_normal: number
           receipt_no: string | null
@@ -1297,6 +1335,7 @@ export type Database = {
       }
       staff_members: {
         Row: {
+          base_salary: number
           created_at: string
           id: string
           is_active: boolean
@@ -1305,6 +1344,7 @@ export type Database = {
           sort: number
         }
         Insert: {
+          base_salary?: number
           created_at?: string
           id?: string
           is_active?: boolean
@@ -1313,6 +1353,7 @@ export type Database = {
           sort?: number
         }
         Update: {
+          base_salary?: number
           created_at?: string
           id?: string
           is_active?: boolean
@@ -1432,6 +1473,26 @@ export type Database = {
           next_expiry: string | null
           nickname: string | null
           phone: string | null
+        }
+        Relationships: []
+      }
+      v_bill_due: {
+        Row: {
+          bill_key: string | null
+          credit_total: number | null
+          due: number | null
+          net_total: number | null
+          paid_total: number | null
+          sale_date: string | null
+        }
+        Relationships: []
+      }
+      v_bill_payments: {
+        Row: {
+          amount: number | null
+          bill_key: string | null
+          method: string | null
+          received_date: string | null
         }
         Relationships: []
       }
@@ -1608,30 +1669,6 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
-      }
-      // เพิ่มด้วยมือ — view v_bill_due สำหรับหน้าชำระหลายบรรทัดต่อบิล (Task 4)
-      v_bill_due: {
-        Row: {
-          bill_key: string
-          sale_date: string
-          net_total: number
-          credit_total: number
-          paid_total: number
-          due: number
-        }
-        Relationships: []
-      }
-      // เพิ่มด้วยมือ — view v_bill_payments ยังไม่ apply ขึ้น production (ดู
-      // supabase/migrations/20260801100000_bill_payments.sql) จะถูกแทนที่ด้วย
-      // generated types หลัง apply จริง (npx supabase gen types ...) — Task 8
-      v_bill_payments: {
-        Row: {
-          bill_key: string
-          method: string
-          amount: number
-          received_date: string
-        }
-        Relationships: []
       }
     }
     Functions: {
