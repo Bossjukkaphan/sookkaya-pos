@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
+  belongsToOtherMonth,
   canConfirmOn,
+  commissionPeriodOfExpense,
   needsReason,
   payoutPeriodsOf,
+  recordedWindowEnd,
   statusOf,
 } from "./payout-periods"
 
