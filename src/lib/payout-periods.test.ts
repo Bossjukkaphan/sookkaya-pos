@@ -66,6 +66,65 @@ describe("canConfirmOn", () => {
   })
 })
 
+describe("recordedWindowEnd", () => {
+  it("วันที่ 3 ของเดือนถัดไป", () => {
+    expect(recordedWindowEnd("2026-07")).toBe("2026-08-03")
+  })
+  it("ข้ามปีถูก", () => {
+    expect(recordedWindowEnd("2026-12")).toBe("2027-01-03")
+  })
+})
+
+describe("belongsToOtherMonth", () => {
+  it("เครื่องหมายเดือนอื่น = ใช่", () => {
+    expect(belongsToOtherMonth("ค่ามือหมอ21-31/7/69", "2026-08")).toBe(true)
+  })
+  it("เครื่องหมายเดือนนี้ = ไม่ใช่", () => {
+    expect(belongsToOtherMonth("ค่ามือหมอ21-31/7/69", "2026-07")).toBe(false)
+  })
+  it("ไม่มีเครื่องหมายเดือนเลย = ไม่ใช่", () => {
+    expect(belongsToOtherMonth("พี่รันเบิกเงินล่วงหน้า 2,500บาท", "2026-07")).toBe(false)
+  })
+  it("เดือนเลขซ้อนกันไม่หลอกกัน — /12/ ไม่ใช่ของเดือน 1 หรือ 2", () => {
+    expect(belongsToOtherMonth("ค่ามือหมอ1-10/12/69", "2027-01")).toBe(true)
+    expect(belongsToOtherMonth("ค่ามือหมอ1-10/12/69", "2026-02")).toBe(true)
+    expect(belongsToOtherMonth("ค่ามือหมอ1-10/12/69", "2026-12")).toBe(false)
+  })
+})
+
+describe("commissionPeriodOfExpense", () => {
+  const e = (item: string, expense_date: string) => ({ item, amount: 1, expense_date })
+
+  // เคสจริง ก.ค. ที่ทำให้สูตรกรองตามวันที่พัง: งวด 11-20 ถูกคีย์วันที่ 21
+  it("ชื่อบอกงวด 11-20 คีย์วันที่ 21 → เข้างวด 2 ตามชื่อ ไม่สนวันที่", () => {
+    expect(commissionPeriodOfExpense(e("ค่ามือหมอ11-20/7/69", "2026-07-21"), "2026-07")).toBe(2)
+  })
+  it("ชื่อบอกงวดหลักงวดอื่นเข้าตามชื่อเช่นกัน", () => {
+    expect(commissionPeriodOfExpense(e("ค่ามือหมอ1-10/7/69", "2026-07-10"), "2026-07")).toBe(1)
+    expect(commissionPeriodOfExpense(e("ค่ามือหมอ21-31/7/69", "2026-07-31"), "2026-07")).toBe(3)
+  })
+  it("เครื่องหมายเดือนอื่น → ตัดทิ้ง (งวด ก.ค. คีย์ช้าห้ามโผล่ในเดือน ส.ค.)", () => {
+    expect(commissionPeriodOfExpense(e("ค่ามือหมอ21-31/7/69", "2026-08-02"), "2026-08")).toBeNull()
+  })
+  it("งวด ก.ค. คีย์ช้า 2 ส.ค. ยังนับเข้า ก.ค. งวด 3 ได้ (อยู่ในหน้าต่างผ่อนผัน)", () => {
+    expect(commissionPeriodOfExpense(e("ค่ามือหมอ21-31/7/69", "2026-08-02"), "2026-07")).toBe(3)
+  })
+  it("เงินเบิกล่วงหน้าไม่มีชื่องวด → เข้างวดตามวันที่", () => {
+    expect(
+      commissionPeriodOfExpense(e("พี่รันเบิกเงินล่วงหน้า 2,500บาท", "2026-07-15"), "2026-07")
+    ).toBe(2)
+    expect(
+      commissionPeriodOfExpense(e("พี่บีบีเบิกเงินล่วงหน้า 2,500บาท", "2026-07-05"), "2026-07")
+    ).toBe(1)
+  })
+  it("เงินเบิกในโซนผ่อนผัน (วันที่นอกเดือน) + ไม่บอกงวด → ตัดทิ้ง", () => {
+    expect(commissionPeriodOfExpense(e("เบิกเงินล่วงหน้า", "2026-08-02"), "2026-07")).toBeNull()
+  })
+  it("ลำดับ match สำคัญ — ชื่อมี 11-20 ต้องไม่โดน 1-10 แย่ง", () => {
+    expect(commissionPeriodOfExpense(e("ค่ามือหมอ11-20/8/69", "2026-08-25"), "2026-08")).toBe(2)
+  })
+})
+
 describe("statusOf", () => {
   it("ไม่มีแถว = รอจ่าย", () => {
     expect(statusOf(null)).toBe("pending")
