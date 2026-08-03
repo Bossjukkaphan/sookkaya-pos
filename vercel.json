@@ -5,10 +5,6 @@
     {
       "path": "/api/cron/birthday-reminder",
       "schedule": "0 1 * * *"
-    },
-    {
-      "path": "/api/cron/promo-broadcast",
-      "schedule": "30 2 4 8 *"
     }
   ]
 }
