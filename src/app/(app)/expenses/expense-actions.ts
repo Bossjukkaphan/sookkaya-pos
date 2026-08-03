@@ -5,8 +5,16 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { todayInShopTz } from "@/lib/datetime"
 import { CLOSE_GRACE_DAYS, canEditExpenseOn } from "@/lib/accounting-window"
+import {
+  DUPLICATE_WINDOW_DAYS,
+  type ExpenseWarning,
+  expenseWarnings,
+} from "@/lib/expense-warnings"
 
-export type ExpenseResult = { ok: true } | { ok: false; error: string }
+export type ExpenseResult =
+  | { ok: true }
+  /** warnings มีค่า = ยังไม่บันทึก รอพนักงานยืนยันก่อน (ไม่ใช่ error) */
+  | { ok: false; error?: string; warnings?: ExpenseWarning[] }
 
 /**
  * รายจ่ายไหลเข้าการคำนวณหลายหน้า (กำไรเงินสด/เชิงบัญชี คิดสดจากตาราง expenses)
@@ -47,6 +55,34 @@ async function costTypeOfCategory(
     .eq("category", category)
     .maybeSingle()
   return data?.cost_type ?? null
+}
+
+
+/**
+ * หาคำเตือนก่อนบันทึก — ดึงเฉพาะรายจ่ายที่ยอดเท่ากันและหมวดเดียวกันในช่วงที่สนใจ
+ * แคบตั้งแต่ query เพื่อไม่ให้ดึงทั้งตารางมากรองในหน้าเว็บ (กับดัก 1,000 แถวของ PostgREST)
+ * excludeId ใช้ตอนแก้ไข — ไม่งั้นรายการจะเตือนว่าซ้ำกับตัวเอง
+ */
+async function warningsFor(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  values: { item: string; amount: number; category: string; expense_date: string },
+  excludeId?: string
+): Promise<ExpenseWarning[]> {
+  const d = Date.parse(`${values.expense_date}T00:00:00Z`)
+  const span = DUPLICATE_WINDOW_DAYS * 86_400_000
+  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
+
+  let q = supabase
+    .from("expenses")
+    .select("item, amount, category, expense_date")
+    .eq("amount", values.amount)
+    .eq("category", values.category)
+    .gte("expense_date", iso(d - span))
+    .lte("expense_date", iso(d + span))
+  if (excludeId) q = q.neq("id", excludeId)
+
+  const { data } = await q
+  return expenseWarnings(values, data ?? [])
 }
 
 /** ตรวจฟิลด์ร่วมของฟอร์มเพิ่ม/แก้ — คืนค่าที่พร้อมเขียน หรือข้อความ error */
@@ -95,6 +131,12 @@ export async function createExpense(formData: FormData): Promise<ExpenseResult> 
   const costType = await costTypeOfCategory(supabase, parsed.values.category)
   if (!costType) return { ok: false, error: `ไม่รู้จักหมวดหมู่ "${parsed.values.category}"` }
 
+  // เตือนก่อน ไม่บล็อก — กดยืนยันแล้วส่งกลับมาพร้อม confirm_warnings จึงบันทึกจริง
+  if (formData.get("confirm_warnings") !== "on") {
+    const warnings = await warningsFor(supabase, parsed.values)
+    if (warnings.length > 0) return { ok: false, warnings }
+  }
+
   const { error } = await supabase
     .from("expenses")
     .insert({ ...parsed.values, cost_type: costType })
@@ -141,6 +183,11 @@ export async function updateExpense(
 
   const costType = await costTypeOfCategory(supabase, parsed.values.category)
   if (!costType) return { ok: false, error: `ไม่รู้จักหมวดหมู่ "${parsed.values.category}"` }
+
+  if (formData.get("confirm_warnings") !== "on") {
+    const warnings = await warningsFor(supabase, parsed.values, id)
+    if (warnings.length > 0) return { ok: false, warnings }
+  }
 
   const { data: updated, error } = await supabase
     .from("expenses")

@@ -52,8 +52,23 @@ export function ExpenseRowActions({
         toast.success("แก้รายจ่ายแล้ว — ตัวเลขการเงินอัพเดตตามทันที")
         setEditing(false)
         router.refresh()
+      } else if (result.warnings?.length) {
+        // ระบบสงสัยว่าซ้ำหรือหมวดผิด — ถามยืนยันในกล่องเดียว ไม่ต้องกรอกใหม่
+        const ok = window.confirm(
+          `ตรวจสอบก่อนบันทึก\n\n${result.warnings.map((w) => `• ${w.message}`).join("\n\n")}\n\nยืนยันบันทึกต่อไหม`
+        )
+        if (!ok) return
+        formData.set("confirm_warnings", "on")
+        const retry = await updateExpense(expense.id, formData)
+        if (retry.ok) {
+          toast.success("แก้รายจ่ายแล้ว — ตัวเลขการเงินอัพเดตตามทันที")
+          setEditing(false)
+          router.refresh()
+        } else {
+          toast.error(retry.error ?? "แก้ไขไม่สำเร็จ")
+        }
       } else {
-        toast.error(result.error)
+        toast.error(result.error ?? "แก้ไขไม่สำเร็จ")
       }
     })
   }
