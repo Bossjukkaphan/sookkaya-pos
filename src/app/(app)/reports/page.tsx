@@ -182,7 +182,9 @@ export default async function ReportsPage({
   // เครดิตไม่ใช่เงินเข้า จึงไม่อยู่ใน v_bill_payments อยู่แล้ว (ตัด Member Credit ออกตั้งแต่ต้นทาง)
   const cashByChannel = new Map<string, number>()
   for (const p of paymentLines ?? []) {
-    cashByChannel.set(p.method, (cashByChannel.get(p.method) ?? 0) + Number(p.amount))
+    // generated types ของ view เป็น nullable ทั้งที่ต้นทาง (bill_payments.method / sales.payment_method) ไม่เคย null
+    const method = p.method ?? "ไม่ระบุ"
+    cashByChannel.set(method, (cashByChannel.get(method) ?? 0) + Number(p.amount))
   }
   for (const t of topups ?? []) {
     const m = t.payment_method
@@ -224,7 +226,8 @@ export default async function ReportsPage({
   // เงินจริงตามบรรทัดชำระ (บิลเก่า view สังเคราะห์ให้เท่าสูตรเดิมเป๊ะ) + เครดิตจาก credit_used เหมือนเดิม
   const byPayment: Record<string, number> = {}
   for (const p of paymentLines ?? []) {
-    byPayment[p.method] = (byPayment[p.method] ?? 0) + Number(p.amount)
+    const method = p.method ?? "ไม่ระบุ" // view types nullable แต่ข้อมูลจริงไม่เคย null
+    byPayment[method] = (byPayment[method] ?? 0) + Number(p.amount)
   }
   const creditTotal = rows.reduce((s, r) => s + Number(r.credit_used ?? 0), 0)
   if (creditTotal > 0) byPayment["Member Credit"] = creditTotal

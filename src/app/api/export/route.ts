@@ -123,7 +123,7 @@ export async function GET(request: NextRequest) {
   for (const p of paymentLines ?? []) {
     const key = String(p.bill_key)
     const arr = linesByBillKey.get(key) ?? []
-    arr.push({ method: p.method, amount: Number(p.amount) })
+    arr.push({ method: p.method ?? "ไม่ระบุ", amount: Number(p.amount) }) // view types nullable แต่ข้อมูลจริงไม่เคย null
     linesByBillKey.set(key, arr)
   }
   const paymentSummaryByBillKey = new Map<string, string>()

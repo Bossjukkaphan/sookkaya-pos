@@ -1,9 +1,13 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getMyProfile } from "@/lib/auth"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { DEFAULT_MIN_COMMISSION, formatBaht } from "@/lib/constants"
+import { payoutPeriodsOf } from "@/lib/payout-periods"
+import { computePayoutAmounts } from "./payout-amounts"
 import { PayToggle } from "./pay-toggle"
+import { PayoutCard, type PayoutRow } from "./payout-card"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +29,33 @@ export default async function CommissionPage({
   const supabase = await createClient()
   const params = await searchParams
   const workDate = params.date ?? todayInShopTz()
+
+  const me = await getMyProfile()
+  const canConfirmPayouts = !!me && ["admin", "manager"].includes(me.role)
+
+  // กล่องยืนยันตามเดือนของวันที่กำลังดู — เปลี่ยนวันข้ามเดือนกล่องตามเอง
+  const month = workDate.slice(0, 7)
+  let payoutRows: PayoutRow[] = []
+  if (canConfirmPayouts) {
+    const periods = payoutPeriodsOf(month)
+    const { data: confirmations } = await supabase
+      .from("payout_confirmations")
+      .select("*")
+      .eq("month", month)
+    payoutRows = await Promise.all(
+      periods.map(async (period) => {
+        const confirmation =
+          (confirmations ?? []).find(
+            (c) => c.kind === period.kind && c.period_no === period.periodNo
+          ) ?? null
+        // งวดที่ติ๊กแล้วใช้ยอดแช่แข็ง ไม่ต้องคำนวณสดให้เปลืองเวลา DB
+        const amounts = confirmation
+          ? { computed: confirmation.computed_amount, recorded: confirmation.recorded_amount }
+          : await computePayoutAmounts(supabase, period)
+        return { period, ...amounts, confirmation }
+      })
+    )
+  }
 
   const [
     { data: therapists },
@@ -97,6 +128,10 @@ export default async function CommissionPage({
           </Button>
         </div>
       </div>
+
+      {canConfirmPayouts && (
+        <PayoutCard month={month} rows={payoutRows} role={me!.role} today={todayInShopTz()} />
+      )}
 
       <Card className="border-emerald-200 bg-emerald-50">
         <CardContent className="flex items-baseline justify-between py-4">

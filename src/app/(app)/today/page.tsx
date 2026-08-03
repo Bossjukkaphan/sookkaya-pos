@@ -278,7 +278,9 @@ export default async function TodayPage({
   // ช่วงเดียวกับ dailySummary/paymentLines ด้านบน (received_date ไม่ใช่ sale_date)
   const byPayment: Record<string, number> = {}
   for (const p of paymentLines ?? []) {
-    byPayment[p.method] = (byPayment[p.method] ?? 0) + Number(p.amount)
+    // generated types ของ view เป็น nullable ทั้งที่ต้นทาง (bill_payments.method / sales.payment_method) ไม่เคย null
+    const method = p.method ?? "ไม่ระบุ"
+    byPayment[method] = (byPayment[method] ?? 0) + Number(p.amount)
   }
   if (creditTotal > 0) byPayment["Member Credit"] = creditTotal
 

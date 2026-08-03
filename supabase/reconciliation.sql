@@ -100,7 +100,13 @@ with expected(check_name, expected_value) as (values
   -- บรรทัดชำระ (สเปก 2026-08-01): บรรทัดต้องมีบิลจริง · เกินรับต้องศูนย์เมื่อพัก · วิธีหลักตรงบรรทัด
   ('bill_payments_orphaned', 0),
   ('bill_overpaid', 0),
-  ('tracked_bill_method_mismatch', 0)
+  ('tracked_bill_method_mismatch', 0),
+
+  -- เดือนที่งวดจ่ายถูกรับรองครบ 4 งวด ยอด "จ่ายจริง" ที่แช่แข็งไว้ต้องนิ่งตลอดกาล
+  -- เทียบระดับเดือน ไม่จำลองการจับคู่รายงวดใน SQL (กติกาเดียวกันเขียนสองภาษาจะเพี้ยนจากกัน
+  -- — ตัวจริงอยู่ที่ commissionPeriodOfExpense ใน src/lib/payout-periods.ts)
+  -- ขึ้นมากกว่า 0 = มีคนแก้รายจ่ายหมวดค่ามือ/เงินเดือนหลังเจ้าของร้านปิดงวดแล้ว ต้องสืบทันที
+  ('endorsed_payout_drift', 0)
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -248,6 +254,29 @@ actual(check_name, actual_value) as (
   select 'points_used_coupon_no_sale', count(*)
   from public.point_redemptions
   where status = 'used' and used_sale_id is null
+
+  union all
+  select 'endorsed_payout_drift', count(*)
+  from (
+    -- เฉพาะเดือนที่ครบ 4 งวดและรับรองหมดแล้ว — เดือนที่ยังติ๊กไม่ครบไม่นับ (ตัวเลขยังขยับได้ปกติ)
+    select pc.month, sum(pc.recorded_amount) as frozen
+    from public.payout_confirmations pc
+    group by pc.month
+    having count(*) = 4 and count(*) filter (where pc.endorsed_at is not null) = 4
+  ) m
+  where m.frozen is distinct from (
+    select coalesce(sum(e.amount), 0)
+    from public.expenses e
+    where e.category in ('HR / payroll (ค่ามือหมอ)', 'เงินเดือนพนักงานประจำ')
+      -- หน้าต่างเดือน + ผ่อนผัน 3 วัน (ตรง accounting window ที่รายจ่ายเดือนก่อนคีย์ได้ถึงวันที่ 3)
+      and e.expense_date >= (m.month || '-01')::date
+      and e.expense_date <= (m.month || '-01')::date + interval '1 month' + interval '2 days'
+      -- ตัดรายการที่ชื่อประทับเดือนอื่น (เช่น "ค่ามือหมอ21-31/7/69" ที่คีย์ 2/8 เป็นของ ก.ค. ไม่ใช่ ส.ค.)
+      and not (
+        e.item ~ '/\d{1,2}/'
+        and e.item not like '%/' || extract(month from (m.month || '-01')::date)::int || '/%'
+      )
+  )
 
   union all
   select 'views_without_security_invoker', count(*)
