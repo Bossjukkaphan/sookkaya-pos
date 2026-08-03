@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { StatCard } from "@/components/stat-card"
 import { TeamTable } from "./team-table"
 import { PagerLink } from "@/components/pager-link"
+import { StaffSalaryCard } from "./staff-salary-card"
 
 export const metadata = { title: "ทีมงาน · สุขกายา POS" }
 
@@ -64,7 +65,7 @@ export default async function TeamPage({
     { data: planRows },
   ] = await Promise.all([
       supabase.from("therapists").select("id, name, status").order("name"),
-      supabase.from("staff_members").select("id, name, role").order("sort").order("name"),
+      supabase.from("staff_members").select("id, name, role, base_salary, is_active").order("sort").order("name"),
       supabase
         .from("attendance")
         .select("work_date, therapist_id, staff_id, checked_in_at, checked_out_at, created_by")
@@ -284,6 +285,18 @@ export default async function TeamPage({
           )}
         </CardContent>
       </Card>
+
+      {profile && ["admin", "manager"].includes(profile.role) && (
+        <StaffSalaryCard
+          staff={(staff ?? []).map((s) => ({
+            id: s.id,
+            name: s.name,
+            role: s.role,
+            base_salary: s.base_salary,
+            is_active: s.is_active,
+          }))}
+        />
+      )}
     </div>
   )
 }
