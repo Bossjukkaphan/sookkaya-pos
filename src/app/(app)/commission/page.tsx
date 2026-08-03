@@ -6,6 +6,7 @@ import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { DEFAULT_MIN_COMMISSION, formatBaht } from "@/lib/constants"
 import { payoutPeriodsOf } from "@/lib/payout-periods"
 import { computePayoutAmounts } from "./payout-amounts"
+import { DateJump } from "./date-jump"
 import { PayToggle } from "./pay-toggle"
 import { PayoutCard, type PayoutRow } from "./payout-card"
 import { Card, CardContent } from "@/components/ui/card"
@@ -120,13 +121,27 @@ export default async function CommissionPage({
           <h1 className="text-xl font-bold">ค่ามือรายวัน</h1>
           <p className="text-sm text-slate-600">{formatThaiDate(workDate)}</p>
         </div>
-        <div className="flex gap-1">
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          <DateJump value={workDate} />
           <PagerLink href={`/commission?date=${shiftDate(workDate, -1)}`}>← ก่อนหน้า</PagerLink>
           <PagerLink href={`/commission?date=${shiftDate(workDate, 1)}`}>ถัดไป →</PagerLink>
           <Button asChild size="sm" variant="outline">
             <Link href="/commission/summary">ดูสรุปข้ามวัน</Link>
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1 text-sm text-slate-600">
+        <span>ดูตามงวด:</span>
+        {payoutPeriodsOf(month)
+          .filter((p) => p.kind === "commission")
+          .map((p) => (
+            <Button key={p.periodNo} asChild size="sm" variant="outline">
+              <Link href={`/commission/summary?from=${p.from}&to=${p.to}`}>
+                {p.label.replace("ค่ามือหมอ", "งวด")}
+              </Link>
+            </Button>
+          ))}
       </div>
 
       {canConfirmPayouts && (
