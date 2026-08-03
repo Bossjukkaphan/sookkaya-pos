@@ -95,10 +95,35 @@ describe("compareRange — บล็อก 1", () => {
     expect(result.previous.revenue).toBe(316788)
   })
 
-  it("เรียงหมวดตามขนาดผลกระทบ ไม่ใช่ตามเครื่องหมาย", () => {
+  it("บอกยอดจริงของทั้งสองเดือน ไม่ใช่แค่ผลต่าง", () => {
+    expect(result.byCategory).toEqual([
+      { category: "อื่นๆ", current: 2990, previous: 23000, deltaBaht: -20010 },
+      { category: "ซักรีด", current: 5000, previous: 7400, deltaBaht: -2400 },
+    ])
+  })
+
+  it("เรียงหมวดที่ใช้เงินเยอะสุดขึ้นก่อน — เจ้าของร้านอ่านตารางจากบนลงล่าง", () => {
     expect(result.byCategory.map((c) => c.category)).toEqual(["อื่นๆ", "ซักรีด"])
-    expect(result.byCategory[0].deltaBaht).toBe(-20010)
-    expect(result.byCategory[1].deltaBaht).toBe(-2400)
+  })
+
+  // เดิมกรองหมวดที่ยอดเท่าเดิมทิ้ง ทำให้ค่าเช่า/ค่าซักผ้าที่จ่ายเท่ากันทุกเดือนหายไปจากตาราง
+  it("หมวดที่จ่ายเท่าเดิมเป๊ะก็ต้องอยู่ในตาราง", () => {
+    const same = compareRange({
+      rows: [
+        row("2026-06-05", "ค่าเช่าสถานที่", "ค่าเช่า มิ.ย.", 36000),
+        row("2026-07-05", "ค่าเช่าสถานที่", "ค่าเช่า ก.ค.", 36000),
+      ],
+      revenueByDate: new Map(),
+      month: "2026-07",
+      throughDay: 27,
+    })
+    expect(same.byCategory).toEqual([
+      { category: "ค่าเช่าสถานที่", current: 36000, previous: 36000, deltaBaht: 0 },
+    ])
+  })
+
+  it("หมวดที่ไม่มียอดเลยทั้งสองเดือนไม่ต้องโผล่", () => {
+    expect(result.byCategory.map((c) => c.category)).not.toContain("ค่าเช่าสถานที่")
   })
 
   it("โชว์รายการใหญ่สุดของช่วงปัจจุบัน เรียงจากมากไปน้อย", () => {
@@ -116,7 +141,7 @@ describe("compareRange — บล็อก 1", () => {
       throughDay: 27,
     })
     expect(onlyPrev.byCategory).toEqual([
-      { category: "การตลาด / โฆษณา", deltaBaht: -5000 },
+      { category: "การตลาด / โฆษณา", current: 0, previous: 5000, deltaBaht: -5000 },
     ])
   })
 
