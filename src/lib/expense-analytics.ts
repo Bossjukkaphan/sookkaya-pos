@@ -102,7 +102,12 @@ export function compareRange(input: {
 }): {
   current: { expense: number; revenue: number }
   previous: { expense: number; revenue: number }
-  byCategory: { category: string; deltaBaht: number }[]
+  byCategory: {
+    category: string
+    current: number
+    previous: number
+    deltaBaht: number
+  }[]
   topItems: { item: string; amount: number }[]
 } {
   const { rows, revenueByDate, month, throughDay } = input
@@ -116,13 +121,16 @@ export function compareRange(input: {
 
   const categories = new Set([...cur.keys(), ...prev.keys()])
   const byCategory = [...categories]
-    .map((category) => ({
-      category,
-      deltaBaht: (cur.get(category) ?? 0) - (prev.get(category) ?? 0),
-    }))
-    .filter((c) => c.deltaBaht !== 0)
-    // เรียงตามขนาดผลกระทบ ไม่ใช่ตามเครื่องหมาย — ตัวที่ลดเยอะก็สำคัญพอกับตัวที่เพิ่มเยอะ
-    .sort((a, b) => Math.abs(b.deltaBaht) - Math.abs(a.deltaBaht))
+    .map((category) => {
+      const current = cur.get(category) ?? 0
+      const previous = prev.get(category) ?? 0
+      return { category, current, previous, deltaBaht: current - previous }
+    })
+    // หมวดที่ยอดเท่าเดิมต้องอยู่ด้วย เจ้าของร้านอ่านตารางนี้เพื่อดูว่าจ่ายอะไรไปเท่าไร
+    // ไม่ใช่ดูแค่ว่าอะไรเปลี่ยน — ตัดทิ้งเฉพาะหมวดที่ไม่มียอดเลยทั้งสองเดือน
+    .filter((c) => c.current !== 0 || c.previous !== 0)
+    // เรียงตามขนาดเงินที่ใช้ ไม่ใช่ขนาดผลต่าง — หมวดก้อนใหญ่ต้องอยู่บนสุดเสมอ
+    .sort((a, b) => Math.max(b.current, b.previous) - Math.max(a.current, a.previous))
 
   const topItems = [...curRows]
     .sort((a, b) => b.amount - a.amount)

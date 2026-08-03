@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
@@ -17,6 +19,28 @@ import { LineChart } from "@/components/charts/line-chart"
 import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "วิเคราะห์รายจ่าย · สุขกายา POS" }
+
+/** ยอดของหมวดในเดือนหนึ่ง กดแล้วไปหน้ารายจ่ายที่กรองหมวดนั้นไว้ให้เลย
+ *  หมวดที่ไม่มียอดในเดือนนั้นไม่ต้องลิงก์ กดไปก็เจอหน้าว่าง */
+function CategoryAmountLink({
+  month,
+  category,
+  amount,
+}: {
+  month: string
+  category: string
+  amount: number
+}) {
+  if (amount === 0) return <span className="text-slate-300">—</span>
+  return (
+    <Link
+      href={`/expenses?month=${month}&category=${encodeURIComponent(category)}`}
+      className="underline decoration-slate-300 underline-offset-2 hover:decoration-slate-900"
+    >
+      {formatBaht(amount)}
+    </Link>
+  )
+}
 
 function toDailyMap(
   rows: { date: string | null; value: number | null }[]
@@ -141,7 +165,7 @@ export default async function ExpenseInsightsPage({
   const expenseDelta = cmp.current.expense - cmp.previous.expense
   const revenueDelta = cmp.current.revenue - cmp.previous.revenue
   const pct = (delta: number, base: number) => (base === 0 ? 0 : (delta / base) * 100)
-  const maxBar = Math.max(1, ...cmp.byCategory.map((c) => Math.abs(c.deltaBaht)))
+  const prevMonth = shiftMonth(month, -1)
 
   const rangeLabel = isCurrentMonth
     ? `1–${throughDay} ${monthLabel(month)}`
@@ -163,10 +187,14 @@ export default async function ExpenseInsightsPage({
         </div>
       </div>
 
-      {/* บล็อก 1 — ต่างจากคราวที่แล้วเพราะอะไร */}
+      {/* บล็อก 1 — จ่ายหมวดไหนไปเท่าไร เทียบกับเดือนที่แล้ว */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-base">ต่างจากเดือนที่แล้วเพราะอะไร</CardTitle>
+          <CardTitle className="text-base">รายจ่ายแต่ละหมวด เทียบเดือนที่แล้ว</CardTitle>
+          <p className="text-xs text-slate-500">
+            กดตัวเลขเพื่อดูรายการจริงของหมวดนั้น · กดชื่อเดือนเพื่อดูรายจ่ายทั้งเดือน
+            {isCurrentMonth && " · ตารางเทียบแค่ช่วงวันเท่ากัน แต่ลิงก์จะพาไปดูทั้งเดือน"}
+          </p>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
@@ -185,27 +213,88 @@ export default async function ExpenseInsightsPage({
             />
           </div>
 
-          <div className="space-y-1.5 border-t pt-3">
-            {cmp.byCategory.length === 0 && (
+          <div className="border-t pt-3">
+            {cmp.byCategory.length === 0 ? (
               <p className="py-2 text-center text-sm text-slate-500">
-                ไม่มีความเปลี่ยนแปลงระหว่างสองช่วง
+                ยังไม่มีรายจ่ายในสองเดือนนี้
               </p>
-            )}
-            {cmp.byCategory.map((c) => (
-              <div key={c.category} className="flex items-center gap-2 text-sm">
-                <span className="w-40 shrink-0 truncate text-slate-600">{c.category}</span>
-                <span
-                  className={`h-2 rounded-full ${c.deltaBaht > 0 ? "bg-red-400" : "bg-emerald-400"}`}
-                  style={{ width: `${(Math.abs(c.deltaBaht) / maxBar) * 100}%` }}
-                />
-                <span
-                  className={`ml-auto shrink-0 font-medium ${c.deltaBaht > 0 ? "text-red-700" : "text-emerald-700"}`}
-                >
-                  {c.deltaBaht > 0 ? "+" : "−"}
-                  {formatBaht(Math.abs(c.deltaBaht))}
-                </span>
+            ) : (
+              <div className="-mx-2 overflow-x-auto">
+                <table className="w-full min-w-md text-sm">
+                  <thead>
+                    <tr className="border-b text-xs text-slate-500">
+                      <th className="px-2 py-1.5 text-left font-medium">หมวด</th>
+                      <th className="px-2 py-1.5 text-right font-medium">
+                        <Link href={`/expenses?month=${prevMonth}`} className="underline">
+                          {monthShortLabel(prevMonth)}
+                        </Link>
+                      </th>
+                      <th className="px-2 py-1.5 text-right font-medium">
+                        <Link href={`/expenses?month=${month}`} className="underline">
+                          {monthShortLabel(month)}
+                        </Link>
+                      </th>
+                      <th className="px-2 py-1.5 text-right font-medium">ต่าง</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cmp.byCategory.map((c) => (
+                      <tr key={c.category} className="border-b last:border-0">
+                        <td className="max-w-40 truncate px-2 py-1.5 text-slate-600">
+                          {c.category}
+                        </td>
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          <CategoryAmountLink
+                            month={prevMonth}
+                            category={c.category}
+                            amount={c.previous}
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 text-right font-medium tabular-nums">
+                          <CategoryAmountLink
+                            month={month}
+                            category={c.category}
+                            amount={c.current}
+                          />
+                        </td>
+                        <td
+                          className={`px-2 py-1.5 text-right tabular-nums ${
+                            c.deltaBaht === 0
+                              ? "text-slate-400"
+                              : c.deltaBaht > 0
+                                ? "text-red-700"
+                                : "text-emerald-700"
+                          }`}
+                        >
+                          {c.deltaBaht === 0
+                            ? "เท่าเดิม"
+                            : `${c.deltaBaht > 0 ? "+" : "−"}${formatBaht(Math.abs(c.deltaBaht))}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 font-semibold">
+                      <td className="px-2 py-1.5">รวม</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {formatBaht(cmp.previous.expense)}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {formatBaht(cmp.current.expense)}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums ${
+                          expenseDelta > 0 ? "text-red-700" : "text-emerald-700"
+                        }`}
+                      >
+                        {expenseDelta > 0 ? "+" : "−"}
+                        {formatBaht(Math.abs(expenseDelta))}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
-            ))}
+            )}
           </div>
 
           {cmp.topItems.length > 0 && (

@@ -30,13 +30,15 @@ const FALLBACK_CATEGORIES = [
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string }>
+  searchParams: Promise<{ month?: string; category?: string }>
 }) {
   const supabase = await createClient()
   const today = todayInShopTz()
   const params = await searchParams
   // เลือกดูเดือนอื่นได้ผ่าน ?month=YYYY-MM — ค่าเริ่มต้นเดือนปัจจุบัน
   const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : today.slice(0, 7)
+  // ?category= มาจากการกดตัวเลขในตารางเทียบหมวดของหน้าวิเคราะห์รายจ่าย
+  const pickedCategory = params.category?.trim() || null
   const isCurrentMonth = month === today.slice(0, 7)
   const [my, mm] = month.split("-").map(Number)
   const monthStart = `${month}-01`
@@ -70,11 +72,22 @@ export default async function ExpensesPage({
     return acc
   }, {})
 
+  const visibleRows = pickedCategory
+    ? rows.filter((e) => e.category === pickedCategory)
+    : rows
+  const visibleTotal = visibleRows.reduce((sum, e) => sum + Number(e.amount), 0)
+  const monthQuery = `?month=${month}`
+  /** เลื่อนเดือนโดยคงหมวดที่กำลังกรองไว้ — ดูหมวดเดียวย้อนหลายเดือนได้รวดเดียว */
+  const monthHref = (m: string) =>
+    `/expenses?month=${m}${pickedCategory ? `&category=${encodeURIComponent(pickedCategory)}` : ""}`
+
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <h1 className="text-xl font-bold">รายจ่าย</h1>
 
-      <Tabs defaultValue="add">
+      {/* มาจากลิงก์เจาะดูรายการ (เช่นตารางเทียบหมวดของหน้าวิเคราะห์) ต้องเปิดแท็บรายการให้เลย
+          ไม่งั้นกดลิงก์แล้วเจอฟอร์มบันทึกรายจ่าย ต้องกดแท็บเองอีกที */}
+      <Tabs defaultValue={params.month || pickedCategory ? "list" : "add"}>
         <TabsList className="w-full">
           <TabsTrigger value="add" className="flex-1">
             บันทึกรายจ่าย
@@ -91,9 +104,9 @@ export default async function ExpensesPage({
         <TabsContent value="list" className="space-y-3 pt-4">
           {/* เลื่อนดูเดือนอื่น */}
           <div className="flex items-center justify-center gap-2">
-            <PagerLink href={`/expenses?month=${shiftMonth(month, -1)}`}>←</PagerLink>
+            <PagerLink href={monthHref(shiftMonth(month, -1))}>←</PagerLink>
             <span className="min-w-36 text-center text-sm font-semibold">{monthName}</span>
-            <PagerLink href={`/expenses?month=${shiftMonth(month, 1)}`}>→</PagerLink>
+            <PagerLink href={monthHref(shiftMonth(month, 1))}>→</PagerLink>
             {!isCurrentMonth && (
               <Link href="/expenses" className="text-xs text-slate-500 underline">
                 กลับเดือนนี้
@@ -105,34 +118,55 @@ export default async function ExpensesPage({
             <CardContent className="flex items-baseline justify-between py-4">
               <span className="text-sm font-medium">
                 รายจ่าย{isCurrentMonth ? "เดือนนี้" : monthName}
+                {pickedCategory && ` · ${pickedCategory}`}
               </span>
               <span className="text-2xl font-bold text-red-800">
-                {formatBaht(monthTotal)} ฿
+                {formatBaht(visibleTotal)} ฿
               </span>
             </CardContent>
           </Card>
+
+          {pickedCategory && (
+            <div className="flex items-center justify-between gap-2 rounded-md bg-slate-100 px-3 py-2 text-sm">
+              <span className="truncate text-slate-600">
+                กำลังดูเฉพาะหมวด <span className="font-medium">{pickedCategory}</span>
+              </span>
+              <Link href={monthQuery} className="shrink-0 underline">
+                ดูทุกหมวด
+              </Link>
+            </div>
+          )}
 
           {Object.keys(byCategory).length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">แยกตามหมวดหมู่</CardTitle>
+                <p className="text-xs text-slate-500">กดชื่อหมวดเพื่อดูเฉพาะรายการของหมวดนั้น</p>
               </CardHeader>
               <CardContent className="space-y-2">
                 {Object.entries(byCategory)
                   .sort((a, b) => b[1] - a[1])
                   .map(([cat, amount]) => {
                     const pct = monthTotal > 0 ? (amount / monthTotal) * 100 : 0
+                    const active = cat === pickedCategory
                     return (
                       <div key={cat}>
-                        <div className="flex justify-between gap-2 text-sm">
-                          <span className="text-slate-600">{cat}</span>
+                        <Link
+                          href={
+                            active ? monthQuery : `${monthQuery}&category=${encodeURIComponent(cat)}`
+                          }
+                          className="flex justify-between gap-2 text-sm hover:underline"
+                        >
+                          <span className={active ? "font-medium text-orange-700" : "text-slate-600"}>
+                            {cat}
+                          </span>
                           <span className="font-medium whitespace-nowrap">
                             {formatBaht(amount)} ฿{" "}
                             <span className="text-xs text-slate-400">
                               ({pct.toFixed(0)}%)
                             </span>
                           </span>
-                        </div>
+                        </Link>
                         {/* แถบสัดส่วนให้เห็นหมวดที่กินเงินเยอะสุดทันที */}
                         <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
                           <div
@@ -149,16 +183,25 @@ export default async function ExpensesPage({
 
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">รายการ</CardTitle>
+              <CardTitle className="text-base">
+                รายการ
+                {pickedCategory && (
+                  <span className="ml-1 text-sm font-normal text-slate-500">
+                    ({visibleRows.length} รายการ)
+                  </span>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="px-0">
-              {rows.length === 0 ? (
+              {visibleRows.length === 0 ? (
                 <p className="px-6 py-6 text-center text-sm text-slate-500">
-                  ยังไม่มีรายจ่ายในเดือนนี้
+                  {pickedCategory
+                    ? `ไม่มีรายจ่ายหมวด ${pickedCategory} ในเดือนนี้`
+                    : "ยังไม่มีรายจ่ายในเดือนนี้"}
                 </p>
               ) : (
                 <ul className="divide-y">
-                  {rows.map((e) => (
+                  {visibleRows.map((e) => (
                     <li
                       key={e.id}
                       className="flex items-start justify-between gap-3 px-4 py-3 sm:px-6"
