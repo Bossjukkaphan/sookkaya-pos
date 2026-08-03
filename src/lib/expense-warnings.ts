@@ -37,6 +37,18 @@ export type ExpenseCandidate = {
  */
 export const DUPLICATE_WINDOW_DAYS = 45
 
+/**
+ * จ่ายรายการชื่อนี้ยอดนี้มาแล้วกี่ครั้งถึงถือว่าเป็น "ค่าใช้จ่ายประจำ" แล้วเลิกเตือน
+ *
+ * วัดกับข้อมูลจริง 3/8/2569: เกณฑ์ยอด+หมวด+45 วัน อย่างเดียวจะเตือน 55 คู่
+ * บังคับชื่อตรงกันด้วยเหลือ 24 · บวกข้อนี้เหลือ 3 คู่ ขณะที่เคสคีย์ซ้ำจริง
+ * (ค่ามือหมอ 1-10/7 และ 11-20/7) ยังเตือนครบทั้งสองรายการ
+ *
+ * เหตุผล: ค่าซักผ้า ค่าอบผ้า เงินเบิกล่วงหน้าของหมอ จ่ายซ้ำชื่อเดิมยอดเดิมทุกงวดอยู่แล้ว
+ * ถ้าเตือนทุกครั้งพนักงานจะกดผ่านโดยไม่อ่าน แล้วของซ้ำจริงจะหลุดไปด้วย
+ */
+export const RECURRING_MIN_COUNT = 3
+
 /** จำนวนวันห่างกันแบบไม่สนทิศทาง */
 function daysApart(a: string, b: string): number {
   const ms = Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`))
@@ -48,21 +60,38 @@ function normalize(text: string): string {
   return text.replace(/([ั-ฺ็-๎])\1+/g, "$1")
 }
 
+/** ชื่อรายการเดียวกันไหม — ตัดช่องว่างหัวท้าย ยุบช่องว่างซ้ำ และตัดสระซ้ำก่อนเทียบ */
+function sameName(a: string, b: string): boolean {
+  const clean = (t: string) => normalize(t.trim().replace(/\s+/g, " "))
+  return clean(a) === clean(b)
+}
+
 /**
- * ยอดเท่ากันเป๊ะ + หมวดเดียวกัน + ห่างกันไม่เกิน 45 วัน = น่าสงสัยว่าคีย์ซ้ำ
+ * น่าสงสัยว่าคีย์ซ้ำเมื่อครบทุกข้อ: ชื่อตรงกัน + ยอดเท่ากันเป๊ะ + หมวดเดียวกัน + ห่างไม่เกิน 45 วัน
+ * และต้องไม่ใช่ค่าใช้จ่ายประจำ (จ่ายชื่อนี้ยอดนี้มาแล้วตั้งแต่ RECURRING_MIN_COUNT ครั้งขึ้นไป)
  *
  * เทียบยอดแบบเป๊ะ ไม่เผื่อช่วง เพราะเผื่อแล้วจะไปจับค่าใช้จ่ายคนละรายการที่บังเอิญใกล้กัน
- * (เจ้าของร้านเลือกเกณฑ์นี้เอง 3/8/2569)
+ * ส่วนชื่อเทียบแบบตัดช่องว่างและสระซ้ำออกก่อน (เจ้าของร้านเลือกเกณฑ์นี้เอง 3/8/2569)
+ *
+ * `history` = รายจ่ายทุกวันที่ที่ยอดและหมวดตรงกัน ไม่ใช่เฉพาะใน 45 วัน
+ * เพราะต้องนับความถี่ตลอดกาลเพื่อรู้ว่าเป็นค่าใช้จ่ายประจำหรือเปล่า
  */
 export function duplicateWarning(
-  candidate: ExpenseCandidate,
-  nearby: NearbyExpense[]
+  candidate: ExpenseCandidate & { item?: string },
+  history: NearbyExpense[]
 ): ExpenseWarning | null {
-  const hit = nearby.find(
+  const sameThing = history.filter(
     (e) =>
       e.amount === candidate.amount &&
       e.category === candidate.category &&
-      daysApart(e.expense_date, candidate.expense_date) <= DUPLICATE_WINDOW_DAYS
+      (candidate.item === undefined || sameName(e.item, candidate.item))
+  )
+
+  // จ่ายมาแล้วหลายครั้ง = ค่าใช้จ่ายประจำ ไม่ต้องเตือน
+  if (sameThing.length >= RECURRING_MIN_COUNT) return null
+
+  const hit = sameThing.find(
+    (e) => daysApart(e.expense_date, candidate.expense_date) <= DUPLICATE_WINDOW_DAYS
   )
   if (!hit) return null
 

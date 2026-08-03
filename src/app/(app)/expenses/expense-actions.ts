@@ -5,11 +5,7 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { todayInShopTz } from "@/lib/datetime"
 import { CLOSE_GRACE_DAYS, canEditExpenseOn } from "@/lib/accounting-window"
-import {
-  DUPLICATE_WINDOW_DAYS,
-  type ExpenseWarning,
-  expenseWarnings,
-} from "@/lib/expense-warnings"
+import { type ExpenseWarning, expenseWarnings } from "@/lib/expense-warnings"
 
 export type ExpenseResult =
   | { ok: true }
@@ -68,17 +64,13 @@ async function warningsFor(
   values: { item: string; amount: number; category: string; expense_date: string },
   excludeId?: string
 ): Promise<ExpenseWarning[]> {
-  const d = Date.parse(`${values.expense_date}T00:00:00Z`)
-  const span = DUPLICATE_WINDOW_DAYS * 86_400_000
-  const iso = (t: number) => new Date(t).toISOString().slice(0, 10)
-
+  // ไม่จำกัดวัน เพราะต้องนับความถี่ตลอดกาลเพื่อรู้ว่าเป็นค่าใช้จ่ายประจำหรือเปล่า
+  // แคบด้วยยอด+หมวดตั้งแต่ query อยู่แล้ว จึงได้ไม่กี่แถว ไม่ชนเพดาน 1,000 ของ PostgREST
   let q = supabase
     .from("expenses")
     .select("item, amount, category, expense_date")
     .eq("amount", values.amount)
     .eq("category", values.category)
-    .gte("expense_date", iso(d - span))
-    .lte("expense_date", iso(d + span))
   if (excludeId) q = q.neq("id", excludeId)
 
   const { data } = await q
