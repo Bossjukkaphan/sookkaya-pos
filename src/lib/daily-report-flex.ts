@@ -1,0 +1,214 @@
+/** ประกอบการ์ด Flex ของรายงานรายวัน — ลอกโครงจาก LineDailyReport_v9_FLEX.gs ตัวเดิม
+ *  เจ้าของร้านอ่านการ์ดนี้ทุกวันมาหลายเดือน สี/ขนาด/ลำดับจึงต้องคงเดิม
+ *  spec: docs/superpowers/specs/2026-08-05-line-daily-report-design.md */
+
+import type { DailyReport } from "./daily-report"
+import { formatBaht } from "./constants"
+import { formatThaiDate } from "./datetime"
+
+const BRAND = {
+  green: "#2A4A3A",
+  gold: "#C9A96E",
+  beige: "#F4ECDE",
+  beigeDk: "#E5E0D5",
+  text: "#2A1F1D",
+  textSub: "#786A5E",
+  textMuted: "#9C8E80",
+  positive: "#5F8A4F",
+  negative: "#C0392B",
+} as const
+
+export const DASHBOARD_URL = "https://sookkaya-pos.vercel.app/today"
+
+const THAI_WEEKDAYS = [
+  "วันอาทิตย์", "วันจันทร์", "วันอังคาร", "วันพุธ",
+  "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์",
+]
+
+/** "วันอังคารที่ 4 ส.ค. 2569" */
+function fullThaiDate(isoDate: string): string {
+  const weekday = THAI_WEEKDAYS[new Date(`${isoDate}T00:00:00Z`).getUTCDay()]
+  return `${weekday}ที่ ${formatThaiDate(isoDate)}`
+}
+
+/** การ์ดนี้ไม่โชว์สตางค์ — ปัดก่อนเสมอ ไม่งั้น formatBaht จะโผล่ทศนิยมสองตำแหน่ง */
+function baht(n: number): string {
+  return `฿${formatBaht(Math.round(n))}`
+}
+
+function statCol(label: string, value: string, valueColor: string) {
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    contents: [
+      { type: "text", text: label, color: BRAND.textMuted, size: "xxs", weight: "bold" },
+      { type: "text", text: value, color: valueColor, size: "sm", weight: "bold" },
+    ],
+  }
+}
+
+function opRow(label: string, value: string, valueColor: string) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    contents: [
+      { type: "text", text: label, color: BRAND.textSub, size: "xs", flex: 4 },
+      {
+        type: "text", text: value, color: valueColor, size: "xs",
+        flex: 6, align: "end", weight: "bold", wrap: true,
+      },
+    ],
+  }
+}
+
+function separator() {
+  return { type: "separator", margin: "lg", color: BRAND.beigeDk }
+}
+
+function header(report: DailyReport) {
+  return {
+    type: "box",
+    layout: "vertical",
+    backgroundColor: BRAND.green,
+    paddingAll: "18px",
+    spacing: "xs",
+    contents: [
+      { type: "text", text: "🌿 SOOKKAYA", color: BRAND.beige, weight: "bold", size: "lg", letterSpacing: "0.1em" },
+      { type: "text", text: "Daily Report", color: BRAND.gold, size: "xs", letterSpacing: "0.2em" },
+      { type: "text", text: fullThaiDate(report.date), color: BRAND.beige, size: "sm", margin: "sm" },
+    ],
+  }
+}
+
+function footer() {
+  return {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "14px",
+    paddingTop: "0px",
+    contents: [
+      {
+        type: "button",
+        style: "primary",
+        color: BRAND.green,
+        height: "md",
+        action: { type: "uri", label: "📊 ดูยอดขายวันนี้", uri: DASHBOARD_URL },
+      },
+      {
+        type: "text",
+        text: "รายละเอียดหมอแต่ละคน · สมาชิก · Top บริการ · MTD",
+        color: BRAND.textMuted, size: "xxs", align: "center", margin: "sm", wrap: true,
+      },
+    ],
+  }
+}
+
+function body(report: DailyReport) {
+  if (report.empty) {
+    return {
+      type: "box",
+      layout: "vertical",
+      paddingAll: "18px",
+      contents: [
+        {
+          type: "text",
+          text: "วันนี้ยังไม่มีบิลในระบบ",
+          color: BRAND.textSub, size: "sm", wrap: true,
+        },
+      ],
+    }
+  }
+
+  const heroRow: Record<string, unknown>[] = [
+    { type: "text", text: "NET REVENUE · วันนี้", color: BRAND.textMuted, size: "xxs", weight: "bold" },
+  ]
+  if (report.vsAvg7dPct !== null) {
+    const up = report.vsAvg7dPct >= 0
+    heroRow.push({
+      type: "text",
+      text: `${up ? "▲" : "▼"} ${Math.abs(report.vsAvg7dPct).toFixed(1)}% vs avg 7d`,
+      color: up ? BRAND.positive : BRAND.negative,
+      size: "xxs", weight: "bold", align: "end",
+    })
+  }
+
+  const opsRows: Record<string, unknown>[] = [
+    opRow("👥 Sessions", `${report.sessions} sessions · ${report.customers} ลูกค้า`, BRAND.text),
+    opRow("💼 ค่ามือรวม", baht(report.commission), BRAND.gold),
+  ]
+  if (report.topTherapist) {
+    const t = report.topTherapist
+    opsRows.push(opRow("🏆 TOP หมอ", `${t.name} · ${baht(t.income)} (${t.sessions} sess)`, BRAND.text))
+  }
+  opsRows.push(
+    opRow(
+      "📅 MTD",
+      report.mtdDeltaPct === null
+        ? baht(report.mtd)
+        : `${baht(report.mtd)} · ${report.mtdDeltaPct >= 0 ? "▲" : "▼"}${Math.abs(report.mtdDeltaPct).toFixed(1)}% vs เดือนที่แล้ว`,
+      BRAND.text
+    )
+  )
+  opsRows.push(opRow("🗓 คิวจองพรุ่งนี้", `${report.bookingsTomorrow} คิว`, BRAND.text))
+
+  const contents: Record<string, unknown>[] = [
+    {
+      type: "box",
+      layout: "vertical",
+      contents: [
+        { type: "box", layout: "horizontal", contents: heroRow },
+        { type: "text", text: baht(report.netRevenue), color: BRAND.text, size: "xxl", weight: "bold", margin: "xs" },
+      ],
+    },
+    separator(),
+    {
+      type: "box",
+      layout: "horizontal",
+      spacing: "md",
+      margin: "md",
+      contents: [
+        statCol("💵 Cash In", baht(report.cashIn), BRAND.text),
+        statCol("✨ กำไรขั้นต้น", baht(report.grossProfit), report.grossProfit >= 0 ? BRAND.positive : BRAND.negative),
+        statCol("📊 Margin", `${report.margin.toFixed(1)}%`, BRAND.text),
+      ],
+    },
+    separator(),
+    { type: "box", layout: "vertical", spacing: "sm", margin: "md", contents: opsRows },
+  ]
+
+  if (report.alerts.length > 0) {
+    contents.push(separator())
+    contents.push({
+      type: "text", text: "⚠️ Action ที่ต้องทำวันนี้",
+      color: BRAND.negative, size: "sm", weight: "bold", margin: "md",
+    })
+    for (const alert of report.alerts) {
+      contents.push({
+        type: "text", text: `• ${alert}`,
+        color: BRAND.text, size: "xs", wrap: true, margin: "sm",
+      })
+    }
+  }
+
+  return { type: "box", layout: "vertical", paddingAll: "18px", spacing: "none", contents }
+}
+
+export function dailyReportFlex(report: DailyReport): {
+  type: "flex"
+  altText: string
+  contents: unknown
+} {
+  return {
+    type: "flex",
+    altText: `🌿 Sookkaya — ${formatThaiDate(report.date)} · Net Revenue ${baht(report.netRevenue)}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      styles: { body: { backgroundColor: "#FFFFFF" }, footer: { backgroundColor: "#FFFFFF" } },
+      header: header(report),
+      body: body(report),
+      footer: footer(),
+    },
+  }
+}
