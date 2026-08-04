@@ -57,6 +57,15 @@ describe("dailyReportFlex — โครงการ์ด", () => {
     expect(bubble.footer).toBeDefined()
   })
 
+  // LINE ตอบ 400 "unknown field" ถ้าเจอ property ที่ไม่มีในสเปก Flex
+  // letterSpacing คือตัวที่ทำให้ Daily Report ตัวเดิม (Apps Script) พังตั้งแต่ 22 มิ.ย. 2569
+  // ตรวจด้วย endpoint /v2/bot/message/validate/push แล้วว่าโครงปัจจุบันผ่าน (5 ส.ค. 2569)
+  it("ไม่มี property ที่ LINE ไม่รู้จัก", () => {
+    const banned = ["letterSpacing", "lineHeight", "fontFamily", "textAlign"]
+    const json = JSON.stringify(msg)
+    for (const key of banned) expect(json).not.toContain(key)
+  })
+
   it("altText มีวันที่แบบไทยและยอดสุทธิ ให้เห็นในหน้ารายการแชท", () => {
     expect(msg.altText).toContain("4 ส.ค. 2569")
     expect(msg.altText).toContain("11,674")
