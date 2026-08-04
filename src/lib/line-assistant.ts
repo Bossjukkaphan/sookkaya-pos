@@ -20,3 +20,31 @@ export async function pushAssistantMessage(to: string, text: string): Promise<bo
     return false
   }
 }
+
+/** push การ์ด Flex ผ่าน OA ผู้ช่วยตัวเดียวกับ pushAssistantMessage
+ *  คืน false เงียบๆ เมื่อ env ยังไม่ตั้งหรือส่งไม่สำเร็จ — cron ต้องไม่ล้มทั้ง request
+ *  log เฉพาะ status กับ body ของ LINE ห้าม log token */
+export async function pushAssistantFlex(
+  to: string,
+  message: { type: "flex"; altText: string; contents: unknown }
+): Promise<boolean> {
+  const token = process.env.LINE_ASSISTANT_CHANNEL_TOKEN
+  if (!token || !to) return false
+  try {
+    const res = await fetch("https://api.line.me/v2/bot/message/push", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ to, messages: [message] }),
+    })
+    if (!res.ok) {
+      console.error("LINE push flex failed", res.status, await res.text())
+    }
+    return res.ok
+  } catch (e) {
+    console.error("LINE push flex threw", e)
+    return false
+  }
+}
