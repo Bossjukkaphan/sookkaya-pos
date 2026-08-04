@@ -74,8 +74,10 @@ function header(report: DailyReport) {
     paddingAll: "18px",
     spacing: "xs",
     contents: [
-      { type: "text", text: "🌿 SOOKKAYA", color: BRAND.beige, weight: "bold", size: "lg", letterSpacing: "0.1em" },
-      { type: "text", text: "Daily Report", color: BRAND.gold, size: "xs", letterSpacing: "0.2em" },
+      // ห้ามใส่ letterSpacing — LINE ตอบ 400 "unknown field" ไม่ใช่ property ของ Flex text
+      // (สคริปต์ Apps Script ตัวเดิมใส่ไว้ นี่คือสาเหตุที่ Daily Report พังตั้งแต่ 22 มิ.ย. 2569)
+      { type: "text", text: "🌿 SOOKKAYA", color: BRAND.beige, weight: "bold", size: "lg" },
+      { type: "text", text: "Daily Report", color: BRAND.gold, size: "xs" },
       { type: "text", text: fullThaiDate(report.date), color: BRAND.beige, size: "sm", margin: "sm" },
     ],
   }
