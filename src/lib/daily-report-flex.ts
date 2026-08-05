@@ -62,6 +62,19 @@ function opRow(label: string, value: string, valueColor: string) {
   }
 }
 
+/** "Silver ×2 · Gold ×1" — ว่างเมื่อไม่มี tier */
+function tierSummary(tiers: { tier: string; count: number }[]): string {
+  return tiers.map((t) => `${t.tier} ×${t.count}`).join(" · ")
+}
+
+function memberRowValue(count: number, tiers: { tier: string; count: number }[], cash: number): string {
+  return `${count} ราย · ${tierSummary(tiers)} · ${baht(cash)}`
+}
+
+function noteText(text: string, color: string) {
+  return { type: "text", text, color, size: "xxs", margin: "sm", wrap: true }
+}
+
 function separator() {
   return { type: "separator", margin: "lg", color: BRAND.beigeDk }
 }
@@ -142,6 +155,19 @@ function body(report: DailyReport) {
   if (report.topTherapist) {
     const t = report.topTherapist
     opsRows.push(opRow("🏆 TOP หมอ", `${t.name} · ${baht(t.income)} (${t.sessions} sess)`, BRAND.text))
+  }
+  const ms = report.memberSignups
+  const hasSignups = ms.newCount > 0 || ms.renewCount > 0
+  if (hasSignups) {
+    if (ms.newCount > 0) {
+      opsRows.push(opRow("👥 สมาชิกใหม่", memberRowValue(ms.newCount, ms.newTiers, ms.newCash), BRAND.positive))
+    }
+    if (ms.renewCount > 0) {
+      opsRows.push(opRow("🔁 ต่ออายุ", memberRowValue(ms.renewCount, ms.renewTiers, ms.renewCash), BRAND.text))
+    }
+    // บังคับมี: v_daily_summary นิยาม cash_in = เงินจากบิล + เงินเติมสมาชิก
+    // ไม่กำกับแล้วผู้บริหารจะบวกซ้ำเป็นเงินเข้าเพิ่ม
+    opsRows.push(noteText("(รวมอยู่ใน Cash In แล้ว)", BRAND.textMuted))
   }
   opsRows.push(
     opRow(

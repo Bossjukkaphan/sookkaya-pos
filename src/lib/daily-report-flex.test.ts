@@ -18,6 +18,10 @@ const report: DailyReport = {
   topTherapist: { name: "โจโจ้", income: 1160, sessions: 3 },
   bookingsTomorrow: 5,
   alerts: ["🔴 Member 2 คน เครดิตหมด → เชียร์ขาย Top-up ใหม่"],
+  memberSignups: {
+    newCount: 0, newCash: 0, newTiers: [],
+    renewCount: 0, renewCash: 0, renewTiers: [],
+  },
 }
 
 /** เก็บ text ทุกตัวในต้นไม้ ทำให้เทสไม่ผูกกับตำแหน่ง node ที่อาจขยับ */
@@ -181,5 +185,53 @@ describe("dailyReportFlex — ปุ่ม", () => {
     expect(action.uri).toBe(DASHBOARD_URL)
     expect(DASHBOARD_URL).toBe("https://sookkaya-pos.vercel.app/today")
     expect(action.label).toBe("📊 ดูยอดขายวันนี้")
+  })
+})
+
+describe("dailyReportFlex — บล็อกสมาชิก", () => {
+  it("มีสมาชิกใหม่ โชว์แถวและบรรทัดกำกับ Cash In", () => {
+    const flex = dailyReportFlex({
+      ...report,
+      memberSignups: {
+        newCount: 1, newCash: 5000, newTiers: [{ tier: "Silver", count: 1 }],
+        renewCount: 0, renewCash: 0, renewTiers: [],
+      },
+    })
+    const texts = allText(flex)
+    expect(texts).toContain("👥 สมาชิกใหม่")
+    expect(texts.some((t) => t.includes("1 ราย") && t.includes("Silver ×1") && t.includes("฿5,000"))).toBe(true)
+    expect(texts).toContain("(รวมอยู่ใน Cash In แล้ว)")
+    expect(texts).not.toContain("🔁 ต่ออายุ")
+  })
+
+  it("มีทั้งใหม่และต่ออายุ โชว์สองแถว", () => {
+    const texts = allText(dailyReportFlex({
+      ...report,
+      memberSignups: {
+        newCount: 1, newCash: 5000, newTiers: [{ tier: "Silver", count: 1 }],
+        renewCount: 2, renewCash: 10000, renewTiers: [{ tier: "Silver", count: 2 }],
+      },
+    }))
+    expect(texts).toContain("👥 สมาชิกใหม่")
+    expect(texts).toContain("🔁 ต่ออายุ")
+  })
+
+  it("ไม่มีใครเติมเลย ซ่อนทั้งบล็อกรวมบรรทัดกำกับ", () => {
+    const texts = allText(dailyReportFlex(report))
+    expect(texts).not.toContain("👥 สมาชิกใหม่")
+    expect(texts).not.toContain("🔁 ต่ออายุ")
+    expect(texts).not.toContain("(รวมอยู่ใน Cash In แล้ว)")
+  })
+
+  it("วันที่ไม่มีบิล การ์ดย่อ ไม่มีบล็อกสมาชิกแม้มีคนเติม", () => {
+    const texts = allText(dailyReportFlex({
+      ...report,
+      empty: true,
+      memberSignups: {
+        newCount: 1, newCash: 5000, newTiers: [{ tier: "Silver", count: 1 }],
+        renewCount: 0, renewCash: 0, renewTiers: [],
+      },
+    }))
+    expect(texts).not.toContain("👥 สมาชิกใหม่")
   })
 })
