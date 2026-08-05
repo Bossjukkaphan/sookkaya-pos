@@ -284,6 +284,39 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
     expect(texts.some((t) => t.includes("พ.ค. ฿4,548") && t.includes("ก.ค. ฿25,800"))).toBe(true)
   })
 
+  it("บรรทัดย้อนหลังและบรรทัดแยกเดือนใช้สีทองเตือน ส่วนบรรทัดยอดรวมไม่ใช่", () => {
+    const contents = dailyReportFlex(withExpenses).contents
+    const totalLine = find(contents, (o) => o.text === "14 รายการ · ฿55,690")
+    const backdatedLine = find(contents, (o) =>
+      typeof o.text === "string" && o.text.startsWith("ย้อนหลัง")
+    )
+    const monthLine = find(contents, (o) =>
+      typeof o.text === "string" && o.text.includes("พ.ค. ฿4,548")
+    )
+    expect(backdatedLine?.color).toBe("#C9A96E")
+    expect(monthLine?.color).toBe("#C9A96E")
+    expect(totalLine?.color).not.toBe("#C9A96E")
+  })
+
+  // 100.50 + 100.50 = 201.00 พอดี แต่ Math.round(100.5) + Math.round(100.5) = 202
+  // ถ้าปัดยอดย้อนหลังกับยอดแยกเดือนแยกกันคนละที่ สองบรรทัดจะโชว์เลขไม่ตรงกัน (201 vs 202)
+  // เทสนี้ยืนยันว่าบรรทัด "ย้อนหลัง" ต้องเท่ากับผลรวมของเลขที่ปัดแล้วในบรรทัดแยกเดือนเสมอ
+  it("ยอดย้อนหลังเท่ากับผลรวมของยอดแยกเดือนที่ปัดแล้วเสมอ แม้ปัดแยกกันจะไม่ตรง", () => {
+    const texts = allText(dailyReportFlex({
+      ...report,
+      expenseEntries: {
+        count: 2, total: 201, backdatedCount: 2, backdatedTotal: 201,
+        byMonth: [
+          { month: "ม.ค.", total: 100.5 },
+          { month: "ก.พ.", total: 100.5 },
+        ],
+        otherMonthsTotal: 0,
+      },
+    }))
+    expect(texts.some((t) => t.includes("ย้อนหลัง 2") && t.includes("฿202"))).toBe(true)
+    expect(texts.some((t) => t.includes("ม.ค. ฿101") && t.includes("ก.พ. ฿101"))).toBe(true)
+  })
+
   it("มีบันทึกแต่ไม่มีย้อนหลัง โชว์แค่บรรทัดแรก", () => {
     const texts = allText(dailyReportFlex({
       ...report,

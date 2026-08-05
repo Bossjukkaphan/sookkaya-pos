@@ -185,10 +185,16 @@ function body(report: DailyReport) {
   if (ee.count > 0) {
     opsRows.push(opRow("🧾 บันทึกรายจ่ายวันนี้", `${ee.count} รายการ · ${baht(ee.total)}`, BRAND.text))
     if (ee.backdatedCount > 0) {
+      // ปัดเศษยอดแต่ละเดือน/อื่นๆ ก่อน แล้วรวมเลขที่ปัดแล้วเป็นยอด "ย้อนหลัง" — ไม่ปัด backdatedTotal
+      // แยกต่างหาก เพราะปัดแยกกันแล้วผลรวมอาจเพี้ยนไปหนึ่งหรือสองบาท (เช่น 100.5+100.5 = 201
+      // แต่ round(100.5)+round(100.5) = 202) ทำให้สองบรรทัดที่อยู่ติดกันโชว์เลขไม่ตรงกัน
+      const monthAmounts = ee.byMonth.map((m) => Math.round(m.total))
+      const otherAmount = ee.otherMonthsTotal > 0 ? Math.round(ee.otherMonthsTotal) : 0
+      const backdatedRounded = monthAmounts.reduce((s, n) => s + n, 0) + otherAmount
       // ตัวเลขนี้คือสัญญาณกำกับดูแล — มีคนคีย์เงินเข้าเดือนที่ปิดงบไปแล้ว
-      opsRows.push(noteText(`ย้อนหลัง ${ee.backdatedCount} · ${baht(ee.backdatedTotal)}`, BRAND.gold))
-      const months = ee.byMonth.map((m) => `${m.month} ${baht(m.total)}`)
-      if (ee.otherMonthsTotal > 0) months.push(`อื่นๆ ${baht(ee.otherMonthsTotal)}`)
+      opsRows.push(noteText(`ย้อนหลัง ${ee.backdatedCount} · ${baht(backdatedRounded)}`, BRAND.gold))
+      const months = ee.byMonth.map((m, i) => `${m.month} ${baht(monthAmounts[i])}`)
+      if (ee.otherMonthsTotal > 0) months.push(`อื่นๆ ${baht(otherAmount)}`)
       if (months.length > 0) opsRows.push(noteText(months.join(" · "), BRAND.gold))
     }
   }
