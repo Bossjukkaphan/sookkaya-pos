@@ -150,6 +150,15 @@ export function DonutChart({
 กดแล้วเปิด `<Dialog>` ที่ห่อ `ExpenseForm` เดิมไว้ (ไม่แก้ตัวฟอร์ม)
 
 - บันทึกสำเร็จ → ปิด dialog เอง (ฟอร์มเรียก `router.refresh()` อยู่แล้ว รายการจะอัปเดตตาม)
+
+  ฟอร์มปัจจุบันไม่มีทางบอกข้างนอกว่าบันทึกสำเร็จ จึงต้องเพิ่ม prop ใหม่ **หนึ่งตัวเท่านั้น**:
+  ```ts
+  export function ExpenseForm({ categories, today, onSaved }: {
+    categories: string[]; today: string; onSaved?: () => void
+  })
+  ```
+  เรียก `onSaved?.()` ในกิ่งที่บันทึกสำเร็จ ถัดจาก `router.refresh()`
+  เป็น optional เพื่อให้ที่เรียกใช้เดิม (ถ้ามี) ไม่พัง — ห้ามแก้ตรรกะอื่นในไฟล์นี้
 - กล่องเตือนรายการซ้ำที่มีอยู่ยังทำงานเหมือนเดิมภายใน dialog
 - **ผลข้างเคียงที่ต้องรู้:** ลิงก์ที่เคยพาไปแท็บ "รายการ" ไม่ต้องมี `defaultValue` อีกแล้ว
   เพราะไม่มีแท็บ — ทุกลิงก์เข้าหน้านี้เห็นรายการทันที (ดีขึ้นกว่าเดิม)
@@ -168,7 +177,8 @@ export function DonutChart({
 | `src/app/(app)/expenses/category-summary.tsx` | **สร้าง** การ์ดยอดรวม + วงกลม + legend กดกรองได้ |
 | `src/app/(app)/expenses/page.tsx` | **แก้** ทั้งไฟล์ — layout ใหม่ อ่าน `months` เพิ่ม เอา Tabs และ `max-w-3xl` ออก |
 
-`expense-form.tsx` และ `expense-row-actions.tsx` **ไม่แตะ**
+`src/app/(app)/expenses/expense-form.tsx` **แก้บรรทัดเดียว** — เพิ่ม prop `onSaved?` ตามหัวข้อฟอร์มด้านบน
+`src/app/(app)/expenses/expense-row-actions.tsx` **ไม่แตะ**
 
 ## กรณีพิเศษ
 

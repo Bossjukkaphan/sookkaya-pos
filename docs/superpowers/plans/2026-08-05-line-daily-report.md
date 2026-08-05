@@ -89,7 +89,7 @@
   export function buildDailyReport(input: DailyReportInput): DailyReport
   ```
 
-- [ ] **Step 1: เปิด addDays ให้ใช้ข้ามไฟล์**
+- [x] **Step 1: เปิด addDays ให้ใช้ข้ามไฟล์**
 
 แก้ `src/lib/date-range.ts` บรรทัด 25 จาก
 ```ts
@@ -101,7 +101,7 @@ export function addDays(iso: string, days: number): string {
 ```
 ห้ามเขียน addDays ตัวใหม่ใน `daily-report.ts` — โปรเจกต์นี้ถือกติกาว่าสูตรวันที่/เงินอยู่ที่เดียว
 
-- [ ] **Step 2: เขียนเทสที่ยังไม่ผ่าน**
+- [x] **Step 2: เขียนเทสที่ยังไม่ผ่าน**
 
 สร้าง `src/lib/daily-report.test.ts`:
 
@@ -348,7 +348,7 @@ describe("buildDailyReport — Action alerts", () => {
 })
 ```
 
-- [ ] **Step 3: รันเทสให้เห็นว่าแดง**
+- [x] **Step 3: รันเทสให้เห็นว่าแดง**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -356,7 +356,7 @@ npx vitest run src/lib/daily-report.test.ts
 ```
 คาดว่า FAIL — `Failed to resolve import "./daily-report"`
 
-- [ ] **Step 4: เขียนโค้ดให้ผ่าน**
+- [x] **Step 4: เขียนโค้ดให้ผ่าน**
 
 สร้าง `src/lib/daily-report.ts`:
 
@@ -506,14 +506,14 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
 }
 ```
 
-- [ ] **Step 5: รันเทสให้ผ่าน**
+- [x] **Step 5: รันเทสให้ผ่าน**
 
 ```bash
 npx vitest run src/lib/daily-report.test.ts
 ```
 คาดว่า PASS ทุกข้อ
 
-- [ ] **Step 6: ด่านเต็ม แล้ว commit**
+- [x] **Step 6: ด่านเต็ม แล้ว commit**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -544,7 +544,7 @@ git commit -m "feat(daily-report): สูตรการ์ดสรุปยอ
 
 **บริบทที่ต้องรู้:** โครงการ์ดนี้ลอกมาจาก `LineDailyReport_v9_FLEX.gs` ตัวเดิมทีละบรรทัด สี ขนาดฟอนต์ ระยะห่างต้องเหมือนเป๊ะ เพราะเจ้าของร้านอ่านการ์ดนี้ทุกวันมาหลายเดือนแล้ว ที่เปลี่ยนมี 3 อย่างเท่านั้น: ป้าย `✨ กำไรสุทธิ` → `✨ กำไรขั้นต้น`, ปุ่มชี้ไป `/today` ของ POS, และเพิ่มแถว MTD กับคิวจองพรุ่งนี้
 
-- [ ] **Step 1: เขียนเทสที่ยังไม่ผ่าน**
+- [x] **Step 1: เขียนเทสที่ยังไม่ผ่าน**
 
 สร้าง `src/lib/daily-report-flex.test.ts`:
 
@@ -727,14 +727,14 @@ describe("dailyReportFlex — ปุ่ม", () => {
 })
 ```
 
-- [ ] **Step 2: รันเทสให้เห็นว่าแดง**
+- [x] **Step 2: รันเทสให้เห็นว่าแดง**
 
 ```bash
 npx vitest run src/lib/daily-report-flex.test.ts
 ```
 คาดว่า FAIL — `Failed to resolve import "./daily-report-flex"`
 
-- [ ] **Step 3: เขียนโค้ดให้ผ่าน**
+- [x] **Step 3: เขียนโค้ดให้ผ่าน**
 
 สร้าง `src/lib/daily-report-flex.ts`:
 
@@ -955,14 +955,14 @@ export function dailyReportFlex(report: DailyReport): {
 }
 ```
 
-- [ ] **Step 4: รันเทสให้ผ่าน**
+- [x] **Step 4: รันเทสให้ผ่าน**
 
 ```bash
 npx vitest run src/lib/daily-report-flex.test.ts
 ```
 คาดว่า PASS ทุกข้อ
 
-- [ ] **Step 5: ด่านเต็ม แล้ว commit**
+- [x] **Step 5: ด่านเต็ม แล้ว commit**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -994,7 +994,7 @@ git commit -m "feat(daily-report): ประกอบการ์ด Flex ตา
 - `member_balances` มีมากกว่า 1,000 แถว เกินเพดาน supabase-js — **ห้ามดึงแถวมานับเอง** ต้องใช้ `{ count: "exact", head: true }`
 - `v_therapist_daily` เป็น view ไม่มี FK ให้ embed ชื่อหมอ ต้อง query `therapists` แยกอีกรอบ
 
-- [ ] **Step 1: เพิ่มฟังก์ชันส่ง Flex**
+- [x] **Step 1: เพิ่มฟังก์ชันส่ง Flex**
 
 แก้ `src/lib/line-assistant.ts` เพิ่มท้ายไฟล์ (คงฟังก์ชัน `pushAssistantMessage` เดิมไว้ ห้ามแก้):
 
@@ -1028,7 +1028,7 @@ export async function pushAssistantFlex(
 }
 ```
 
-- [ ] **Step 2: เขียน route**
+- [x] **Step 2: เขียน route**
 
 สร้าง `src/app/api/cron/daily-report/route.ts`:
 
@@ -1151,7 +1151,7 @@ export async function GET(request: Request) {
 }
 ```
 
-- [ ] **Step 3: ตั้ง cron**
+- [x] **Step 3: ตั้ง cron**
 
 แก้ `vercel.json` ให้เป็น:
 
@@ -1167,7 +1167,7 @@ export async function GET(request: Request) {
 
 `0 15 * * *` UTC = 22:00 น. เวลาไทย
 
-- [ ] **Step 4: เติม .env.example ให้ครบ**
+- [x] **Step 4: เติม .env.example ให้ครบ**
 
 แก้ `.env.example` เพิ่มบรรทัดที่ยังขาด (คงบรรทัดเดิมไว้):
 
@@ -1181,7 +1181,7 @@ LINE_ASSISTANT_QUEUE_GROUP_ID=
 LINE_MANAGEMENT_GROUP_ID=
 ```
 
-- [ ] **Step 5: ด่านเต็ม แล้ว commit**
+- [x] **Step 5: ด่านเต็ม แล้ว commit**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -1205,7 +1205,7 @@ git commit -m "feat(daily-report): cron 22:00 ยิงการ์ดเข้�
 
 **บริบทที่ต้องรู้:** ห้าม deploy จนกว่า Task 1-3 ผ่านครบ · ตัวเลขที่ออกมาต้องเอาไปเทียบกับหน้า `/today` ด้วยตาก่อนถือว่าใช้ได้ · ค่า group id ของกลุ่ม Sookkaya Management คือ `C20fece7eb07ca5b2f86ccf31e9c86dfd`
 
-- [ ] **Step 1: ยืนยันว่า OA ที่ POS ใช้ เป็นตัวเดียวกับที่ส่ง Daily Report**
+- [x] **Step 1: ยืนยันว่า OA ที่ POS ใช้ เป็นตัวเดียวกับที่ส่ง Daily Report**
 
 ค่าใน Vercel ถูกปิดไว้ (`vercel env pull` ได้ `[SENSITIVE]`) จึงต้องเทียบผ่าน LINE API หลัง deploy แทน
 วิธี: ดูจากผลลัพธ์ Step 4 — ถ้าการ์ดเข้ากลุ่มได้สำเร็จ แปลว่า token ที่ POS ถืออยู่คุยกับกลุ่มนี้ได้ ถือว่าเป็น OA เดียวกัน
@@ -1217,7 +1217,7 @@ curl -s -H "Authorization: Bearer <token>" https://api.line.me/v2/bot/info
 ต้องได้ `"basicId":"@369wlnfe"` `"displayName":"Sookkaya Assistant"`
 ถ้าได้ OA อื่น ให้เพิ่ม env `LINE_DAILY_REPORT_CHANNEL_TOKEN` แยก แล้วแก้ `pushAssistantFlex` ให้รับ token ทางพารามิเตอร์ — **หยุดแล้วรายงานเจ้าของร้านก่อน อย่าเดา**
 
-- [ ] **Step 2: ตั้ง env ใหม่บน Vercel**
+- [x] **Step 2: ตั้ง env ใหม่บน Vercel**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -1225,7 +1225,7 @@ cd sookkaya-pos-v2
 printf 'C20fece7eb07ca5b2f86ccf31e9c86dfd' | npx vercel env add LINE_MANAGEMENT_GROUP_ID production
 ```
 
-- [ ] **Step 3: merge แล้ว deploy**
+- [x] **Step 3: merge แล้ว deploy**
 
 ```bash
 git checkout main
@@ -1234,7 +1234,7 @@ npx vercel deploy --prod --yes
 git push origin main
 ```
 
-- [ ] **Step 4: ยิง route ด้วยมือ แล้วดูการ์ดจริง**
+- [x] **Step 4: ยิง route ด้วยมือ แล้วดูการ์ดจริง**
 
 ```bash
 export PATH="$HOME/.nvm/versions/node/v24.18.0/bin:$PATH"
@@ -1249,7 +1249,7 @@ rm -f /tmp/dr.env
 
 ถ้าได้ `{"ok":false}` ให้ดู log ด้วย MCP `get_runtime_logs` ของ Vercel (projectId `prj_aIjCLSIX6A5MoonNtjzMiRno5Md3`, teamId `team_aIZvGjaXuArkv1Vku7KHeW9C`) — ข้อความจาก `console.error` จะบอกว่าติดที่ query หรือที่ LINE
 
-- [ ] **Step 5: เทียบตัวเลขทุกช่องกับหน้า /today**
+- [x] **Step 5: เทียบตัวเลขทุกช่องกับหน้า /today**
 
 เปิด `https://sookkaya-pos.vercel.app/today` ของวันเดียวกัน แล้วเทียบทีละช่อง:
 
@@ -1276,11 +1276,11 @@ select count(*) from queue_entries
 where queue_date = current_date + 1 and status not in ('cancelled','rejected');
 ```
 
-- [ ] **Step 6: ตรวจว่าไม่มี error หลัง deploy**
+- [x] **Step 6: ตรวจว่าไม่มี error หลัง deploy**
 
 ใช้ MCP Vercel `get_runtime_errors` ช่วง 1 ชั่วโมงล่าสุด ต้องไม่มี error ใหม่
 
-- [ ] **Step 7: สรุปให้เจ้าของร้านพร้อมรายการที่เขาต้องทำเอง**
+- [x] **Step 7: สรุปให้เจ้าของร้านพร้อมรายการที่เขาต้องทำเอง**
 
 รายงานเป็นภาษาไทย ต้องมีครบ 3 ข้อนี้:
 1. **ปิด trigger 22:00 ของ Google Apps Script เดิม** — ไม่งั้นได้การ์ดวันละ 2 ใบ ตัวเลขไม่ตรงกัน วิธี: เปิดโปรเจกต์ Apps Script → เมนู Triggers → ลบ trigger ที่เรียก `sendDailyReport`
