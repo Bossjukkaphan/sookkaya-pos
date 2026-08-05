@@ -3,9 +3,15 @@ import { NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { pushAssistantFlex } from "@/lib/line-assistant"
 import { buildDailyReport, CREDIT_LOW_BAHT, PRIOR_DAYS } from "@/lib/daily-report"
-import type { DailySummaryRow, TopTherapist, TopupRow, TopupHistoryRow } from "@/lib/daily-report"
+import type {
+  DailySummaryRow,
+  ExpenseEntryRow,
+  TopTherapist,
+  TopupRow,
+  TopupHistoryRow,
+} from "@/lib/daily-report"
 import { dailyReportFlex } from "@/lib/daily-report-flex"
-import { addMonths, todayInShopTz } from "@/lib/datetime"
+import { addMonths, SHOP_TZ, todayInShopTz } from "@/lib/datetime"
 import { addDays } from "@/lib/date-range"
 
 /** Vercel Cron ยิงทุกคืน 22:00 ไทย (ดู vercel.json) — สรุปยอดขายวันนี้เป็นการ์ด Flex
@@ -24,8 +30,17 @@ export async function GET(request: Request) {
   // ต้นเดือนของเดือนที่แล้ว — ครอบทั้งฐานเฉลี่ย 7 วันและ MTD เดือนที่แล้วในคิวรีเดียว
   const from = `${addMonths(today, -1).slice(0, 7)}-01`
 
-  const [daily, commission, customerRows, therapistTop, bookings, creditEmpty, creditLow, topups] =
-    await Promise.all([
+  const [
+    daily,
+    commission,
+    customerRows,
+    therapistTop,
+    bookings,
+    creditEmpty,
+    creditLow,
+    topups,
+    expenseRows,
+  ] = await Promise.all([
       supabase
         .from("v_daily_summary")
         .select("sale_date, sessions, net_revenue, cash_in")
@@ -63,10 +78,29 @@ export async function GET(request: Request) {
         .from("member_topups")
         .select("customer_id, tier, cash_received")
         .eq("topup_date", today),
+      // นับรายจ่ายตาม "วันที่บันทึกเข้าระบบ" (created_at) ไม่ใช่วันที่บนใบเสร็จ (expense_date)
+      // เจ้าของร้านย้ำสองรอบ — ของจริงมีวันที่พนักงานคีย์ย้อนหลังทั้งเดือนในวันเดียว
+      // กรองด้วยช่วง UTC ที่ประกอบจากวันที่ไทยตรงๆ (+07:00) เพื่อให้ index บน created_at ทำงาน
+      // ห้ามดึงทั้งตารางมากรองใน JS และห้ามใช้ SQL date-cast expression ซึ่ง index ใช้ไม่ได้
+      supabase
+        .from("expenses")
+        .select("expense_date, amount, created_at")
+        .gte("created_at", `${today}T00:00:00+07:00`)
+        .lt("created_at", `${tomorrow}T00:00:00+07:00`),
     ])
 
   // ตัวเลขไม่ครบ = ไม่ส่ง ดีกว่าส่งการ์ดที่ผิดเข้ากลุ่มผู้บริหาร
-  const failed = [daily, commission, customerRows, therapistTop, bookings, creditEmpty, creditLow, topups]
+  const failed = [
+    daily,
+    commission,
+    customerRows,
+    therapistTop,
+    bookings,
+    creditEmpty,
+    creditLow,
+    topups,
+    expenseRows,
+  ]
     .map((r) => r.error?.message)
     .filter(Boolean)
   if (failed.length > 0) {
@@ -90,6 +124,19 @@ export async function GET(request: Request) {
     // ส่งดิบๆ เข้าสูตร — ไม่กรอง tier ที่นี่เช่นกัน สูตรตัด EXCLUDED_TIER เองแล้ว
     topupHistory = (history.data ?? []) as TopupHistoryRow[]
   }
+
+  // created_at เป็น timestamptz — แปลงเป็นวันที่ไทยที่นี่ ให้สูตรยังบริสุทธิ์ (ไม่แตะ Intl/timezone)
+  const toShopDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: SHOP_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  })
+  const expenseEntries: ExpenseEntryRow[] = (expenseRows.data ?? []).map((r) => ({
+    expense_date: r.expense_date ?? "",
+    amount: r.amount === null ? null : Number(r.amount),
+    recorded_date: toShopDate.format(new Date(r.created_at as string)),
+  }))
 
   let topTherapist: TopTherapist | null = null
   if (therapistTop.data?.therapist_id) {
@@ -125,6 +172,7 @@ export async function GET(request: Request) {
     memberCreditLow: creditLow.count ?? 0,
     topups: topupRows,
     topupHistory,
+    expenseEntries,
   })
 
   const sent = await pushAssistantFlex(
