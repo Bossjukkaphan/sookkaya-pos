@@ -103,29 +103,28 @@ describe("donutSlices — สัดส่วนกราฟวงกลมสร
       { label: "ค่าน้ำค่าไฟ", value: 16197.53 },
       { label: "ซักรีด", value: 9900 },
     ])
-    expect(s).toHaveLength(7)
+    // 8 หมวด → 6 ผ่านเกณฑ์ (รวม "อื่นๆ" เดิม) → 2 ที่ตกเกณฑ์ยุบเข้าก้อนเดิม ไม่เกิดชิ้นใหม่
+    expect(s).toHaveLength(6)
     expect(s.filter((x) => x.label === DONUT_OTHER_LABEL)).toHaveLength(1)
     const other = s.find((x) => x.label === DONUT_OTHER_LABEL)!
     // 30,320 เดิม + ค่าน้ำค่าไฟ 16,197.53 (4.97%) + ซักรีด 9,900 (3.04%)
     expect(other.value).toBeCloseTo(56417.53, 2)
-    expect(other.pct).toBeCloseTo(17.31, 2)
+    expect(other.pct).toBeCloseTo(17.314, 3)
     // ชิ้นที่ยุบต้องไม่เหลืออยู่แยกอีก
     expect(s.map((x) => x.label)).not.toContain("ซักรีด")
     expect(s.map((x) => x.label)).not.toContain("ค่าน้ำค่าไฟ")
   })
 
-  // ค่าน้ำค่าไฟอยู่ที่ 4.97% เฉียดเกณฑ์มาก ถ้าปัดเศษผิดทางจะหลุดออกมาเป็นชิ้นเดี่ยว
-  it("ชิ้นที่ 4.97% ต้องถูกยุบ ส่วน 5.78% ต้องอยู่ต่อ", () => {
+  // จับเส้นแบ่ง 5% ตรงๆ ด้วยตัวเลขกลมๆ — ไม่ผูกกับสัดส่วนข้อมูลจริงซึ่งเปลี่ยนได้ทุกเดือน
+  // (ห้ามเอาข้อมูลจริงมาตัดบางหมวดออกเพื่อทดสอบเส้นแบ่ง เพราะยอดรวมเปลี่ยน สัดส่วนขยับหมด)
+  it("5.01% อยู่ต่อ · 4.99% ถูกยุบ", () => {
     const s = donutSlices([
-      { label: "ค่ามือหมอ", value: 141735 },
-      { label: "เงินเดือนประจำ", value: 52450 },
-      { label: "ค่าเช่า", value: 36000 },
-      { label: "การตลาด", value: 20400 },
-      { label: "วัสดุ", value: 18843.15 },
-      { label: "ค่าน้ำค่าไฟ", value: 16197.53 },
+      { label: "ก", value: 9000 },
+      { label: "ข", value: 501 },
+      { label: "ค", value: 499 },
     ])
-    expect(s.map((x) => x.label)).toContain("วัสดุ")
-    expect(s.map((x) => x.label)).not.toContain("ค่าน้ำค่าไฟ")
+    expect(s.map((x) => x.label)).toEqual(["ก", "ข", DONUT_OTHER_LABEL])
+    expect(s[2].value).toBe(499)
   })
 
   it("ยุบแล้วจะเหลือชิ้นเดียวชื่ออื่นๆ = ไม่ยุบ", () => {
