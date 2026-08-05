@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { DASHBOARD_URL, dailyReportFlex } from "./daily-report-flex"
-import type { DailyReport } from "./daily-report"
+import type { DailyReport, ExpenseEntries } from "./daily-report"
 
 const report: DailyReport = {
   date: "2026-08-04",
@@ -50,6 +50,11 @@ function find(node: unknown, pred: (o: Record<string, unknown>) => boolean): Rec
     for (const v of Object.values(o)) { const hit = find(v, pred); if (hit) return hit }
   }
   return null
+}
+
+/** "14 รายการ · ฿55,690" → [55690] — ดึงตัวเลขบาททุกตัวในข้อความเดียว (บรรทัดแยกเดือนมีหลายตัว) */
+function extractBahtNumbers(s: string): number[] {
+  return [...s.matchAll(/฿([\d,]+)/g)].map((m) => Number(m[1].replace(/,/g, "")))
 }
 
 describe("dailyReportFlex — โครงการ์ด", () => {
@@ -295,13 +300,18 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
     )
     expect(backdatedLine?.color).toBe("#C9A96E")
     expect(monthLine?.color).toBe("#C9A96E")
+    // ต้องเช็คว่าเจอ node จริงก่อน — ไม่งั้นถ้า totalLine เป็น null (เช่น รูปแบบบรรทัดเปลี่ยนจน
+    // predicate หาไม่เจอ) .not.toBe("#C9A96E") จะผ่านฟรีเพราะ undefined !== "#C9A96E" เสมอ
+    // ทั้งที่ไม่ได้พิสูจน์อะไรเรื่องสีเลย
+    expect(totalLine).not.toBeNull()
     expect(totalLine?.color).not.toBe("#C9A96E")
   })
 
-  // 100.50 + 100.50 = 201.00 พอดี แต่ Math.round(100.5) + Math.round(100.5) = 202
-  // ถ้าปัดยอดย้อนหลังกับยอดแยกเดือนแยกกันคนละที่ สองบรรทัดจะโชว์เลขไม่ตรงกัน (201 vs 202)
-  // เทสนี้ยืนยันว่าบรรทัด "ย้อนหลัง" ต้องเท่ากับผลรวมของเลขที่ปัดแล้วในบรรทัดแยกเดือนเสมอ
-  it("ยอดย้อนหลังเท่ากับผลรวมของยอดแยกเดือนที่ปัดแล้วเสมอ แม้ปัดแยกกันจะไม่ตรง", () => {
+  // round 1 เคยแก้โดยปัดแต่ละเดือนแยกกันแล้วรวมเป็นยอด "ย้อนหลัง" — ผลคือ ย้อนหลัง (202) > รวม (201)
+  // ได้ ทั้งที่ backdatedTotal ≤ total เสมอจริง เป็นบั๊กที่ย้ายปัญหาขึ้นไปหนึ่งบรรทัดแทนที่จะแก้จริง
+  // round 3 กลับทิศ: ปัด backdatedTotal เป็นเลขเดียวเหมือนที่ปัด total เอง แล้วค่อยแจกกลับลงไป
+  // ยอดย้อนหลัง (201) จึงเท่ากับยอดรวม (201) พอดี ไม่มีทางเป็น 202 ได้อีก
+  it("ทุกรายการเป็นย้อนหลังหมด (total === backdatedTotal) โชว์เลขเดียวกันสองบรรทัด ไม่ใช่ 201 กับ 202", () => {
     const texts = allText(dailyReportFlex({
       ...report,
       expenseEntries: {
@@ -313,33 +323,9 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
         otherMonthsTotal: 0,
       },
     }))
-    expect(texts.some((t) => t.includes("ย้อนหลัง 2") && t.includes("฿202"))).toBe(true)
-    expect(texts.some((t) => t.includes("ม.ค. ฿101") && t.includes("ก.พ. ฿101"))).toBe(true)
-  })
-
-  // กรณี round 2: byMonth เต็ม cap (MAX_BACKDATED_MONTHS = 4 เดือน) และมี otherMonthsTotal ด้วย
-  // เลขทั้งห้าก้อน (4 เดือน + อื่นๆ) รวมกัน exact = 107.5 แต่ปัดทีละก้อนแล้วรวม = 110
-  // (round(10.5)+round(20.5)+round(30.5)+round(40.5)+round(5.5) = 11+21+31+41+6 = 110)
-  // ต่างจาก round(107.5) = 108 — ยืนยันว่ายอด "ย้อนหลัง" ต้องเท่ากับผลรวมของเลขที่ปัดแล้วทั้งห้าก้อน
-  // (110) เสมอ ไม่ใช่ปัด backdatedTotal เอง (108) แม้ตอน byMonth เต็ม cap และมี otherMonths ด้วยก็ตาม
-  it("ยังตรงกันเมื่อ byMonth เต็มสี่เดือน (cap) และมี otherMonthsTotal ร่วมด้วย", () => {
-    const texts = allText(dailyReportFlex({
-      ...report,
-      expenseEntries: {
-        count: 20, total: 1000, backdatedCount: 20, backdatedTotal: 107.5,
-        byMonth: [
-          { month: "ม.ค.", total: 10.5 },
-          { month: "ก.พ.", total: 20.5 },
-          { month: "มี.ค.", total: 30.5 },
-          { month: "เม.ย.", total: 40.5 },
-        ],
-        otherMonthsTotal: 5.5,
-      },
-    }))
-    expect(texts.some((t) => t.includes("ย้อนหลัง 20") && t.includes("฿110"))).toBe(true)
-    expect(texts.some((t) =>
-      t.includes("ม.ค. ฿11") && t.includes("เม.ย. ฿41") && t.includes("อื่นๆ ฿6")
-    )).toBe(true)
+    expect(texts.some((t) => t.includes("2 รายการ") && t.includes("฿201"))).toBe(true)
+    expect(texts.some((t) => t.includes("ย้อนหลัง 2") && t.includes("฿201"))).toBe(true)
+    expect(texts.some((t) => t.includes("฿202"))).toBe(false)
   })
 
   it("มีบันทึกแต่ไม่มีย้อนหลัง โชว์แค่บรรทัดแรก", () => {
@@ -430,4 +416,73 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
     const texts = allText(dailyReportFlex({ ...withExpenses, empty: true }))
     expect(texts).not.toContain("🧾 บันทึกรายจ่ายวันนี้")
   })
+})
+
+describe("dailyReportFlex — บล็อกรายจ่าย: สองอสมการที่ต้องจริงเสมอ", () => {
+  // (a) ผลรวมของยอดแยกเดือน+อื่นๆ ที่โชว์ ต้องเท่ากับยอด "ย้อนหลัง" ที่โชว์ เป๊ะ (ไม่ใช่แค่ใกล้เคียง)
+  // (b) ยอด "ย้อนหลัง" ที่โชว์ ต้องไม่มากกว่ายอด "รวม" ที่โชว์ — ส่วนย่อยเกินทั้งก้อนไม่ได้ไม่ว่ากรณีใด
+  // ครอบทั้งกรณี byMonth เต็ม cap (4 เดือน), otherMonthsTotal เป็นศูนย์, และย้อนหลังหมดทั้งก้อน
+  const fixtures: { name: string; ee: ExpenseEntries }[] = [
+    {
+      name: "byMonth เต็ม cap สี่เดือน และมี otherMonthsTotal ร่วมด้วย",
+      ee: {
+        count: 20, total: 1000, backdatedCount: 20, backdatedTotal: 107.5,
+        byMonth: [
+          { month: "ม.ค.", total: 10.5 },
+          { month: "ก.พ.", total: 20.5 },
+          { month: "มี.ค.", total: 30.5 },
+          { month: "เม.ย.", total: 40.5 },
+        ],
+        otherMonthsTotal: 5.5,
+      },
+    },
+    {
+      name: "otherMonthsTotal เป็นศูนย์ (byMonth ไม่ถูกตัดเดือนไหนออก)",
+      ee: {
+        count: 14, total: 55690, backdatedCount: 13, backdatedTotal: 55232,
+        byMonth: [
+          { month: "พ.ค.", total: 4548 },
+          { month: "มิ.ย.", total: 24884.4 },
+          { month: "ก.ค.", total: 25799.6 },
+        ],
+        otherMonthsTotal: 0,
+      },
+    },
+    {
+      name: "ย้อนหลังหมดทั้งก้อน (total === backdatedTotal)",
+      ee: {
+        count: 2, total: 201, backdatedCount: 2, backdatedTotal: 201,
+        byMonth: [
+          { month: "ม.ค.", total: 100.5 },
+          { month: "ก.พ.", total: 100.5 },
+        ],
+        otherMonthsTotal: 0,
+      },
+    },
+  ]
+
+  for (const { name, ee } of fixtures) {
+    it(name, () => {
+      const contents = dailyReportFlex({ ...report, expenseEntries: ee }).contents
+      const totalNode = find(contents, (o) =>
+        typeof o.text === "string" && o.text.includes("รายการ") && o.text.includes("฿")
+      )
+      const backdatedNode = find(contents, (o) =>
+        typeof o.text === "string" && o.text.startsWith("ย้อนหลัง")
+      )
+      const monthNode = find(contents, (o) =>
+        typeof o.text === "string" && o.text.startsWith(ee.byMonth[0].month)
+      )
+      expect(totalNode).not.toBeNull()
+      expect(backdatedNode).not.toBeNull()
+      expect(monthNode).not.toBeNull()
+
+      const totalAmount = extractBahtNumbers(totalNode?.text as string)[0]
+      const backdatedAmount = extractBahtNumbers(backdatedNode?.text as string)[0]
+      const partsSum = extractBahtNumbers(monthNode?.text as string).reduce((s, n) => s + n, 0)
+
+      expect(partsSum).toBe(backdatedAmount) // (a) ส่วนย่อยรวมกันตรงยอดย้อนหลังเป๊ะ
+      expect(backdatedAmount).toBeLessThanOrEqual(totalAmount) // (b) ย้อนหลังไม่มากกว่ารวม
+    })
+  }
 })

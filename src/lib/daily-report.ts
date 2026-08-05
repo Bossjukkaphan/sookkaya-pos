@@ -202,6 +202,30 @@ export function buildExpenseEntries(rows: ExpenseEntryRow[]): ExpenseEntries {
   }
 }
 
+/** แบ่งจำนวนเต็ม "เป้าหมาย" กลับไปเป็นก้อนย่อยตามสัดส่วนของค่าจริงแต่ละก้อน — largest-remainder
+ *  (Hamilton) method: ปัดลง (floor) ทุกก้อนก่อน แล้วแจกหน่วยที่เหลือให้ก้อนที่มีเศษทศนิยมมากสุด
+ *  ทีละหน่วย (เท่ากันแล้วให้ก้อนที่มาก่อนในอาเรย์) จนผลรวมของก้อนที่ปัดแล้วเท่ากับเป้าหมายพอดี
+ *
+ *  ใช้แก้ปัญหา "ผลรวมของยอดที่ปัดเศษแยกกัน" ไม่เท่ากับ "ยอดรวมที่ปัดเศษแล้วครั้งเดียว" —
+ *  การ์ดรายวันเคยโชว์ยอดย้อนหลังกับยอดแยกเดือนไม่ตรงกันเพราะปัดคนละที่ (ดู spec
+ *  2026-08-05-daily-report-members-expenses-design.md) เรียกฟังก์ชันนี้ด้วย
+ *  target = Math.round(ผลรวมจริงของ parts) เท่านั้น แล้ว sum(ผลลัพธ์) === target เสมอ
+ *  (พิสูจน์: floorSum ≤ trueSum เสมอ และ target ห่างจาก trueSum ไม่เกิน 0.5 จึง
+ *  0 ≤ target − floorSum ≤ parts.length เสมอ ไม่มีทางติดลบหรือเกินจำนวนก้อน) */
+export function apportionToTarget(parts: number[], target: number): number[] {
+  if (parts.length === 0) return []
+  const floors = parts.map((p) => Math.floor(p))
+  const remainder = target - floors.reduce((s, n) => s + n, 0)
+  const byFracDesc = parts
+    .map((p, i) => ({ i, frac: p - Math.floor(p) }))
+    .sort((a, b) => b.frac - a.frac || a.i - b.i)
+  const result = [...floors]
+  for (let k = 0; k < remainder; k++) {
+    result[byFracDesc[k % byFracDesc.length].i] += 1
+  }
+  return result
+}
+
 export function buildDailyReport(input: DailyReportInput): DailyReport {
   const { today, daily, commission, customers } = input
 

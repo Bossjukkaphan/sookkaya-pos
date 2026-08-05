@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import {
   EXCLUDED_TIER,
   MAX_ALERTS,
+  apportionToTarget,
   buildDailyReport,
   type DailyReportInput,
   type DailySummaryRow,
@@ -474,5 +475,40 @@ describe("buildDailyReport — รายจ่ายที่บันทึก�
       count: 0, total: 0, backdatedCount: 0, backdatedTotal: 0,
       byMonth: [], otherMonthsTotal: 0,
     })
+  })
+})
+
+describe("apportionToTarget — แบ่งเป้าหมายที่ปัดแล้วกลับเป็นก้อนย่อยแบบ largest-remainder", () => {
+  it("เศษทศนิยมเท่ากัน ก้อนที่มาก่อนในอาเรย์ได้หน่วยที่เหลือก่อน", () => {
+    // floor = [100, 100] รวม 200 · target 201 → เหลือ 1 หน่วย เศษเท่ากันทั้งคู่ (.5) จึงให้ก้อนแรก
+    expect(apportionToTarget([100.5, 100.5], 201)).toEqual([101, 100])
+  })
+
+  it("เศษทศนิยมมากสุดได้หน่วยที่เหลือก่อนเสมอ ไม่ว่าลำดับในอาเรย์จะเป็นอย่างไร", () => {
+    // floor = [1, 1, 1] รวม 3 · target 5 → เหลือ 2 หน่วย แจกให้เศษมากสุดก่อน: 1.9 (.9) แล้ว 1.5 (.5)
+    // ส่วน 1.1 (.1) เศษน้อยสุด ไม่ได้รับ แม้จะอยู่ตำแหน่งกลางของอาเรย์
+    expect(apportionToTarget([1.9, 1.1, 1.5], 5)).toEqual([2, 1, 2])
+  })
+
+  it("target เท่ากับผลรวม floor พอดี ไม่ต้องแจกเศษเลย", () => {
+    expect(apportionToTarget([2, 3, 4], 9)).toEqual([2, 3, 4])
+  })
+
+  it("ก้อนเดียว ได้ target ทั้งหมด", () => {
+    expect(apportionToTarget([55232.4], 55232)).toEqual([55232])
+  })
+
+  it("อาเรย์ว่าง คืนอาเรย์ว่าง", () => {
+    expect(apportionToTarget([], 0)).toEqual([])
+  })
+
+  // นี่คือค่าที่การ์ดใช้จริง — สี่เดือน+อื่นๆ ที่ปัดทีละก้อนแล้วรวมจะได้ 110 ไม่ตรงกับ round(107.5)=108
+  // apportionToTarget ต้องแจกจาก target=108 กลับลงไปให้ผลรวมของก้อนย่อยเท่ากับ 108 พอดี ไม่ใช่ 110
+  it("ผลรวมของก้อนที่แบ่งแล้วเท่ากับ target เสมอ แม้มีทศนิยมหลายก้อนและมี cap", () => {
+    const parts = [10.5, 20.5, 30.5, 40.5, 5.5]
+    const target = Math.round(parts.reduce((s, n) => s + n, 0)) // round(107.5) = 108
+    const result = apportionToTarget(parts, target)
+    expect(result.reduce((s, n) => s + n, 0)).toBe(target)
+    expect(result.reduce((s, n) => s + n, 0)).not.toBe(110) // ผลรวมของการปัดแยกกันแบบ round 1
   })
 })

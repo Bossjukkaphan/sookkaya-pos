@@ -2,7 +2,7 @@
  *  เจ้าของร้านอ่านการ์ดนี้ทุกวันมาหลายเดือน สี/ขนาด/ลำดับจึงต้องคงเดิม
  *  spec: docs/superpowers/specs/2026-08-05-line-daily-report-design.md */
 
-import type { DailyReport } from "./daily-report"
+import { apportionToTarget, type DailyReport } from "./daily-report"
 import { formatBaht } from "./constants"
 import { formatThaiDate } from "./datetime"
 
@@ -185,12 +185,19 @@ function body(report: DailyReport) {
   if (ee.count > 0) {
     opsRows.push(opRow("🧾 บันทึกรายจ่ายวันนี้", `${ee.count} รายการ · ${baht(ee.total)}`, BRAND.text))
     if (ee.backdatedCount > 0) {
-      // ปัดเศษยอดแต่ละเดือน/อื่นๆ ก่อน แล้วรวมเลขที่ปัดแล้วเป็นยอด "ย้อนหลัง" — ไม่ปัด backdatedTotal
-      // แยกต่างหาก เพราะปัดแยกกันแล้วผลรวมอาจเพี้ยนไปหนึ่งหรือสองบาท (เช่น 100.5+100.5 = 201
-      // แต่ round(100.5)+round(100.5) = 202) ทำให้สองบรรทัดที่อยู่ติดกันโชว์เลขไม่ตรงกัน
-      const monthAmounts = ee.byMonth.map((m) => Math.round(m.total))
-      const otherAmount = ee.otherMonthsTotal > 0 ? Math.round(ee.otherMonthsTotal) : 0
-      const backdatedRounded = monthAmounts.reduce((s, n) => s + n, 0) + otherAmount
+      // ปัด backdatedTotal เป็นเลขเต็มครั้งเดียว (เหมือนบรรทัดยอดรวมด้านบนที่ปัด ee.total เอง) แล้ว
+      // "แจก" เลขเต็มนั้นกลับไปเป็นก้อนย่อยต่อเดือน+อื่นๆ ด้วย apportionToTarget (largest-remainder)
+      // แทนที่จะปัดแต่ละก้อนแยกกันแล้วรวมทีหลัง (วิธีเดิมทำแบบนั้น แล้วเพราะ backdatedTotal ≤ total
+      // เสมอจริง แต่ปัดแยกกันทำให้ยอด "ย้อนหลัง" ที่โชว์ ดันมากกว่ายอดรวมที่โชว์ได้ — ผลรวมของส่วนย่อย
+      // เกินยอดรวมทั้งก้อนเป็นเรื่องที่ทำให้เจ้าของร้านเลิกเชื่อเลขทุกตัวบนการ์ด) วิธีนี้ปัดยอดรวมก่อน
+      // แล้วหารสัดส่วนกลับ จึงรับประกันด้วยโครงสร้างว่า ย้อนหลัง ≤ รวม เสมอ ไม่ใช่แค่บังเอิญตรง
+      const backdatedRounded = Math.round(ee.backdatedTotal)
+      const parts = ee.otherMonthsTotal > 0
+        ? [...ee.byMonth.map((m) => m.total), ee.otherMonthsTotal]
+        : ee.byMonth.map((m) => m.total)
+      const amounts = apportionToTarget(parts, backdatedRounded)
+      const monthAmounts = amounts.slice(0, ee.byMonth.length)
+      const otherAmount = ee.otherMonthsTotal > 0 ? amounts[amounts.length - 1] : 0
       // ตัวเลขนี้คือสัญญาณกำกับดูแล — มีคนคีย์เงินเข้าเดือนที่ปิดงบไปแล้ว
       opsRows.push(noteText(`ย้อนหลัง ${ee.backdatedCount} · ${baht(backdatedRounded)}`, BRAND.gold))
       const months = ee.byMonth.map((m, i) => `${m.month} ${baht(monthAmounts[i])}`)
