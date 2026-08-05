@@ -7,6 +7,7 @@ import {
   type DailySummaryRow,
   type TopupRow,
   type TopupHistoryRow,
+  type ExpenseEntryRow,
 } from "./daily-report"
 
 /** ตัวเลขจริงวันที่ 4 ส.ค. 2569 ที่สืบไว้ตอนทำ spec — ใช้เป็นหมุดกันสูตรเพี้ยน */
@@ -25,6 +26,7 @@ const base: DailyReportInput = {
   memberCreditLow: 0,
   topups: [],
   topupHistory: [],
+  expenseEntries: [],
 }
 
 describe("buildDailyReport — ตัวเลขหลัก", () => {
@@ -367,6 +369,84 @@ describe("buildDailyReport — สมาชิกที่เติมเงิ�
     expect(r.memberSignups).toEqual({
       newCount: 0, newCash: 0, newTiers: [],
       renewCount: 0, renewCash: 0, renewTiers: [],
+    })
+  })
+})
+
+const exp = (expense_date: string, amount: number | null, recorded_date = "2026-08-04"): ExpenseEntryRow => ({
+  expense_date, amount, recorded_date,
+})
+
+describe("buildDailyReport — รายจ่ายที่บันทึกวันนี้", () => {
+  it("รายการที่ลงตรงวัน ไม่นับเป็นย้อนหลัง", () => {
+    const r = buildDailyReport({ ...base, expenseEntries: [exp("2026-08-04", 458)] })
+    expect(r.expenseEntries.count).toBe(1)
+    expect(r.expenseEntries.total).toBe(458)
+    expect(r.expenseEntries.backdatedCount).toBe(0)
+    expect(r.expenseEntries.byMonth).toEqual([])
+  })
+
+  it("รายการลงย้อนหลัง นับทั้งยอดรวมและยอดย้อนหลัง", () => {
+    const r = buildDailyReport({
+      ...base,
+      expenseEntries: [exp("2026-08-04", 458), exp("2026-06-30", 24884)],
+    })
+    expect(r.expenseEntries.count).toBe(2)
+    expect(r.expenseEntries.total).toBe(25342)
+    expect(r.expenseEntries.backdatedCount).toBe(1)
+    expect(r.expenseEntries.backdatedTotal).toBe(24884)
+    expect(r.expenseEntries.byMonth).toEqual([{ month: "มิ.ย.", total: 24884 }])
+  })
+
+  it("ย้อนหลังหลายเดือน เรียงเก่าไปใหม่", () => {
+    const r = buildDailyReport({
+      ...base,
+      expenseEntries: [exp("2026-07-15", 25800), exp("2026-05-25", 4548), exp("2026-06-10", 24884)],
+    })
+    expect(r.expenseEntries.byMonth).toEqual([
+      { month: "พ.ค.", total: 4548 },
+      { month: "มิ.ย.", total: 24884 },
+      { month: "ก.ค.", total: 25800 },
+    ])
+    expect(r.expenseEntries.otherMonthsTotal).toBe(0)
+  })
+
+  it("เกินสี่เดือน เก็บสี่เดือนยอดสูงสุด เรียงเก่าไปใหม่ ที่เหลือรวมก้อนเดียว", () => {
+    const r = buildDailyReport({
+      ...base,
+      expenseEntries: [
+        exp("2026-01-10", 100), exp("2026-02-10", 5000), exp("2026-03-10", 4000),
+        exp("2026-04-10", 3000), exp("2026-05-10", 2000),
+      ],
+    })
+    expect(r.expenseEntries.byMonth).toEqual([
+      { month: "ก.พ.", total: 5000 },
+      { month: "มี.ค.", total: 4000 },
+      { month: "เม.ย.", total: 3000 },
+      { month: "พ.ค.", total: 2000 },
+    ])
+    expect(r.expenseEntries.otherMonthsTotal).toBe(100)
+  })
+
+  it("ลงล่วงหน้า นับยอดรวมแต่ไม่นับย้อนหลัง", () => {
+    const r = buildDailyReport({ ...base, expenseEntries: [exp("2026-09-01", 900)] })
+    expect(r.expenseEntries.count).toBe(1)
+    expect(r.expenseEntries.total).toBe(900)
+    expect(r.expenseEntries.backdatedCount).toBe(0)
+  })
+
+  it("amount เป็น null นับรายการแต่ยอดเป็น 0", () => {
+    const r = buildDailyReport({ ...base, expenseEntries: [exp("2026-06-01", null)] })
+    expect(r.expenseEntries.count).toBe(1)
+    expect(r.expenseEntries.total).toBe(0)
+    expect(r.expenseEntries.backdatedTotal).toBe(0)
+  })
+
+  it("ไม่มีรายการเลย ทุกช่องเป็นศูนย์", () => {
+    const r = buildDailyReport(base)
+    expect(r.expenseEntries).toEqual({
+      count: 0, total: 0, backdatedCount: 0, backdatedTotal: 0,
+      byMonth: [], otherMonthsTotal: 0,
     })
   })
 })

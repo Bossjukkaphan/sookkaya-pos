@@ -1,7 +1,7 @@
 /** สูตรของการ์ดสรุปยอดขายรายวันที่ส่งเข้าไลน์ — ฟังก์ชันบริสุทธิ์ล้วน ไม่แตะฐานข้อมูล
  *  spec: docs/superpowers/specs/2026-08-05-line-daily-report-design.md */
 
-import { addMonths } from "./datetime"
+import { addMonths, thaiMonthAbbr } from "./datetime"
 import { addDays } from "./date-range"
 
 export type DailySummaryRow = {
@@ -43,6 +43,27 @@ export const EXCLUDED_TIER = "เครดิตคงเหลือ"
 
 const TIER_UNKNOWN = "ไม่ระบุ"
 
+export type ExpenseEntryRow = {
+  expense_date: string
+  amount: number | null
+  /** วันที่บันทึกตามเวลาไทย YYYY-MM-DD — route แปลงมาให้แล้ว */
+  recorded_date: string
+}
+
+export type ExpenseEntries = {
+  count: number
+  total: number
+  backdatedCount: number
+  backdatedTotal: number
+  /** เฉพาะรายการย้อนหลัง สี่เดือนยอดสูงสุด เรียงเก่าไปใหม่ */
+  byMonth: { month: string; total: number }[]
+  /** ยอดรวมของเดือนที่ถูกตัดออกจาก byMonth — 0 เมื่อไม่มีเดือนถูกตัด */
+  otherMonthsTotal: number
+}
+
+/** เดือนมากกว่านี้การ์ดจะยาวจนคนเลิกอ่าน */
+export const MAX_BACKDATED_MONTHS = 4
+
 export type DailyReportInput = {
   /** วันที่รายงาน ตามเวลาไทย */
   today: string
@@ -59,6 +80,8 @@ export type DailyReportInput = {
   topups: TopupRow[]
   /** ประวัติการเติมทั้งหมดของลูกค้าที่เติมวันนี้ — ส่งดิบๆ มาได้เลย สูตรตัด EXCLUDED_TIER เอง */
   topupHistory: TopupHistoryRow[]
+  /** แถวรายจ่ายที่ถูก "บันทึกเข้าระบบ" วันนี้ (ไม่ใช่วันที่บนใบเสร็จ) — route แปลง recorded_date มาให้แล้ว */
+  expenseEntries: ExpenseEntryRow[]
 }
 
 export type DailyReport = {
@@ -79,6 +102,7 @@ export type DailyReport = {
   bookingsTomorrow: number
   alerts: string[]
   memberSignups: MemberSignups
+  expenseEntries: ExpenseEntries
 }
 
 /** จำนวนวันย้อนหลังที่ใช้หาค่าเฉลี่ย */
@@ -150,6 +174,34 @@ export function buildMemberSignups(
   }
 }
 
+export function buildExpenseEntries(rows: ExpenseEntryRow[]): ExpenseEntries {
+  const amount = (r: ExpenseEntryRow) => Number(r.amount ?? 0)
+  const backdated = rows.filter((r) => r.expense_date < r.recorded_date)
+
+  // คีย์เป็น YYYY-MM เพื่อเรียงตามเวลาได้ตรง แล้วค่อยแปลงเป็นชื่อเดือนตอนคืนค่า
+  const byKey = new Map<string, number>()
+  for (const r of backdated) {
+    const key = r.expense_date.slice(0, 7)
+    byKey.set(key, (byKey.get(key) ?? 0) + amount(r))
+  }
+  const all = [...byKey.entries()].map(([key, total]) => ({ key, total }))
+  const kept = [...all].sort((a, b) => b.total - a.total).slice(0, MAX_BACKDATED_MONTHS)
+  const keptKeys = new Set(kept.map((m) => m.key))
+
+  return {
+    count: rows.length,
+    total: rows.reduce((s, r) => s + amount(r), 0),
+    backdatedCount: backdated.length,
+    backdatedTotal: backdated.reduce((s, r) => s + amount(r), 0),
+    byMonth: kept
+      .sort((a, b) => a.key.localeCompare(b.key))
+      .map((m) => ({ month: thaiMonthAbbr(`${m.key}-01`), total: m.total })),
+    otherMonthsTotal: all
+      .filter((m) => !keptKeys.has(m.key))
+      .reduce((s, m) => s + m.total, 0),
+  }
+}
+
 export function buildDailyReport(input: DailyReportInput): DailyReport {
   const { today, daily, commission, customers } = input
 
@@ -207,6 +259,7 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
   }
 
   const memberSignups = buildMemberSignups(today, input.topups, input.topupHistory)
+  const expenseEntries = buildExpenseEntries(input.expenseEntries)
 
   return {
     date: today,
@@ -225,5 +278,6 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
     bookingsTomorrow: input.bookingsTomorrow,
     alerts: alerts.slice(0, MAX_ALERTS),
     memberSignups,
+    expenseEntries,
   }
 }

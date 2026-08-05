@@ -24,14 +24,20 @@ export function nowTimeInShopTz(): string {
   }).format(new Date())
 }
 
+export const THAI_MONTHS_ABBR = [
+  "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
+  "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
+] as const
+
 /** แปลง YYYY-MM-DD เป็นข้อความไทย เช่น "20 ก.ค. 2569" (พ.ศ.) */
 export function formatThaiDate(isoDate: string): string {
   const [y, m, d] = isoDate.split("-").map(Number)
-  const months = [
-    "ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-    "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค.",
-  ]
-  return `${d} ${months[m - 1]} ${y + 543}`
+  return `${d} ${THAI_MONTHS_ABBR[m - 1]} ${y + 543}`
+}
+
+/** "2026-06-15" → "มิ.ย." */
+export function thaiMonthAbbr(isoDate: string): string {
+  return THAI_MONTHS_ABBR[Number(isoDate.slice(5, 7)) - 1]
 }
 
 /** บวกเดือนแบบไม่ให้วันที่ล้นเดือน (31 ม.ค. + 1 เดือน = 28/29 ก.พ.) */
