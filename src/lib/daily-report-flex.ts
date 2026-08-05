@@ -62,7 +62,8 @@ function opRow(label: string, value: string, valueColor: string) {
   }
 }
 
-/** "Silver ×2 · Gold ×1" — ว่างเมื่อไม่มี tier */
+/** "Silver ×2 · Gold ×1" — เรียกเฉพาะตอน count > 0 จึงมีอย่างน้อยหนึ่ง tier เสมอ
+ *  (countTiers ใส่ "ไม่ระบุ" แทนเมื่อไม่มีชื่อ tier จริง ไม่เคยคืนอาเรย์ว่างถ้า input ไม่ว่าง) */
 function tierSummary(tiers: { tier: string; count: number }[]): string {
   return tiers.map((t) => `${t.tier} ×${t.count}`).join(" · ")
 }

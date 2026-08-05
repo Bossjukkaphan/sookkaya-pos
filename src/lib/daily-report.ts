@@ -76,7 +76,7 @@ export type DailyReportInput = {
   bookingsTomorrow: number
   memberCreditEmpty: number
   memberCreditLow: number
-  /** แถว member_topups ของวันนี้ ตัด EXCLUDED_TIER ออกแล้วจาก query */
+  /** แถว member_topups ของวันนี้ — ส่งดิบๆ มาได้เลย สูตรตัด EXCLUDED_TIER เอง */
   topups: TopupRow[]
   /** ประวัติการเติมทั้งหมดของลูกค้าที่เติมวันนี้ — ส่งดิบๆ มาได้เลย สูตรตัด EXCLUDED_TIER เอง */
   topupHistory: TopupHistoryRow[]
