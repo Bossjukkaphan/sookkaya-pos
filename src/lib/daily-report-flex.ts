@@ -197,6 +197,10 @@ function body(report: DailyReport) {
       if (ee.otherMonthsTotal > 0) months.push(`อื่นๆ ${baht(otherAmount)}`)
       if (months.length > 0) opsRows.push(noteText(months.join(" · "), BRAND.gold))
     }
+    // บังคับมี เหมือนโน้ต Cash In ของบล็อกสมาชิก — ยอดนี้คือรายจ่ายที่ "บันทึกเข้าระบบ" วันนี้
+    // ไม่ใช่รายจ่ายที่ "เกิดขึ้น" วันนี้ ของจริงมีวันคีย์ย้อนหลังทั้งเดือนในวันเดียว (฿207,792 ในวันเดียว
+    // ทั้งที่กำไรขั้นต้นวันนั้นแค่หลักพัน) ไม่กำกับแล้วเจ้าของร้านจะอ่านผิดว่าร้านขาดทุนวันนี้
+    opsRows.push(noteText("(ยอดตามวันที่บันทึก · ไม่ใช่รายจ่ายของวันนี้)", BRAND.textMuted))
   }
 
   const contents: Record<string, unknown>[] = [

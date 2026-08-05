@@ -317,6 +317,31 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
     expect(texts.some((t) => t.includes("ม.ค. ฿101") && t.includes("ก.พ. ฿101"))).toBe(true)
   })
 
+  // กรณี round 2: byMonth เต็ม cap (MAX_BACKDATED_MONTHS = 4 เดือน) และมี otherMonthsTotal ด้วย
+  // เลขทั้งห้าก้อน (4 เดือน + อื่นๆ) รวมกัน exact = 107.5 แต่ปัดทีละก้อนแล้วรวม = 110
+  // (round(10.5)+round(20.5)+round(30.5)+round(40.5)+round(5.5) = 11+21+31+41+6 = 110)
+  // ต่างจาก round(107.5) = 108 — ยืนยันว่ายอด "ย้อนหลัง" ต้องเท่ากับผลรวมของเลขที่ปัดแล้วทั้งห้าก้อน
+  // (110) เสมอ ไม่ใช่ปัด backdatedTotal เอง (108) แม้ตอน byMonth เต็ม cap และมี otherMonths ด้วยก็ตาม
+  it("ยังตรงกันเมื่อ byMonth เต็มสี่เดือน (cap) และมี otherMonthsTotal ร่วมด้วย", () => {
+    const texts = allText(dailyReportFlex({
+      ...report,
+      expenseEntries: {
+        count: 20, total: 1000, backdatedCount: 20, backdatedTotal: 107.5,
+        byMonth: [
+          { month: "ม.ค.", total: 10.5 },
+          { month: "ก.พ.", total: 20.5 },
+          { month: "มี.ค.", total: 30.5 },
+          { month: "เม.ย.", total: 40.5 },
+        ],
+        otherMonthsTotal: 5.5,
+      },
+    }))
+    expect(texts.some((t) => t.includes("ย้อนหลัง 20") && t.includes("฿110"))).toBe(true)
+    expect(texts.some((t) =>
+      t.includes("ม.ค. ฿11") && t.includes("เม.ย. ฿41") && t.includes("อื่นๆ ฿6")
+    )).toBe(true)
+  })
+
   it("มีบันทึกแต่ไม่มีย้อนหลัง โชว์แค่บรรทัดแรก", () => {
     const texts = allText(dailyReportFlex({
       ...report,
@@ -327,6 +352,36 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
     }))
     expect(texts).toContain("🧾 บันทึกรายจ่ายวันนี้")
     expect(texts.some((t) => t.includes("ย้อนหลัง"))).toBe(false)
+  })
+
+  // แม้ไม่มีรายการย้อนหลังสักรายการ หมายเหตุกันเข้าใจผิดนี้ก็ยังต้องขึ้น — มันเตือนเรื่อง
+  // "วันที่บันทึก vs วันนี้" ซึ่งจริงเสมอไม่ว่าจะมีย้อนหลังหรือไม่ ไม่ใช่แค่ตอนมีย้อนหลัง
+  it("หมายเหตุกันเข้าใจผิดขึ้นแม้ไม่มีรายการย้อนหลังเลย", () => {
+    const texts = allText(dailyReportFlex({
+      ...report,
+      expenseEntries: {
+        count: 2, total: 900, backdatedCount: 0, backdatedTotal: 0,
+        byMonth: [], otherMonthsTotal: 0,
+      },
+    }))
+    expect(texts).toContain("(ยอดตามวันที่บันทึก · ไม่ใช่รายจ่ายของวันนี้)")
+  })
+
+  it("มีบันทึก แสดงหมายเหตุกันเข้าใจผิดว่าเป็นรายจ่ายของวันนี้ ด้วยสีเทาไม่ใช่สีทอง", () => {
+    const contents = dailyReportFlex(withExpenses).contents
+    const note = find(contents, (o) => o.text === "(ยอดตามวันที่บันทึก · ไม่ใช่รายจ่ายของวันนี้)")
+    expect(note).not.toBeNull()
+    expect(note?.color).toBe("#9C8E80")
+  })
+
+  // ใช้ `report` ฐานตรงๆ (ไม่ empty มี sessions/revenue ปกติ แค่ ee.count = 0) แทนที่จะปิดทั้งการ์ด
+  // ด้วย empty: true — ถ้าเทสปิดทั้งการ์ด การผ่านของเทสจะพิสูจน์ไม่ได้ว่าโค้ด gate ถูกต้องจริง
+  // (การ์ดว่างซ่อนทุกอย่างอยู่แล้วไม่ว่า gate จะเขียนถูกหรือผิด) เคสนี้บล็อกอื่นยังโชว์ปกติ
+  // มีแค่บล็อกรายจ่ายที่ถูกซ่อน จึงจับได้จริงถ้าใครเผลอเอาหมายเหตุไปวางไว้นอกเงื่อนไข count > 0
+  it("ไม่มีการบันทึกรายจ่ายเลย ไม่มีหมายเหตุกันเข้าใจผิด แม้การ์ดไม่ได้ว่างเปล่า", () => {
+    const texts = allText(dailyReportFlex(report))
+    expect(report.empty).toBe(false)
+    expect(texts).not.toContain("(ยอดตามวันที่บันทึก · ไม่ใช่รายจ่ายของวันนี้)")
   })
 
   it("มีเดือนที่ถูกตัด ต่อท้ายด้วยอื่นๆ", () => {
@@ -354,6 +409,17 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
     expect(expense).toBeGreaterThan(queue)
     expect(alertHeader).toBeGreaterThan(-1)
     expect(expense).toBeLessThan(alertHeader)
+  })
+
+  it("หมายเหตุกันเข้าใจผิดอยู่บรรทัดสุดท้ายของบล็อก หลังบรรทัดแยกเดือน", () => {
+    const lines = allText(dailyReportFlex(withExpenses))
+    const idx = (t: string) => lines.findIndex((l) => l === t)
+    const monthLine = lines.findIndex((l) => l.includes("พ.ค. ฿4,548"))
+    const note = idx("(ยอดตามวันที่บันทึก · ไม่ใช่รายจ่ายของวันนี้)")
+    const alertHeader = idx("⚠️ Action ที่ต้องทำวันนี้")
+    expect(monthLine).toBeGreaterThan(-1)
+    expect(note).toBeGreaterThan(monthLine)
+    expect(note).toBeLessThan(alertHeader)
   })
 
   it("ไม่มีการบันทึกเลย ซ่อนทั้งบล็อก", () => {
