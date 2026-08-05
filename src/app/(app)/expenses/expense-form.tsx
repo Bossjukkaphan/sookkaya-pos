@@ -13,9 +13,12 @@ import { Label } from "@/components/ui/label"
 export function ExpenseForm({
   categories,
   today,
+  onSaved,
 }: {
   categories: string[]
   today: string
+  /** เรียกเมื่อบันทึกสำเร็จ — ใช้ปิด dialog จากข้างนอก */
+  onSaved?: () => void
 }) {
   const router = useRouter()
   const formRef = useRef<HTMLFormElement>(null)
@@ -35,6 +38,7 @@ export function ExpenseForm({
         setWarnings([])
         setPendingForm(null)
         router.refresh()
+        onSaved?.()
       } else if (result.warnings?.length) {
         // ไม่ใช่ error — ถามให้แน่ใจก่อนว่าตั้งใจบันทึกจริง
         setWarnings(result.warnings)
