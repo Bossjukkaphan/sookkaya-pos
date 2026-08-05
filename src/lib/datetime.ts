@@ -4,14 +4,23 @@
  */
 export const SHOP_TZ = "Asia/Bangkok"
 
+// สร้าง formatter ครั้งเดียวระดับโมดูล — จะถูกเรียกซ้ำต่อแถว (เช่นแปลง created_at ของรายจ่ายทีละแถว)
+// สร้างใหม่ทุกครั้งจะช้าโดยไม่จำเป็น
+const shopDateFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: SHOP_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+})
+
+/** วันที่ตามเวลาไทยของเวลา (instant) ใดๆ รูปแบบ YYYY-MM-DD */
+export function shopDateOf(d: Date): string {
+  return shopDateFormatter.format(d)
+}
+
 /** วันที่ปัจจุบันตามเวลาไทย รูปแบบ YYYY-MM-DD */
 export function todayInShopTz(): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: SHOP_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date())
+  return shopDateOf(new Date())
 }
 
 /** เวลาปัจจุบันตามเวลาไทย รูปแบบ HH:mm */

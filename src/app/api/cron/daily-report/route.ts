@@ -11,7 +11,7 @@ import type {
   TopupHistoryRow,
 } from "@/lib/daily-report"
 import { dailyReportFlex } from "@/lib/daily-report-flex"
-import { addMonths, SHOP_TZ, todayInShopTz } from "@/lib/datetime"
+import { addMonths, shopDateOf, todayInShopTz } from "@/lib/datetime"
 import { addDays } from "@/lib/date-range"
 
 /** Vercel Cron ยิงทุกคืน 22:00 ไทย (ดู vercel.json) — สรุปยอดขายวันนี้เป็นการ์ด Flex
@@ -74,10 +74,14 @@ export async function GET(request: Request) {
       // ห้ามใช้ .neq("tier", EXCLUDED_TIER) ที่นี่ — ใน Postgres tier <> 'x' ให้ผล NULL
       // เมื่อ tier เป็น NULL แถวจะถูกตัดทิ้งไปด้วย ทั้งที่ต้องรอดแล้วโชว์เป็น "ไม่ระบุ"
       // ปล่อยดิบๆ ไปให้สูตรกรอง EXCLUDED_TIER เอง (buildMemberSignups)
+      // เรียงตาม created_at เพราะสูตร buildMemberSignups ตัดสิน "ใหม่ vs ต่ออายุ" จากลำดับแถว
+      // แถวแรกของลูกค้าคนเดียวกัน = ครั้งแรกของวัน (ตามสเปก) — ไม่มี order by ตรงนี้
+      // PostgREST ไม่การันตีลำดับ แพ็กเกจไหนกลายเป็น "ใหม่" กับ "ต่ออายุ" จะสลับกันได้ทุกครั้งที่รัน
       supabase
         .from("member_topups")
         .select("customer_id, tier, cash_received")
-        .eq("topup_date", today),
+        .eq("topup_date", today)
+        .order("created_at"),
       // นับรายจ่ายตาม "วันที่บันทึกเข้าระบบ" (created_at) ไม่ใช่วันที่บนใบเสร็จ (expense_date)
       // เจ้าของร้านย้ำสองรอบ — ของจริงมีวันที่พนักงานคีย์ย้อนหลังทั้งเดือนในวันเดียว
       // กรองด้วยช่วง UTC ที่ประกอบจากวันที่ไทยตรงๆ (+07:00) เพื่อให้ index บน created_at ทำงาน
@@ -108,10 +112,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: failed[0] })
   }
 
-  // ยิงเฉพาะวันที่มีคนเติม — วันที่ไม่มีใครเติมเลยไม่เสีย round trip ประวัติเปล่าๆ
-  const topupRows = (topups.data ?? []) as TopupRow[]
+  // แมปทีละฟิลด์แทนการ cast ตรงๆ — ถ้าใครแก้ select แล้วเผลอตัดคอลัมน์ออก ตรงนี้จะ error
+  // ตอน compile แทนที่จะปล่อยผ่านเงียบๆ แล้วไปพังตอนรัน (as จะบังคับ type ได้เสมอไม่ว่า field จะขาด)
+  const topupRows: TopupRow[] = (topups.data ?? []).map((r) => ({
+    customer_id: r.customer_id,
+    tier: r.tier,
+    cash_received: r.cash_received,
+  }))
   const topupCustomerIds = [...new Set(topupRows.map((r) => r.customer_id))]
   let topupHistory: TopupHistoryRow[] = []
+  // ยิงเฉพาะวันที่มีคนเติม — วันที่ไม่มีใครเติมเลยไม่เสีย round trip ประวัติเปล่าๆ
   if (topupCustomerIds.length > 0) {
     const history = await supabase
       .from("member_topups")
@@ -122,20 +132,19 @@ export async function GET(request: Request) {
       return NextResponse.json({ ok: false, error: history.error.message })
     }
     // ส่งดิบๆ เข้าสูตร — ไม่กรอง tier ที่นี่เช่นกัน สูตรตัด EXCLUDED_TIER เองแล้ว
-    topupHistory = (history.data ?? []) as TopupHistoryRow[]
+    topupHistory = (history.data ?? []).map((r) => ({
+      customer_id: r.customer_id,
+      topup_date: r.topup_date,
+      tier: r.tier,
+    }))
   }
 
   // created_at เป็น timestamptz — แปลงเป็นวันที่ไทยที่นี่ ให้สูตรยังบริสุทธิ์ (ไม่แตะ Intl/timezone)
-  const toShopDate = new Intl.DateTimeFormat("en-CA", {
-    timeZone: SHOP_TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  })
+  // expense_date และ created_at ไม่มี null ได้ตาม schema จึงไม่ต้องมี fallback/cast กันเหนียว
   const expenseEntries: ExpenseEntryRow[] = (expenseRows.data ?? []).map((r) => ({
-    expense_date: r.expense_date ?? "",
+    expense_date: r.expense_date,
     amount: r.amount === null ? null : Number(r.amount),
-    recorded_date: toShopDate.format(new Date(r.created_at as string)),
+    recorded_date: shopDateOf(new Date(r.created_at)),
   }))
 
   let topTherapist: TopTherapist | null = null
