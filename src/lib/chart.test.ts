@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import {
   barGeometry,
+  donutSlices,
+  DONUT_MIN_PCT,
+  DONUT_OTHER_LABEL,
   groupedBarGeometry,
   groupedBarsWithLine,
   linePath,
@@ -209,5 +212,105 @@ describe("linePath", () => {
   it("จุดเดียวก็ยังได้ path ที่ valid", () => {
     const d = linePath([{ label: "a", value: 50 }], 100, 50)
     expect(d.startsWith("M ")).toBe(true)
+  })
+})
+
+describe("donutSlices — สัดส่วนกราฟวงกลมสรุปหมวดรายจ่าย", () => {
+  it("เรียงจากมากไปน้อย และ pct รวมกันได้ 100", () => {
+    const s = donutSlices([
+      { label: "ข", value: 30 },
+      { label: "ก", value: 70 },
+    ])
+    expect(s.map((x) => x.label)).toEqual(["ก", "ข"])
+    expect(s.reduce((sum, x) => sum + x.pct, 0)).toBeCloseTo(100, 6)
+  })
+
+  it("startPct สะสมต่อกัน ชิ้นแรกเริ่มที่ 0", () => {
+    const s = donutSlices([
+      { label: "ก", value: 50 },
+      { label: "ข", value: 30 },
+      { label: "ค", value: 20 },
+    ])
+    expect(s.map((x) => x.startPct)).toEqual([0, 50, 80])
+  })
+
+  it("ชิ้นที่เล็กกว่าเกณฑ์ยุบเป็นอื่นๆ ต่อท้ายเสมอ", () => {
+    const s = donutSlices([
+      { label: "ก", value: 90 },
+      { label: "ข", value: 6 },
+      { label: "ค", value: 3 },
+      { label: "ง", value: 1 },
+    ])
+    expect(s.map((x) => x.label)).toEqual(["ก", "ข", DONUT_OTHER_LABEL])
+    expect(s[2].value).toBe(4)
+  })
+
+  // เคสจริงเดือน มิ.ย. 69: มีหมวดชื่อ "อื่นๆ" อยู่แล้ว ถ้าสร้างชิ้นใหม่ชื่อซ้ำ
+  // legend จะมีสองบรรทัดชื่อเดียวกัน กดกรองแล้วงง
+  it("หมวดชื่ออื่นๆ ที่มีอยู่แล้วต้องรวมเป็นก้อนเดียว ไม่แตกสองชิ้น", () => {
+    const s = donutSlices([
+      { label: "ค่ามือหมอ", value: 141735 },
+      { label: "เงินเดือนประจำ", value: 52450 },
+      { label: "ค่าเช่า", value: 36000 },
+      { label: DONUT_OTHER_LABEL, value: 30320 },
+      { label: "การตลาด", value: 20400 },
+      { label: "วัสดุ", value: 18843.15 },
+      { label: "ค่าน้ำค่าไฟ", value: 16197.53 },
+      { label: "ซักรีด", value: 9900 },
+    ])
+    // 8 หมวด → 6 ผ่านเกณฑ์ (รวม "อื่นๆ" เดิม) → 2 ที่ตกเกณฑ์ยุบเข้าก้อนเดิม ไม่เกิดชิ้นใหม่
+    expect(s).toHaveLength(6)
+    expect(s.filter((x) => x.label === DONUT_OTHER_LABEL)).toHaveLength(1)
+    const other = s.find((x) => x.label === DONUT_OTHER_LABEL)!
+    // 30,320 เดิม + ค่าน้ำค่าไฟ 16,197.53 (4.97%) + ซักรีด 9,900 (3.04%)
+    expect(other.value).toBeCloseTo(56417.53, 2)
+    expect(other.pct).toBeCloseTo(17.314, 3)
+    // ชิ้นที่ยุบต้องไม่เหลืออยู่แยกอีก
+    expect(s.map((x) => x.label)).not.toContain("ซักรีด")
+    expect(s.map((x) => x.label)).not.toContain("ค่าน้ำค่าไฟ")
+  })
+
+  // จับเส้นแบ่ง 5% ตรงๆ ด้วยตัวเลขกลมๆ — ไม่ผูกกับสัดส่วนข้อมูลจริงซึ่งเปลี่ยนได้ทุกเดือน
+  it("5.01% อยู่ต่อ · 4.99% ถูกยุบ", () => {
+    const s = donutSlices([
+      { label: "ก", value: 9000 },
+      { label: "ข", value: 501 },
+      { label: "ค", value: 499 },
+    ])
+    expect(s.map((x) => x.label)).toEqual(["ก", "ข", DONUT_OTHER_LABEL])
+    expect(s[2].value).toBe(499)
+  })
+
+  it("ยุบแล้วจะเหลือชิ้นเดียวชื่ออื่นๆ = ไม่ยุบ", () => {
+    const s = donutSlices([
+      { label: "ก", value: 4 },
+      { label: "ข", value: 3 },
+      { label: "ค", value: 3 },
+    ])
+    expect(s.map((x) => x.label)).toEqual(["ก", "ข", "ค"])
+  })
+
+  it("ค่า 0 และติดลบถูกตัดทิ้ง", () => {
+    const s = donutSlices([
+      { label: "ก", value: 100 },
+      { label: "ข", value: 0 },
+      { label: "ค", value: -50 },
+    ])
+    expect(s.map((x) => x.label)).toEqual(["ก"])
+    expect(s[0].pct).toBe(100)
+  })
+
+  it("ไม่มีข้อมูลหรือรวมเป็นศูนย์ คืนอาเรย์ว่าง", () => {
+    expect(donutSlices([])).toEqual([])
+    expect(donutSlices([{ label: "ก", value: 0 }])).toEqual([])
+  })
+
+  it("ปรับเกณฑ์ได้ผ่านพารามิเตอร์", () => {
+    const s = donutSlices([{ label: "ก", value: 92 }, { label: "ข", value: 8 }], 10)
+    expect(s.map((x) => x.label)).toEqual(["ก", DONUT_OTHER_LABEL])
+  })
+
+  it("ค่าคงที่อ่านได้ ไม่ใช่เลขลอยในโค้ด", () => {
+    expect(DONUT_MIN_PCT).toBe(5)
   })
 })
