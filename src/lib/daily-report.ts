@@ -13,6 +13,34 @@ export type DailySummaryRow = {
 
 export type TopTherapist = { name: string; income: number; sessions: number }
 
+export type TierCount = { tier: string; count: number }
+
+export type MemberSignups = {
+  newCount: number
+  newCash: number
+  newTiers: TierCount[]
+  renewCount: number
+  renewCash: number
+  renewTiers: TierCount[]
+}
+
+export type TopupRow = {
+  customer_id: string
+  tier: string | null
+  cash_received: number | null
+}
+
+/** ประวัติการเติมของลูกค้าที่เติมวันนี้ — รวมแถวของวันนี้มาด้วย สูตรกรองเอง */
+export type TopupHistoryRow = {
+  customer_id: string
+  topup_date: string
+}
+
+/** ยอดเกินที่เก็บเข้าเครดิตจากฟีเจอร์ overpay-to-credit ไม่ใช่การซื้อแพ็กเกจ */
+export const EXCLUDED_TIER = "เครดิตคงเหลือ"
+
+const TIER_UNKNOWN = "ไม่ระบุ"
+
 export type DailyReportInput = {
   /** วันที่รายงาน ตามเวลาไทย */
   today: string
@@ -25,6 +53,10 @@ export type DailyReportInput = {
   bookingsTomorrow: number
   memberCreditEmpty: number
   memberCreditLow: number
+  /** แถว member_topups ของวันนี้ ตัด EXCLUDED_TIER ออกแล้วจาก query */
+  topups: TopupRow[]
+  /** ประวัติการเติมทั้งหมดของลูกค้าที่เติมวันนี้ ตัด EXCLUDED_TIER ออกแล้ว */
+  topupHistory: TopupHistoryRow[]
 }
 
 export type DailyReport = {
@@ -44,6 +76,7 @@ export type DailyReport = {
   topTherapist: TopTherapist | null
   bookingsTomorrow: number
   alerts: string[]
+  memberSignups: MemberSignups
 }
 
 /** จำนวนวันย้อนหลังที่ใช้หาค่าเฉลี่ย */
@@ -65,6 +98,51 @@ function sumNetRevenue(rows: DailySummaryRow[], from: string, to: string): numbe
   return rows
     .filter((r) => r.sale_date >= from && r.sale_date <= to)
     .reduce((sum, r) => sum + r.net_revenue, 0)
+}
+
+/** นับ tier แล้วเรียงจำนวนมากไปน้อย เท่ากันเรียงตามชื่อ ให้ผลคงที่ทุกครั้ง */
+function countTiers(rows: TopupRow[]): TierCount[] {
+  const map = new Map<string, number>()
+  for (const r of rows) {
+    const tier = r.tier?.trim() ? r.tier : TIER_UNKNOWN
+    map.set(tier, (map.get(tier) ?? 0) + 1)
+  }
+  return [...map.entries()]
+    .map(([tier, count]) => ({ tier, count }))
+    .sort((a, b) => b.count - a.count || a.tier.localeCompare(b.tier, "th"))
+}
+
+function sumCash(rows: TopupRow[]): number {
+  return rows.reduce((s, r) => s + Number(r.cash_received ?? 0), 0)
+}
+
+export function buildMemberSignups(
+  today: string,
+  topups: TopupRow[],
+  history: TopupHistoryRow[]
+): MemberSignups {
+  const rows = topups.filter((r) => r.tier !== EXCLUDED_TIER)
+  // ลูกค้าที่มีแถวเก่ากว่าวันนี้ = เคยเป็นสมาชิกมาก่อน
+  const returning = new Set(
+    history.filter((h) => h.topup_date < today).map((h) => h.customer_id)
+  )
+  // ตัดสินรายแถว: คนเดียวเติมสองครั้งวันเดียว ครั้งแรกใหม่ ครั้งที่สองต่ออายุ
+  const seenToday = new Set<string>()
+  const fresh: TopupRow[] = []
+  const renew: TopupRow[] = []
+  for (const r of rows) {
+    if (returning.has(r.customer_id) || seenToday.has(r.customer_id)) renew.push(r)
+    else fresh.push(r)
+    seenToday.add(r.customer_id)
+  }
+  return {
+    newCount: fresh.length,
+    newCash: sumCash(fresh),
+    newTiers: countTiers(fresh),
+    renewCount: renew.length,
+    renewCash: sumCash(renew),
+    renewTiers: countTiers(renew),
+  }
 }
 
 export function buildDailyReport(input: DailyReportInput): DailyReport {
@@ -123,6 +201,8 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
     )
   }
 
+  const memberSignups = buildMemberSignups(today, input.topups, input.topupHistory)
+
   return {
     date: today,
     empty,
@@ -139,5 +219,6 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
     topTherapist: input.topTherapist,
     bookingsTomorrow: input.bookingsTomorrow,
     alerts: alerts.slice(0, MAX_ALERTS),
+    memberSignups,
   }
 }

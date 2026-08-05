@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest"
 import {
+  EXCLUDED_TIER,
   MAX_ALERTS,
   buildDailyReport,
   type DailyReportInput,
   type DailySummaryRow,
+  type TopupRow,
+  type TopupHistoryRow,
 } from "./daily-report"
 
 /** ตัวเลขจริงวันที่ 4 ส.ค. 2569 ที่สืบไว้ตอนทำ spec — ใช้เป็นหมุดกันสูตรเพี้ยน */
@@ -20,6 +23,8 @@ const base: DailyReportInput = {
   bookingsTomorrow: 0,
   memberCreditEmpty: 0,
   memberCreditLow: 0,
+  topups: [],
+  topupHistory: [],
 }
 
 describe("buildDailyReport — ตัวเลขหลัก", () => {
@@ -236,5 +241,113 @@ describe("buildDailyReport — Action alerts", () => {
   it("วันที่ไม่มีบิลเลย ไม่ต้องเตือนกำไรติดลบ", () => {
     const r = buildDailyReport({ ...base, daily: [], commission: 0, customers: 0 })
     expect(r.alerts.some((a) => a.includes("กำไรขั้นต้นติดลบ"))).toBe(false)
+  })
+})
+
+const topup = (customer_id: string, tier: string | null, cash_received: number | null): TopupRow => ({
+  customer_id, tier, cash_received,
+})
+const hist = (customer_id: string, topup_date: string): TopupHistoryRow => ({ customer_id, topup_date })
+
+describe("buildDailyReport — สมาชิกที่เติมเงิน", () => {
+  it("ลูกค้าที่ไม่เคยเติมมาก่อน นับเป็นสมาชิกใหม่", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", "Silver", 5000)],
+      topupHistory: [hist("c1", "2026-08-04")],
+    })
+    expect(r.memberSignups.newCount).toBe(1)
+    expect(r.memberSignups.newCash).toBe(5000)
+    expect(r.memberSignups.newTiers).toEqual([{ tier: "Silver", count: 1 }])
+    expect(r.memberSignups.renewCount).toBe(0)
+  })
+
+  it("ลูกค้าที่เคยเติมเมื่อเดือนก่อน นับเป็นต่ออายุ", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", "Silver", 5000)],
+      topupHistory: [hist("c1", "2026-07-01"), hist("c1", "2026-08-04")],
+    })
+    expect(r.memberSignups.newCount).toBe(0)
+    expect(r.memberSignups.renewCount).toBe(1)
+    expect(r.memberSignups.renewCash).toBe(5000)
+    expect(r.memberSignups.renewTiers).toEqual([{ tier: "Silver", count: 1 }])
+  })
+
+  it("คนเดียวเติมสองครั้งในวันเดียว = ใหม่ 1 ต่ออายุ 1 เงินครบทั้งสองแถว", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", "Silver", 5000), topup("c1", "Gold", 8000)],
+      topupHistory: [hist("c1", "2026-08-04"), hist("c1", "2026-08-04")],
+    })
+    expect(r.memberSignups.newCount).toBe(1)
+    expect(r.memberSignups.newCash).toBe(5000)
+    expect(r.memberSignups.renewCount).toBe(1)
+    expect(r.memberSignups.renewCash).toBe(8000)
+  })
+
+  it("tier เครดิตคงเหลือ ไม่ถูกนับ", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", EXCLUDED_TIER, 1020)],
+      topupHistory: [hist("c1", "2026-08-04")],
+    })
+    expect(r.memberSignups.newCount).toBe(0)
+    expect(r.memberSignups.renewCount).toBe(0)
+    expect(r.memberSignups.newCash).toBe(0)
+  })
+
+  it("เครดิตคงเหลือในประวัติ ไม่ทำให้คนซื้อแพ็กเกจครั้งแรกกลายเป็นต่ออายุ", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", "Silver", 5000)],
+      topupHistory: [hist("c1", "2026-08-04")],
+      // แถว EXCLUDED_TIER ของเมื่อวานถูก route ตัดออกตั้งแต่ query แล้ว
+      // เทสนี้ยืนยันว่าไม่มีแถวเก่าเหลือ = ยังนับเป็นใหม่
+    })
+    expect(r.memberSignups.newCount).toBe(1)
+  })
+
+  it("หลาย tier ในวันเดียว เรียงจำนวนมากไปน้อย ยอดเท่ากันเรียงตามชื่อ", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [
+        topup("c1", "Silver", 5000),
+        topup("c2", "Silver", 5000),
+        topup("c3", "Gold", 8000),
+      ],
+      topupHistory: [hist("c1", "2026-08-04"), hist("c2", "2026-08-04"), hist("c3", "2026-08-04")],
+    })
+    expect(r.memberSignups.newTiers).toEqual([
+      { tier: "Silver", count: 2 },
+      { tier: "Gold", count: 1 },
+    ])
+  })
+
+  it("cash_received เป็น null นับรายแต่ยอดเป็น 0", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", "Silver", null)],
+      topupHistory: [hist("c1", "2026-08-04")],
+    })
+    expect(r.memberSignups.newCount).toBe(1)
+    expect(r.memberSignups.newCash).toBe(0)
+  })
+
+  it("tier เป็น null แสดงเป็น ไม่ระบุ", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", null, 3000)],
+      topupHistory: [hist("c1", "2026-08-04")],
+    })
+    expect(r.memberSignups.newTiers).toEqual([{ tier: "ไม่ระบุ", count: 1 }])
+  })
+
+  it("ไม่มี topup เลย ทุกช่องเป็นศูนย์", () => {
+    const r = buildDailyReport(base)
+    expect(r.memberSignups).toEqual({
+      newCount: 0, newCash: 0, newTiers: [],
+      renewCount: 0, renewCash: 0, renewTiers: [],
+    })
   })
 })
