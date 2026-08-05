@@ -220,6 +220,28 @@ describe("dailyReportFlex — บล็อกสมาชิก", () => {
     expect(texts).toContain("🔁 ต่ออายุ")
   })
 
+  it("บล็อกสมาชิกอยู่ระหว่าง TOP หมอ กับ MTD ตามลำดับที่กำหนด", () => {
+    // ใช้ report ฐาน — มี topTherapist และ mtdDeltaPct อยู่แล้ว เพิ่มแค่ signups ทั้งสองแบบ
+    const lines = allText(dailyReportFlex({
+      ...report,
+      memberSignups: {
+        newCount: 1, newCash: 5000, newTiers: [{ tier: "Silver", count: 1 }],
+        renewCount: 2, renewCash: 10000, renewTiers: [{ tier: "Silver", count: 2 }],
+      },
+    }))
+    const idx = (t: string) => lines.findIndex((l) => l === t)
+    const top = idx("🏆 TOP หมอ")
+    const newMember = idx("👥 สมาชิกใหม่")
+    const renew = idx("🔁 ต่ออายุ")
+    const note = idx("(รวมอยู่ใน Cash In แล้ว)")
+    const mtd = idx("📅 MTD")
+    expect(top).toBeGreaterThan(-1)
+    expect(newMember).toBeGreaterThan(top)
+    expect(renew).toBeGreaterThan(newMember)
+    expect(note).toBeGreaterThan(renew)
+    expect(mtd).toBeGreaterThan(note)
+  })
+
   it("ไม่มีใครเติมเลย ซ่อนทั้งบล็อกรวมบรรทัดกำกับ", () => {
     const texts = allText(dailyReportFlex(report))
     expect(texts).not.toContain("👥 สมาชิกใหม่")
@@ -280,6 +302,25 @@ describe("dailyReportFlex — บล็อกรายจ่ายที่บ�
       expenseEntries: { ...withExpenses.expenseEntries, otherMonthsTotal: 100 },
     }))
     expect(texts.some((t) => t.includes("อื่นๆ ฿100"))).toBe(true)
+  })
+
+  it("ไม่มีเดือนที่ถูกตัด ไม่มีคำว่าอื่นๆ", () => {
+    // withExpenses มี otherMonthsTotal: 0 — ถ้า implementation ต่อคำว่า "อื่นๆ" แบบไม่มีเงื่อนไข เทสนี้จะจับได้
+    const texts = allText(dailyReportFlex(withExpenses))
+    expect(texts.some((t) => t.includes("อื่นๆ"))).toBe(false)
+  })
+
+  it("ลำดับบล็อกถูกต้อง — อยู่หลังคิวจองพรุ่งนี้ ก่อน Action alerts", () => {
+    // report ฐานมี alerts อยู่แล้ว 1 รายการ จึงใช้ withExpenses ตรงๆ ได้ ไม่ต้องสร้าง fixture แยก
+    const lines = allText(dailyReportFlex(withExpenses))
+    const idx = (t: string) => lines.findIndex((l) => l === t)
+    const queue = idx("🗓 คิวจองพรุ่งนี้")
+    const expense = idx("🧾 บันทึกรายจ่ายวันนี้")
+    const alertHeader = idx("⚠️ Action ที่ต้องทำวันนี้")
+    expect(queue).toBeGreaterThan(-1)
+    expect(expense).toBeGreaterThan(queue)
+    expect(alertHeader).toBeGreaterThan(-1)
+    expect(expense).toBeLessThan(alertHeader)
   })
 
   it("ไม่มีการบันทึกเลย ซ่อนทั้งบล็อก", () => {
