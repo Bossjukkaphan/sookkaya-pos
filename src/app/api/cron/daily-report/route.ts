@@ -3,7 +3,7 @@ import { NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { pushAssistantFlex } from "@/lib/line-assistant"
 import { buildDailyReport, CREDIT_LOW_BAHT, PRIOR_DAYS } from "@/lib/daily-report"
-import type { DailySummaryRow, TopTherapist } from "@/lib/daily-report"
+import type { DailySummaryRow, TopTherapist, TopupRow, TopupHistoryRow } from "@/lib/daily-report"
 import { dailyReportFlex } from "@/lib/daily-report-flex"
 import { addMonths, todayInShopTz } from "@/lib/datetime"
 import { addDays } from "@/lib/date-range"
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
   // ต้นเดือนของเดือนที่แล้ว — ครอบทั้งฐานเฉลี่ย 7 วันและ MTD เดือนที่แล้วในคิวรีเดียว
   const from = `${addMonths(today, -1).slice(0, 7)}-01`
 
-  const [daily, commission, customerRows, therapistTop, bookings, creditEmpty, creditLow] =
+  const [daily, commission, customerRows, therapistTop, bookings, creditEmpty, creditLow, topups] =
     await Promise.all([
       supabase
         .from("v_daily_summary")
@@ -56,15 +56,39 @@ export async function GET(request: Request) {
         .select("*", { count: "exact", head: true })
         .gt("credit_balance", 0)
         .lte("credit_balance", CREDIT_LOW_BAHT),
+      // ห้ามใช้ .neq("tier", EXCLUDED_TIER) ที่นี่ — ใน Postgres tier <> 'x' ให้ผล NULL
+      // เมื่อ tier เป็น NULL แถวจะถูกตัดทิ้งไปด้วย ทั้งที่ต้องรอดแล้วโชว์เป็น "ไม่ระบุ"
+      // ปล่อยดิบๆ ไปให้สูตรกรอง EXCLUDED_TIER เอง (buildMemberSignups)
+      supabase
+        .from("member_topups")
+        .select("customer_id, tier, cash_received")
+        .eq("topup_date", today),
     ])
 
   // ตัวเลขไม่ครบ = ไม่ส่ง ดีกว่าส่งการ์ดที่ผิดเข้ากลุ่มผู้บริหาร
-  const failed = [daily, commission, customerRows, therapistTop, bookings, creditEmpty, creditLow]
+  const failed = [daily, commission, customerRows, therapistTop, bookings, creditEmpty, creditLow, topups]
     .map((r) => r.error?.message)
     .filter(Boolean)
   if (failed.length > 0) {
     console.error("daily-report query failed", failed)
     return NextResponse.json({ ok: false, error: failed[0] })
+  }
+
+  // ยิงเฉพาะวันที่มีคนเติม — วันที่ไม่มีใครเติมเลยไม่เสีย round trip ประวัติเปล่าๆ
+  const topupRows = (topups.data ?? []) as TopupRow[]
+  const topupCustomerIds = [...new Set(topupRows.map((r) => r.customer_id))]
+  let topupHistory: TopupHistoryRow[] = []
+  if (topupCustomerIds.length > 0) {
+    const history = await supabase
+      .from("member_topups")
+      .select("customer_id, topup_date, tier")
+      .in("customer_id", topupCustomerIds)
+    if (history.error) {
+      console.error("daily-report topup history failed", history.error.message)
+      return NextResponse.json({ ok: false, error: history.error.message })
+    }
+    // ส่งดิบๆ เข้าสูตร — ไม่กรอง tier ที่นี่เช่นกัน สูตรตัด EXCLUDED_TIER เองแล้ว
+    topupHistory = (history.data ?? []) as TopupHistoryRow[]
   }
 
   let topTherapist: TopTherapist | null = null
@@ -99,6 +123,8 @@ export async function GET(request: Request) {
     bookingsTomorrow: bookings.count ?? 0,
     memberCreditEmpty: creditEmpty.count ?? 0,
     memberCreditLow: creditLow.count ?? 0,
+    topups: topupRows,
+    topupHistory,
   })
 
   const sent = await pushAssistantFlex(
