@@ -32,3 +32,9 @@ export function daysInMonth(ym: string): number {
   const [y, m] = ym.split("-").map(Number)
   return new Date(Date.UTC(y, m, 0)).getUTCDate()
 }
+
+/** เดือนล่าสุดไล่ย้อนหลัง count เดือน ใหม่สุดอยู่หน้าสุด — ใช้ทำชิพเลือกเดือน */
+export function recentMonths(today: string, count: number): string[] {
+  const start = today.slice(0, 7)
+  return Array.from({ length: Math.max(0, count) }, (_, i) => shiftMonth(start, -i))
+}
