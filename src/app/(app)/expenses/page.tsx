@@ -3,15 +3,21 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
-import { monthLabel, shiftMonth } from "@/lib/month"
-import { ExpenseForm } from "./expense-form"
+import { daysInMonth, monthLabel, monthShortLabel, recentMonths, shiftMonth } from "@/lib/month"
+import { donutSlices } from "@/lib/chart"
+import { DonutChart, DONUT_COLORS, type DonutSliceLink } from "@/components/charts/donut-chart"
+import { ExpenseDialog } from "./expense-dialog"
 import { ExpenseRowActions } from "./expense-row-actions"
+import { PeriodPicker } from "./period-picker"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { PagerLink } from "@/components/pager-link"
 
 export const metadata = { title: "รายจ่าย · สุขกายา POS" }
+
+/** จำนวนชิพเดือนที่โชว์ ที่เหลือย้อนผ่านช่องปฏิทิน */
+const MONTH_CHIPS = 6
+/** เพดานแถวที่ดึง — 6 เดือนราว 200 แถว เผื่อโตไว้ถึงสิ้นปี */
+const ROW_LIMIT = 1000
 
 const FALLBACK_CATEGORIES = [
   "ซักรีด",
@@ -27,37 +33,42 @@ const FALLBACK_CATEGORIES = [
   "อื่นๆ",
 ]
 
+function lastDayOf(month: string): string {
+  return `${month}-${String(daysInMonth(month)).padStart(2, "0")}`
+}
+
 export default async function ExpensesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ month?: string; category?: string }>
+  searchParams: Promise<{ month?: string; months?: string; category?: string }>
 }) {
   const supabase = await createClient()
   const today = todayInShopTz()
   const params = await searchParams
-  // เลือกดูเดือนอื่นได้ผ่าน ?month=YYYY-MM — ค่าเริ่มต้นเดือนปัจจุบัน
+
+  // โหมดรวมช่วงชนะเสมอเมื่อส่งมาถูกต้อง — ค่าอื่นถือว่าไม่ได้ส่ง
+  const range = params.months === "3" ? 3 : params.months === "6" ? 6 : null
   const month = /^\d{4}-\d{2}$/.test(params.month ?? "") ? params.month! : today.slice(0, 7)
-  // ?category= มาจากการกดตัวเลขในตารางเทียบหมวดของหน้าวิเคราะห์รายจ่าย
   const pickedCategory = params.category?.trim() || null
-  const isCurrentMonth = month === today.slice(0, 7)
-  const [my, mm] = month.split("-").map(Number)
-  const monthStart = `${month}-01`
-  const monthEnd = `${month}-${String(new Date(Date.UTC(my, mm, 0)).getUTCDate()).padStart(2, "0")}`
-  const monthName = monthLabel(month)
+
+  const endMonth = range ? today.slice(0, 7) : month
+  const startMonth = range ? shiftMonth(endMonth, -(range - 1)) : month
+  const from = `${startMonth}-01`
+  const to = lastDayOf(endMonth)
+
+  const periodLabel = range
+    ? `${monthShortLabel(startMonth)} – ${monthShortLabel(endMonth)}`
+    : monthLabel(month)
 
   const [{ data: setting }, { data: expenses }] = await Promise.all([
-    supabase
-      .from("settings")
-      .select("value")
-      .eq("key", "expense_categories")
-      .single(),
+    supabase.from("settings").select("value").eq("key", "expense_categories").single(),
     supabase
       .from("expenses")
       .select("*")
-      .gte("expense_date", monthStart)
-      .lte("expense_date", monthEnd)
+      .gte("expense_date", from)
+      .lte("expense_date", to)
       .order("expense_date", { ascending: false })
-      .limit(300),
+      .limit(ROW_LIMIT),
   ])
 
   const categories = setting?.value
@@ -65,8 +76,10 @@ export default async function ExpensesPage({
     : FALLBACK_CATEGORIES
 
   const rows = expenses ?? []
-  const monthTotal = rows.reduce((sum, e) => sum + Number(e.amount), 0)
+  type ExpenseRow = (typeof rows)[number]
+  const hitLimit = rows.length === ROW_LIMIT
 
+  // วงกลมคิดจากทั้งช่วงเสมอ ไม่ใช่เฉพาะหมวดที่กรอง ไม่งั้นเหลือชิ้นเดียว 100% ไร้ประโยชน์
   const byCategory = rows.reduce<Record<string, number>>((acc, e) => {
     acc[e.category] = (acc[e.category] ?? 0) + Number(e.amount)
     return acc
@@ -76,171 +89,186 @@ export default async function ExpensesPage({
     ? rows.filter((e) => e.category === pickedCategory)
     : rows
   const visibleTotal = visibleRows.reduce((sum, e) => sum + Number(e.amount), 0)
-  const monthQuery = `?month=${month}`
-  /** เลื่อนเดือนโดยคงหมวดที่กำลังกรองไว้ — ดูหมวดเดียวย้อนหลายเดือนได้รวดเดียว */
-  const monthHref = (m: string) =>
-    `/expenses?month=${m}${pickedCategory ? `&category=${encodeURIComponent(pickedCategory)}` : ""}`
+
+  const baseQuery = range ? `?months=${range}` : `?month=${month}`
+  const hrefFor = (category: string) =>
+    category === pickedCategory
+      ? baseQuery
+      : `${baseQuery}&category=${encodeURIComponent(category)}`
+
+  const slices: DonutSliceLink[] = donutSlices(
+    Object.entries(byCategory).map(([label, value]) => ({ label, value }))
+  ).map((s, i) => ({
+    ...s,
+    color: DONUT_COLORS[i % DONUT_COLORS.length],
+    href: hrefFor(s.label),
+  }))
+
+  // โหมดรวมช่วงคั่นหัวข้อเดือน ไม่งั้น 200 แถวเรียงรวดเดียวหาอะไรไม่เจอ
+  const groups: [string, ExpenseRow[]][] = range
+    ? Array.from(
+        visibleRows.reduce((map, e) => {
+          const m = e.expense_date.slice(0, 7)
+          map.set(m, [...(map.get(m) ?? []), e])
+          return map
+        }, new Map<string, ExpenseRow[]>())
+      ).sort((a, b) => b[0].localeCompare(a[0]))
+    : [[endMonth, visibleRows]]
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <h1 className="text-xl font-bold">รายจ่าย</h1>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h1 className="text-xl font-bold">รายจ่าย</h1>
+        <ExpenseDialog categories={categories} today={today} />
+      </div>
 
-      {/* มาจากลิงก์เจาะดูรายการ (เช่นตารางเทียบหมวดของหน้าวิเคราะห์) ต้องเปิดแท็บรายการให้เลย
-          ไม่งั้นกดลิงก์แล้วเจอฟอร์มบันทึกรายจ่าย ต้องกดแท็บเองอีกที */}
-      <Tabs defaultValue={params.month || pickedCategory ? "list" : "add"}>
-        <TabsList className="w-full">
-          <TabsTrigger value="add" className="flex-1">
-            บันทึกรายจ่าย
-          </TabsTrigger>
-          <TabsTrigger value="list" className="flex-1">
-            {isCurrentMonth ? "เดือนนี้" : monthName}
-          </TabsTrigger>
-        </TabsList>
+      <Card>
+        <CardContent className="py-4">
+          <PeriodPicker
+            months={recentMonths(today, MONTH_CHIPS)}
+            activeMonth={range ? null : month}
+            activeRange={range}
+          />
+        </CardContent>
+      </Card>
 
-        <TabsContent value="add" className="pt-4">
-          <ExpenseForm categories={categories} today={today} />
-        </TabsContent>
-
-        <TabsContent value="list" className="space-y-3 pt-4">
-          {/* เลื่อนดูเดือนอื่น */}
-          <div className="flex items-center justify-center gap-2">
-            <PagerLink href={monthHref(shiftMonth(month, -1))}>←</PagerLink>
-            <span className="min-w-36 text-center text-sm font-semibold">{monthName}</span>
-            <PagerLink href={monthHref(shiftMonth(month, 1))}>→</PagerLink>
-            {!isCurrentMonth && (
-              <Link href="/expenses" className="text-xs text-slate-500 underline">
-                กลับเดือนนี้
-              </Link>
-            )}
-          </div>
-
-          <Card className="border-red-200 bg-red-50">
-            <CardContent className="flex items-baseline justify-between py-4">
-              <span className="text-sm font-medium">
-                รายจ่าย{isCurrentMonth ? "เดือนนี้" : monthName}
-                {pickedCategory && ` · ${pickedCategory}`}
-              </span>
-              <span className="text-2xl font-bold text-red-800">
-                {formatBaht(visibleTotal)} ฿
-              </span>
-            </CardContent>
-          </Card>
-
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)]">
+        <div className="space-y-3 lg:order-1">
           {pickedCategory && (
             <div className="flex items-center justify-between gap-2 rounded-md bg-slate-100 px-3 py-2 text-sm">
               <span className="truncate text-slate-600">
                 กำลังดูเฉพาะหมวด <span className="font-medium">{pickedCategory}</span>
               </span>
-              <Link href={monthQuery} className="shrink-0 underline">
+              <Link href={baseQuery} className="shrink-0 underline">
                 ดูทุกหมวด
               </Link>
             </div>
-          )}
-
-          {Object.keys(byCategory).length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">แยกตามหมวดหมู่</CardTitle>
-                <p className="text-xs text-slate-500">กดชื่อหมวดเพื่อดูเฉพาะรายการของหมวดนั้น</p>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {Object.entries(byCategory)
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([cat, amount]) => {
-                    const pct = monthTotal > 0 ? (amount / monthTotal) * 100 : 0
-                    const active = cat === pickedCategory
-                    return (
-                      <div key={cat}>
-                        <Link
-                          href={
-                            active ? monthQuery : `${monthQuery}&category=${encodeURIComponent(cat)}`
-                          }
-                          className="flex justify-between gap-2 text-sm hover:underline"
-                        >
-                          <span className={active ? "font-medium text-orange-700" : "text-slate-600"}>
-                            {cat}
-                          </span>
-                          <span className="font-medium whitespace-nowrap">
-                            {formatBaht(amount)} ฿{" "}
-                            <span className="text-xs text-slate-400">
-                              ({pct.toFixed(0)}%)
-                            </span>
-                          </span>
-                        </Link>
-                        {/* แถบสัดส่วนให้เห็นหมวดที่กินเงินเยอะสุดทันที */}
-                        <div className="mt-0.5 h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full bg-orange-400"
-                            style={{ width: `${Math.min(pct, 100)}%` }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-              </CardContent>
-            </Card>
           )}
 
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">
                 รายการ
-                {pickedCategory && (
-                  <span className="ml-1 text-sm font-normal text-slate-500">
-                    ({visibleRows.length} รายการ)
-                  </span>
-                )}
+                <span className="ml-1 text-sm font-normal text-slate-500">
+                  ({visibleRows.length} รายการ)
+                </span>
               </CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               {visibleRows.length === 0 ? (
                 <p className="px-6 py-6 text-center text-sm text-slate-500">
                   {pickedCategory
-                    ? `ไม่มีรายจ่ายหมวด ${pickedCategory} ในเดือนนี้`
-                    : "ยังไม่มีรายจ่ายในเดือนนี้"}
+                    ? `ไม่มีรายจ่ายหมวด ${pickedCategory} ในช่วงนี้`
+                    : "ยังไม่มีรายจ่ายในช่วงนี้"}
                 </p>
               ) : (
-                <ul className="divide-y">
-                  {visibleRows.map((e) => (
-                    <li
-                      key={e.id}
-                      className="flex items-start justify-between gap-3 px-4 py-3 sm:px-6"
-                    >
-                      <div className="min-w-0">
-                        <p className="font-medium">{e.item}</p>
-                        <p className="text-xs text-slate-500">
-                          {formatThaiDate(e.expense_date)}
-                          {e.paid_by && ` · จ่ายโดย ${e.paid_by}`}
-                        </p>
-                        <Badge variant="outline" className="mt-1 text-xs">
-                          {e.category}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span className="font-semibold whitespace-nowrap">
-                          {formatBaht(Number(e.amount))} ฿
+                groups.map(([groupMonth, groupRows]) => (
+                  <div key={groupMonth}>
+                    {range && (
+                      <div className="flex justify-between gap-2 border-y bg-slate-50 px-4 py-1.5 text-xs font-medium text-slate-600 sm:px-6">
+                        <span>{monthLabel(groupMonth)}</span>
+                        <span>
+                          {formatBaht(groupRows.reduce((s, e) => s + Number(e.amount), 0))} ฿
                         </span>
-                        <ExpenseRowActions
-                          expense={{
-                            id: e.id,
-                            expense_date: e.expense_date,
-                            item: e.item,
-                            category: e.category,
-                            amount: Number(e.amount),
-                            paid_by: e.paid_by,
-                            notes: e.notes,
-                          }}
-                          categories={categories}
-                        />
                       </div>
-                    </li>
-                  ))}
-                </ul>
+                    )}
+                    <ul className="divide-y">
+                      {groupRows.map((e) => (
+                        <li
+                          key={e.id}
+                          className="flex items-start justify-between gap-3 px-4 py-3 sm:px-6"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium">{e.item}</p>
+                            <p className="text-xs text-slate-500">
+                              {formatThaiDate(e.expense_date)}
+                              {e.paid_by && ` · จ่ายโดย ${e.paid_by}`}
+                            </p>
+                            <Badge variant="outline" className="mt-1 text-xs">
+                              {e.category}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <span className="font-semibold whitespace-nowrap">
+                              {formatBaht(Number(e.amount))} ฿
+                            </span>
+                            <ExpenseRowActions
+                              expense={{
+                                id: e.id,
+                                expense_date: e.expense_date,
+                                item: e.item,
+                                category: e.category,
+                                amount: Number(e.amount),
+                                paid_by: e.paid_by,
+                                notes: e.notes,
+                              }}
+                              categories={categories}
+                            />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))
+              )}
+              {hitLimit && (
+                <p className="px-6 py-3 text-center text-xs text-amber-700">
+                  แสดงได้สูงสุด {ROW_LIMIT} รายการ ช่วงนี้มีมากกว่านั้น — ยอดรวมและกราฟคิดจากที่แสดงเท่านั้น
+                  ลองเลือกช่วงให้สั้นลง
+                </p>
               )}
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+
+        <div className="space-y-3 lg:order-2 lg:sticky lg:top-4 lg:self-start">
+          <Card className="border-red-200 bg-red-50">
+            <CardContent className="py-4">
+              <p className="text-sm font-medium">
+                รายจ่าย {periodLabel}
+                {pickedCategory && ` · ${pickedCategory}`}
+              </p>
+              <p className="text-2xl font-bold text-red-800">{formatBaht(visibleTotal)} ฿</p>
+            </CardContent>
+          </Card>
+
+          {slices.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">แยกตามหมวดหมู่</CardTitle>
+                <p className="text-xs text-slate-500">กดที่ชิ้นหรือชื่อหมวดเพื่อกรองรายการ</p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4 lg:flex-col">
+                  <DonutChart slices={slices} size={120} activeLabel={pickedCategory} />
+                  <div className="w-full space-y-1.5">
+                    {slices.map((s) => (
+                      <Link
+                        key={s.label}
+                        href={s.href}
+                        className="flex items-center gap-2 text-sm hover:underline"
+                      >
+                        <span
+                          className="size-2.5 shrink-0 rounded-sm"
+                          style={{ backgroundColor: s.color }}
+                        />
+                        <span
+                          className={`min-w-0 flex-1 truncate ${
+                            s.label === pickedCategory ? "font-medium text-slate-900" : "text-slate-600"
+                          }`}
+                        >
+                          {s.label}
+                        </span>
+                        <span className="shrink-0 text-slate-500">{s.pct.toFixed(0)}%</span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
