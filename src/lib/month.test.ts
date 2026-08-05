@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { daysInMonth, monthLabel, monthShortLabel, shiftMonth } from "./month"
+import { daysInMonth, monthLabel, monthShortLabel, recentMonths, shiftMonth } from "./month"
 
 describe("monthLabel — ปีพุทธศักราชและชื่อเดือนไทย", () => {
   it("แปลง 2026-07 เป็น กรกฎาคม 2569", () => {
@@ -42,5 +42,26 @@ describe("daysInMonth", () => {
   it("กุมภาพันธ์ปีปกติและปีอธิกสุรทิน", () => {
     expect(daysInMonth("2026-02")).toBe(28)
     expect(daysInMonth("2028-02")).toBe(29)
+  })
+})
+
+describe("recentMonths — ชิพเลือกเดือนบนหน้ารายจ่าย", () => {
+  it("คืนเดือนล่าสุดก่อน ไล่ย้อนหลังตามจำนวนที่ขอ", () => {
+    expect(recentMonths("2026-08-05", 6)).toEqual([
+      "2026-08", "2026-07", "2026-06", "2026-05", "2026-04", "2026-03",
+    ])
+  })
+
+  it("ข้ามปีได้ถูกต้อง", () => {
+    expect(recentMonths("2026-01-15", 3)).toEqual(["2026-01", "2025-12", "2025-11"])
+  })
+
+  it("ขอเดือนเดียวก็ได้", () => {
+    expect(recentMonths("2026-08-05", 1)).toEqual(["2026-08"])
+  })
+
+  it("ขอ 0 หรือติดลบ คืนอาเรย์ว่าง ไม่พัง", () => {
+    expect(recentMonths("2026-08-05", 0)).toEqual([])
+    expect(recentMonths("2026-08-05", -3)).toEqual([])
   })
 })

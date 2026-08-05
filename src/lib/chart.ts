@@ -153,3 +153,60 @@ export function linePath(points: Point[], width: number, height: number): string
     .map((p, i) => `${i === 0 ? "M" : "L"} ${i * step} ${scale.y(p.value)}`)
     .join(" ")
 }
+
+/** ชิ้นหนึ่งของกราฟวงกลม — pct คือสัดส่วน startPct คือ % สะสมก่อนหน้าชิ้นนี้ */
+export type DonutSlice = {
+  label: string
+  value: number
+  pct: number
+  startPct: number
+}
+
+/** ชิ้นที่เล็กกว่านี้ยุบรวมกัน — วงกลมที่มีเส้นบางเฉียบอ่านไม่ออกและกดไม่โดน */
+export const DONUT_MIN_PCT = 5
+
+/** ชื่อก้อนรวม — ตรงกับชื่อหมวดจริงในระบบ จะได้กดกรองแล้วเจอของ */
+export const DONUT_OTHER_LABEL = "อื่นๆ"
+
+export function donutSlices(points: Point[], minPct = DONUT_MIN_PCT): DonutSlice[] {
+  const positive = points.filter((p) => p.value > 0)
+  const total = positive.reduce((sum, p) => sum + p.value, 0)
+  if (total <= 0) return []
+
+  const sorted = [...positive].sort((a, b) => b.value - a.value)
+  const big = sorted.filter((p) => (p.value / total) * 100 >= minPct)
+  const small = sorted.filter((p) => (p.value / total) * 100 < minPct)
+
+  // ยุบแล้วเหลือชิ้นเดียวชื่อ "อื่นๆ" ไม่ได้บอกอะไรเลย — แสดงตามจริงดีกว่า
+  const shouldGroup = small.length > 0 && big.length > 0
+
+  let merged: { label: string; value: number }[]
+  if (shouldGroup) {
+    const otherValue = small.reduce((sum, p) => sum + p.value, 0)
+    // หมวดชื่อ "อื่นๆ" ที่ใหญ่พออยู่แล้วต้องรวมเข้าก้อนเดียวกัน ไม่งั้น legend มีสองบรรทัดชื่อซ้ำ
+    const existing = big.find((p) => p.label === DONUT_OTHER_LABEL)
+    if (existing) {
+      merged = big.map((p) =>
+        p.label === DONUT_OTHER_LABEL ? { label: p.label, value: p.value + otherValue } : p
+      )
+    } else {
+      merged = [...big, { label: DONUT_OTHER_LABEL, value: otherValue }]
+    }
+  } else {
+    merged = sorted
+  }
+
+  // ชิ้น "อื่นๆ" อยู่ท้ายเสมอ ส่วนที่เหลือเรียงมากไปน้อย
+  const ordered = [
+    ...merged.filter((p) => p.label !== DONUT_OTHER_LABEL).sort((a, b) => b.value - a.value),
+    ...merged.filter((p) => p.label === DONUT_OTHER_LABEL),
+  ]
+
+  let startPct = 0
+  return ordered.map((p) => {
+    const pct = (p.value / total) * 100
+    const slice = { label: p.label, value: p.value, pct, startPct }
+    startPct += pct
+    return slice
+  })
+}
