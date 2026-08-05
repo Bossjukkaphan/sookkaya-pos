@@ -37,7 +37,10 @@ with expected(check_name, expected_value) as (values
   -- เฟส 2: กำไรสุทธิแบบ Excel (รายได้ที่รับรู้ − รายจ่ายที่จ่ายจริงทั้งหมด)
   ('profit_cash_2026_03', -107695),
   ('profit_cash_2026_04',  -70428),
-  ('profit_cash_2026_05',  -27606),
+  -- 5/8/2569 กระทบยอด พ.ค. กับ Paypers พบตกหล่น 4,548 (ค่าซักผ้าลอนดรี้ยู 2,500 · กราฟิก 1,000
+  -- · ขนมลูกค้า 850+178 · SUKHUMVIT CITY MALL 20) กำไร พ.ค. −27,606 → −32,154
+  -- migration 20260805210000_backfill_may_expenses_from_paypers.sql
+  ('profit_cash_2026_05',  -32154),
   ('profit_cash_2026_06',   21172),
   -- เฟส 3: การจับคู่ชื่อโปรโมชั่น — ตรวจเฉพาะข้อมูลถึง 19 ก.ค. ซึ่งเป็นข้อมูลที่ import มา
   -- ถ้าตัวเลขเหล่านี้ตก แปลว่า alias หลุดหรือ promo_key เปลี่ยนพฤติกรรม
@@ -48,9 +51,9 @@ with expected(check_name, expected_value) as (values
   ('promo_unmatched_rows',       20),
   -- รอบ 1 หน้าภาพรวม: ยอดสะสมต้นปีถึง มิ.ย. (ก.ค. ยังขยับทุกวัน จึงไม่เอามาตรวจ)
   ('ytd_net_revenue_2026_06',  1124141),
-  -- ตามงวดค่ามือ 42,935 + รายจ่ายจาก Paypers 24,884 ที่ Excel ตกหล่น
-  -- (ดูหมายเหตุ expenses_variable_06)
-  ('ytd_profit_cash_2026_06',  -184558),
+  -- ตามงวดค่ามือ 42,935 + รายจ่ายจาก Paypers ที่ Excel ตกหล่น (มิ.ย. 24,884 · พ.ค. 4,548)
+  -- (ดูหมายเหตุ expenses_variable_06 และ profit_cash_2026_05)
+  ('ytd_profit_cash_2026_06',  -189106),
   -- ข้อนี้ไม่ใช่ตัวเลขเงิน แต่เป็นกับดักที่เคยติดมาแล้ว:
   -- `create or replace view` ล้าง reloptions ทิ้ง ทำให้ security_invoker หลุด
   -- view กลับเป็น SECURITY DEFINER แล้วพนักงาน staff ยิง REST API อ่านกำไรทั้งร้านได้
