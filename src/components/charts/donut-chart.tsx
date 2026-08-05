@@ -9,12 +9,6 @@ import type { DonutSlice } from "@/lib/chart"
  *  เพราะกรองด้วยชื่อเดียวจะได้รายการไม่ครบตามที่ชิ้นนั้นแทน */
 export type DonutSliceLink = DonutSlice & { href: string; color: string }
 
-/** สีวนตามลำดับชิ้น ไม่ผูกกับชื่อหมวด เพราะหมวดแก้ชื่อได้จากหน้าตั้งค่า */
-export const DONUT_COLORS = [
-  "#7F77DD", "#1D9E75", "#D85A30", "#378ADD",
-  "#BA7517", "#D4537E", "#639922", "#888780",
-]
-
 const R = 40
 const CIRC = 2 * Math.PI * R
 

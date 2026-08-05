@@ -3,6 +3,7 @@ import {
   barGeometry,
   donutSlices,
   DONUT_MIN_PCT,
+  DONUT_COLORS,
   DONUT_OTHER_LABEL,
   groupedBarGeometry,
   groupedBarsWithLine,
@@ -312,5 +313,22 @@ describe("donutSlices — สัดส่วนกราฟวงกลมสร
 
   it("ค่าคงที่อ่านได้ ไม่ใช่เลขลอยในโค้ด", () => {
     expect(DONUT_MIN_PCT).toBe(5)
+  })
+})
+
+describe("DONUT_COLORS — ต้องอยู่ใน lib ไม่ใช่ไฟล์ component", () => {
+  // 5 ส.ค. 2569: เคยประกาศไว้ในไฟล์ "use client" แล้ว server component import มาใช้
+  // ได้ proxy ไม่ใช่อาเรย์จริง → .length undefined → index NaN → สีเป็น undefined
+  // กราฟวงกลมเลยไม่ขึ้นเลยทั้งที่ไม่มี error ให้เห็น
+  it("เป็นอาเรย์สีจริงที่ index ได้", () => {
+    expect(Array.isArray(DONUT_COLORS)).toBe(true)
+    expect(DONUT_COLORS.length).toBeGreaterThan(0)
+    for (const c of DONUT_COLORS) expect(c).toMatch(/^#[0-9A-Fa-f]{6}$/)
+  })
+
+  it("วนสีได้ครบแม้ชิ้นเยอะกว่าจำนวนสี", () => {
+    for (let i = 0; i < 20; i++) {
+      expect(DONUT_COLORS[i % DONUT_COLORS.length]).toMatch(/^#[0-9A-Fa-f]{6}$/)
+    }
   })
 })

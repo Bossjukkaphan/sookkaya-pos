@@ -168,6 +168,16 @@ export const DONUT_MIN_PCT = 5
 /** ชื่อก้อนรวม — ตรงกับชื่อหมวดจริงในระบบ จะได้กดกรองแล้วเจอของ */
 export const DONUT_OTHER_LABEL = "อื่นๆ"
 
+/** สีวนตามลำดับชิ้น ไม่ผูกกับชื่อหมวด เพราะหมวดแก้ชื่อได้จากหน้าตั้งค่า
+ *
+ *  อยู่ที่นี่ไม่ใช่ในไฟล์ component เพราะ server component ต้องอ่านค่าไปคำนวณสีก่อนส่งให้ client
+ *  ถ้า export จากไฟล์ "use client" แล้ว server import มา จะได้ proxy ไม่ใช่อาเรย์จริง
+ *  → .length เป็น undefined → index เป็น NaN → สีหลุดหมด กราฟไม่ขึ้นแบบเงียบๆ (เจอจริง 5 ส.ค. 2569) */
+export const DONUT_COLORS = [
+  "#7F77DD", "#1D9E75", "#D85A30", "#378ADD",
+  "#BA7517", "#D4537E", "#639922", "#888780",
+]
+
 export function donutSlices(points: Point[], minPct = DONUT_MIN_PCT): DonutSlice[] {
   const positive = points.filter((p) => p.value > 0)
   const total = positive.reduce((sum, p) => sum + p.value, 0)
