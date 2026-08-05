@@ -96,12 +96,18 @@ export default async function ExpensesPage({
       ? baseQuery
       : `${baseQuery}&category=${encodeURIComponent(category)}`
 
+  /** ยอดของชิ้นตรงกับหมวดชื่อเดียวกันไหม — ไม่ตรง = donutSlices ยุบหลายหมวดมารวมกัน */
+  const isMergedSlice = (label: string, value: number) =>
+    Math.abs((byCategory[label] ?? 0) - value) > 0.005
+
   const slices: DonutSliceLink[] = donutSlices(
     Object.entries(byCategory).map(([label, value]) => ({ label, value }))
   ).map((s, i) => ({
     ...s,
     color: DONUT_COLORS[i % DONUT_COLORS.length],
-    href: hrefFor(s.label),
+    // ชิ้นที่ยอดไม่ตรงกับหมวดชื่อเดียวกัน = ถูกยุบหลายหมวดเข้าด้วยกัน กดกรองไม่ได้
+    // (กรองด้วยชื่อเดียวจะได้รายการน้อยกว่าที่ชิ้นนั้นแทน — ไม่ตรงแบบเงียบๆ)
+    href: isMergedSlice(s.label, s.value) ? "" : hrefFor(s.label),
   }))
 
   // โหมดรวมช่วงคั่นหัวข้อเดือน ไม่งั้น 200 แถวเรียงรวดเดียวหาอะไรไม่เจอ
@@ -242,26 +248,48 @@ export default async function ExpensesPage({
                 <div className="flex items-center gap-4 lg:flex-col">
                   <DonutChart slices={slices} size={120} activeLabel={pickedCategory} />
                   <div className="w-full space-y-1.5">
-                    {slices.map((s) => (
-                      <Link
-                        key={s.label}
-                        href={s.href}
-                        className="flex items-center gap-2 text-sm hover:underline"
-                      >
+                    {slices.map((s) => {
+                      const dot = (
                         <span
                           className="size-2.5 shrink-0 rounded-sm"
                           style={{ backgroundColor: s.color }}
                         />
+                      )
+                      const name = (
                         <span
                           className={`min-w-0 flex-1 truncate ${
-                            s.label === pickedCategory ? "font-medium text-slate-900" : "text-slate-600"
+                            s.label === pickedCategory
+                              ? "font-medium text-slate-900"
+                              : "text-slate-600"
                           }`}
                         >
                           {s.label}
+                          {!s.href && <span className="text-slate-400"> (หลายหมวดรวมกัน)</span>}
                         </span>
-                        <span className="shrink-0 text-slate-500">{s.pct.toFixed(0)}%</span>
-                      </Link>
-                    ))}
+                      )
+                      const pct = <span className="shrink-0 text-slate-500">{s.pct.toFixed(0)}%</span>
+                      // ชิ้นที่ยุบหลายหมวดกดกรองไม่ได้ — แสดงเป็นข้อความเฉยๆ ไม่ล่อให้กด
+                      if (!s.href) {
+                        return (
+                          <div key={s.label} className="flex items-center gap-2 text-sm">
+                            {dot}
+                            {name}
+                            {pct}
+                          </div>
+                        )
+                      }
+                      return (
+                        <Link
+                          key={s.label}
+                          href={s.href}
+                          className="flex items-center gap-2 text-sm hover:underline"
+                        >
+                          {dot}
+                          {name}
+                          {pct}
+                        </Link>
+                      )
+                    })}
                   </div>
                 </div>
               </CardContent>
