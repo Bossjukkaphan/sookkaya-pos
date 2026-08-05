@@ -30,10 +30,12 @@ export type TopupRow = {
   cash_received: number | null
 }
 
-/** ประวัติการเติมของลูกค้าที่เติมวันนี้ — รวมแถวของวันนี้มาด้วย สูตรกรองเอง */
+/** ประวัติการเติมของลูกค้าที่เติมวันนี้ — รวมแถวของวันนี้และแถว EXCLUDED_TIER มาด้วยตามที่คิวรีได้
+ *  ผู้เรียกส่งมาดิบๆ ไม่ต้องกรองอะไรเอง สูตรกรองทั้งวันที่และ tier เอง */
 export type TopupHistoryRow = {
   customer_id: string
   topup_date: string
+  tier: string | null
 }
 
 /** ยอดเกินที่เก็บเข้าเครดิตจากฟีเจอร์ overpay-to-credit ไม่ใช่การซื้อแพ็กเกจ */
@@ -55,7 +57,7 @@ export type DailyReportInput = {
   memberCreditLow: number
   /** แถว member_topups ของวันนี้ ตัด EXCLUDED_TIER ออกแล้วจาก query */
   topups: TopupRow[]
-  /** ประวัติการเติมทั้งหมดของลูกค้าที่เติมวันนี้ ตัด EXCLUDED_TIER ออกแล้ว */
+  /** ประวัติการเติมทั้งหมดของลูกค้าที่เติมวันนี้ — ส่งดิบๆ มาได้เลย สูตรตัด EXCLUDED_TIER เอง */
   topupHistory: TopupHistoryRow[]
 }
 
@@ -122,9 +124,12 @@ export function buildMemberSignups(
   history: TopupHistoryRow[]
 ): MemberSignups {
   const rows = topups.filter((r) => r.tier !== EXCLUDED_TIER)
-  // ลูกค้าที่มีแถวเก่ากว่าวันนี้ = เคยเป็นสมาชิกมาก่อน
+  // ลูกค้าที่มีแถวเก่ากว่าวันนี้ = เคยเป็นสมาชิกมาก่อน — แถว EXCLUDED_TIER ไม่นับเป็นประวัติ
+  // เพราะไม่ใช่การซื้อแพ็กเกจ ตัดออกที่นี่แทนที่จะพึ่งผู้เรียก
   const returning = new Set(
-    history.filter((h) => h.topup_date < today).map((h) => h.customer_id)
+    history
+      .filter((h) => h.tier !== EXCLUDED_TIER && h.topup_date < today)
+      .map((h) => h.customer_id)
   )
   // ตัดสินรายแถว: คนเดียวเติมสองครั้งวันเดียว ครั้งแรกใหม่ ครั้งที่สองต่ออายุ
   const seenToday = new Set<string>()

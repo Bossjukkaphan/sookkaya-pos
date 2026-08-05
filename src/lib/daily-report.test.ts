@@ -247,7 +247,9 @@ describe("buildDailyReport — Action alerts", () => {
 const topup = (customer_id: string, tier: string | null, cash_received: number | null): TopupRow => ({
   customer_id, tier, cash_received,
 })
-const hist = (customer_id: string, topup_date: string): TopupHistoryRow => ({ customer_id, topup_date })
+const hist = (customer_id: string, topup_date: string, tier: string | null = "Silver"): TopupHistoryRow => ({
+  customer_id, topup_date, tier,
+})
 
 describe("buildDailyReport — สมาชิกที่เติมเงิน", () => {
   it("ลูกค้าที่ไม่เคยเติมมาก่อน นับเป็นสมาชิกใหม่", () => {
@@ -301,14 +303,19 @@ describe("buildDailyReport — สมาชิกที่เติมเงิ�
     const r = buildDailyReport({
       ...base,
       topups: [topup("c1", "Silver", 5000)],
-      topupHistory: [hist("c1", "2026-08-04")],
-      // แถว EXCLUDED_TIER ของเมื่อวานถูก route ตัดออกตั้งแต่ query แล้ว
-      // เทสนี้ยืนยันว่าไม่มีแถวเก่าเหลือ = ยังนับเป็นใหม่
+      topupHistory: [
+        hist("c1", "2026-07-20", EXCLUDED_TIER),
+        hist("c1", "2026-08-04", "Silver"),
+      ],
     })
     expect(r.memberSignups.newCount).toBe(1)
+    expect(r.memberSignups.renewCount).toBe(0)
   })
 
-  it("หลาย tier ในวันเดียว เรียงจำนวนมากไปน้อย ยอดเท่ากันเรียงตามชื่อ", () => {
+  // เทส "ลูกค้าที่เคยเติมเมื่อเดือนก่อน นับเป็นต่ออายุ" ด้านบนใช้ hist() ที่มี tier จริงอยู่แล้ว
+  // (ดีฟอลต์ "Silver") จึงครอบคลุมเคส "มีประวัติจริงต้องยังนับต่ออายุ" ให้แล้ว ไม่ต้องเขียนซ้ำ
+
+  it("หลาย tier ในวันเดียว เรียงจำนวนมากไปน้อย", () => {
     const r = buildDailyReport({
       ...base,
       topups: [
@@ -321,6 +328,18 @@ describe("buildDailyReport — สมาชิกที่เติมเงิ�
     expect(r.memberSignups.newTiers).toEqual([
       { tier: "Silver", count: 2 },
       { tier: "Gold", count: 1 },
+    ])
+  })
+
+  it("ยอดเท่ากันเรียงตามชื่อ", () => {
+    const r = buildDailyReport({
+      ...base,
+      topups: [topup("c1", "Silver", 5000), topup("c2", "Gold", 8000)],
+      topupHistory: [hist("c1", "2026-08-04"), hist("c2", "2026-08-04")],
+    })
+    expect(r.memberSignups.newTiers).toEqual([
+      { tier: "Gold", count: 1 },
+      { tier: "Silver", count: 1 },
     ])
   })
 
