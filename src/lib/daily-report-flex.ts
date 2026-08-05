@@ -180,6 +180,18 @@ function body(report: DailyReport) {
   )
   opsRows.push(opRow("🗓 คิวจองพรุ่งนี้", `${report.bookingsTomorrow} คิว`, BRAND.text))
 
+  const ee = report.expenseEntries
+  if (ee.count > 0) {
+    opsRows.push(opRow("🧾 บันทึกรายจ่ายวันนี้", `${ee.count} รายการ · ${baht(ee.total)}`, BRAND.text))
+    if (ee.backdatedCount > 0) {
+      // ตัวเลขนี้คือสัญญาณกำกับดูแล — มีคนคีย์เงินเข้าเดือนที่ปิดงบไปแล้ว
+      opsRows.push(noteText(`ย้อนหลัง ${ee.backdatedCount} · ${baht(ee.backdatedTotal)}`, BRAND.gold))
+      const months = ee.byMonth.map((m) => `${m.month} ${baht(m.total)}`)
+      if (ee.otherMonthsTotal > 0) months.push(`อื่นๆ ${baht(ee.otherMonthsTotal)}`)
+      if (months.length > 0) opsRows.push(noteText(months.join(" · "), BRAND.gold))
+    }
+  }
+
   const contents: Record<string, unknown>[] = [
     {
       type: "box",

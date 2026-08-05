@@ -22,6 +22,10 @@ const report: DailyReport = {
     newCount: 0, newCash: 0, newTiers: [],
     renewCount: 0, renewCash: 0, renewTiers: [],
   },
+  expenseEntries: {
+    count: 0, total: 0, backdatedCount: 0, backdatedTotal: 0,
+    byMonth: [], otherMonthsTotal: 0,
+  },
 }
 
 /** เก็บ text ทุกตัวในต้นไม้ ทำให้เทสไม่ผูกกับตำแหน่ง node ที่อาจขยับ */
@@ -233,5 +237,57 @@ describe("dailyReportFlex — บล็อกสมาชิก", () => {
       },
     }))
     expect(texts).not.toContain("👥 สมาชิกใหม่")
+  })
+})
+
+describe("dailyReportFlex — บล็อกรายจ่ายที่บันทึก", () => {
+  const withExpenses = {
+    ...report,
+    expenseEntries: {
+      count: 14, total: 55690, backdatedCount: 13, backdatedTotal: 55232,
+      byMonth: [
+        { month: "พ.ค.", total: 4548 },
+        { month: "มิ.ย.", total: 24884 },
+        { month: "ก.ค.", total: 25800 },
+      ],
+      otherMonthsTotal: 0,
+    },
+  }
+
+  it("โชว์ยอดรวม บรรทัดย้อนหลัง และบรรทัดแยกเดือน", () => {
+    const texts = allText(dailyReportFlex(withExpenses))
+    expect(texts).toContain("🧾 บันทึกรายจ่ายวันนี้")
+    expect(texts.some((t) => t.includes("14 รายการ") && t.includes("฿55,690"))).toBe(true)
+    expect(texts.some((t) => t.includes("ย้อนหลัง 13") && t.includes("฿55,232"))).toBe(true)
+    expect(texts.some((t) => t.includes("พ.ค. ฿4,548") && t.includes("ก.ค. ฿25,800"))).toBe(true)
+  })
+
+  it("มีบันทึกแต่ไม่มีย้อนหลัง โชว์แค่บรรทัดแรก", () => {
+    const texts = allText(dailyReportFlex({
+      ...report,
+      expenseEntries: {
+        count: 2, total: 900, backdatedCount: 0, backdatedTotal: 0,
+        byMonth: [], otherMonthsTotal: 0,
+      },
+    }))
+    expect(texts).toContain("🧾 บันทึกรายจ่ายวันนี้")
+    expect(texts.some((t) => t.includes("ย้อนหลัง"))).toBe(false)
+  })
+
+  it("มีเดือนที่ถูกตัด ต่อท้ายด้วยอื่นๆ", () => {
+    const texts = allText(dailyReportFlex({
+      ...withExpenses,
+      expenseEntries: { ...withExpenses.expenseEntries, otherMonthsTotal: 100 },
+    }))
+    expect(texts.some((t) => t.includes("อื่นๆ ฿100"))).toBe(true)
+  })
+
+  it("ไม่มีการบันทึกเลย ซ่อนทั้งบล็อก", () => {
+    expect(allText(dailyReportFlex(report))).not.toContain("🧾 บันทึกรายจ่ายวันนี้")
+  })
+
+  it("วันที่ไม่มีบิล การ์ดย่อ ไม่มีบล็อกรายจ่าย", () => {
+    const texts = allText(dailyReportFlex({ ...withExpenses, empty: true }))
+    expect(texts).not.toContain("🧾 บันทึกรายจ่ายวันนี้")
   })
 })
