@@ -1691,6 +1691,7 @@ export type Database = {
     }
     Functions: {
       app_role: { Args: never; Returns: string }
+      cron_secret_matches: { Args: { candidate: string }; Returns: boolean }
       assistant_sql: { Args: { query: string }; Returns: Json }
       hourly_density: {
         Args: { from_date?: string }
