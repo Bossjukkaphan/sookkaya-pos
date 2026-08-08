@@ -24,41 +24,43 @@ Vercel cron 22:00-22:59┘                                    ใครจอง
 |---|---|
 | migration (`20260808175641`) — extensions + ตาราง + ฟังก์ชัน + cron job | ✅ apply แล้วผ่าน Supabase MCP · job `daily-report-2200-ict` active |
 | vault secret `daily_report_url` | ✅ ใส่แล้ว |
-| vault secret `daily_report_cron_secret` | ⬜ ค้างอยู่ — ดูขั้น 2 |
-| merge branch เข้า main + deploy (โค้ดกันการ์ดซ้ำ) | ⬜ ค้างอยู่ |
+| vault secret `daily_report_cron_secret` | ✅ หมุนใหม่ gen ใน Postgres (`gen_random_bytes(32)` hex 64 ตัว) |
+| merge เข้า main + deploy (โค้ดกันการ์ดซ้ำ) | ✅ merge `d278069` — Vercel deploy อัตโนมัติ |
+| ทดสอบท่อ pg_cron → Vault → pg_net → route | ✅ ได้ 401 ตามคาด (Vercel ยังถือ secret เก่า) |
+| sync CRON_SECRET ฝั่ง Vercel ให้ตรงกับ Vault | ⬜ ขั้นเดียวที่เหลือ — ดูข้างล่าง |
 
-**ลำดับสำคัญ: ต้อง merge + deploy ก่อนใส่ `daily_report_cron_secret`**
-ตราบใดที่ secret ยังไม่ครบ ฟังก์ชันจะจบเงียบด้วย warning — ระบบเดินแบบเดิม (Vercel cron ตัวเดียว)
-แต่ถ้าใส่ secret ก่อนที่โค้ดกันซ้ำจะขึ้น production การ์ดจะเข้ากลุ่มคืนละ 2 ใบ
+## ขั้นที่เหลือ: sync CRON_SECRET ฝั่ง Vercel
 
-## ขั้นตอนที่เหลือ
+secret ตัวใหม่ถูก gen ในตัว Postgres ตรงเข้า Vault (ไม่เคยอยู่ในแชทหรือไฟล์ไหน)
+ระหว่างที่ยังไม่ sync: pg_cron ยิงแล้วได้ 401 ทุกคืน → ไม่มีการ์ดจาก pg_cron ไม่มีการ์ดซ้ำ
+Vercel cron ตัวเดิมยังส่งการ์ดตามปกติ (ช้าได้ถึงชั่วโมงแบบเดิม) — ระบบไม่มีทางพัง แค่ยังไม่ตรงเวลา
 
-> ทางลัด: `./scripts/setup-daily-report-cron.sh` ดึงค่าจาก Vercel แล้วเขียนไฟล์ SQL
-> ที่เติมค่าพร้อมวางใน SQL Editor ให้เลย (ขั้น db push จะเป็น no-op เพราะ apply ไปแล้ว)
-
-### 1. merge เข้า main ให้โค้ดกันการ์ดซ้ำขึ้น production
-
-### 2. ใส่ CRON_SECRET ลง Vault
-
-ฟังก์ชันอ่าน URL กับ `CRON_SECRET` จาก Vault ไม่ฝังไว้ในไฟล์ migration และไม่ฝังใน `cron.job.command`
-(คอลัมน์นั้นเป็น text ธรรมดา ใครอ่านตารางได้ก็เห็น secret)
-
-รันใน SQL Editor ของ Supabase — แทน `<CRON_SECRET>` ด้วยค่าจริงจาก Vercel env production:
+1. อ่านค่าใน SQL Editor ของ Supabase:
 
 ```sql
-select vault.create_secret('<CRON_SECRET>', 'daily_report_cron_secret');
+select decrypted_secret from vault.decrypted_secrets
+where name = 'daily_report_cron_secret';
 ```
 
-ดึงค่า `CRON_SECRET` ปัจจุบันได้ด้วย:
+2. เอาค่าไปทับ env เดิมแล้ว deploy ใหม่ (env ใหม่มีผลต่อเมื่อ deploy):
 
 ```bash
-npx vercel env pull /tmp/dr.env --environment=production --yes
-grep '^CRON_SECRET=' /tmp/dr.env
-rm -f /tmp/dr.env
+cd sookkaya-pos-v2
+npx vercel env rm CRON_SECRET production -y
+printf '<ค่าจากข้อ 1>' | npx vercel env add CRON_SECRET production
+npx vercel deploy --prod --yes
 ```
 
-> ยังไม่ใส่ secret = ฟังก์ชันไม่ยิงอะไรเลย ขึ้น `raise warning` ใน Postgres logs
-> แล้วปล่อยให้ Vercel cron ตัวสำรองทำงานไปก่อน ระบบไม่พัง แค่ยังไม่ตรงเวลา
+3. ยืนยันว่าตรงกันแล้ว — รันใน SQL Editor:
+
+```sql
+select public.trigger_daily_report();
+-- รอ ~5 วินาที
+select status_code, left(content, 120) from net._http_response order by id desc limit 1;
+```
+
+ต้องได้ `status_code = 200` — ถ้า content เป็น `{"ok":true,...}` การ์ดเข้ากลุ่มแล้ว
+ถ้าเป็น `{"ok":true,"skipped":"already-sent"}` แปลว่าการ์ดวันนี้ถูกส่งไปก่อนแล้ว ปกติเช่นกัน
 
 ### 3. ยิงมือดูการ์ดจริง (ไม่ต้องรอถึง 22:00)
 
