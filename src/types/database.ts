@@ -371,6 +371,24 @@ export type Database = {
         }
         Relationships: []
       }
+      daily_report_sends: {
+        Row: {
+          report_date: string
+          sent_at: string
+          source: string
+        }
+        Insert: {
+          report_date: string
+          sent_at?: string
+          source: string
+        }
+        Update: {
+          report_date?: string
+          sent_at?: string
+          source?: string
+        }
+        Relationships: []
+      }
       expense_category_types: {
         Row: {
           category: string

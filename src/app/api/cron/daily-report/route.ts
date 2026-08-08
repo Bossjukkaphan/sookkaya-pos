@@ -1,8 +1,13 @@
-import { NextResponse } from "next/server"
+import { NextResponse, type NextRequest } from "next/server"
 
 import { createServiceClient } from "@/lib/supabase/service"
 import { pushAssistantFlex } from "@/lib/line-assistant"
-import { buildDailyReport, CREDIT_LOW_BAHT, PRIOR_DAYS } from "@/lib/daily-report"
+import {
+  buildDailyReport,
+  triggerSourceOf,
+  CREDIT_LOW_BAHT,
+  PRIOR_DAYS,
+} from "@/lib/daily-report"
 import type {
   DailySummaryRow,
   ExpenseEntryRow,
@@ -14,15 +19,25 @@ import { dailyReportFlex } from "@/lib/daily-report-flex"
 import { addMonths, shopDateOf, todayInShopTz } from "@/lib/datetime"
 import { addDays } from "@/lib/date-range"
 
-/** Vercel Cron ยิงทุกคืน 22:00 ไทย (ดู vercel.json) — สรุปยอดขายวันนี้เป็นการ์ด Flex
- *  เข้ากลุ่ม Sookkaya Management ผ่าน OA ผู้ช่วย แทน Google Apps Script ตัวเดิม
+/** สรุปยอดขายวันนี้เป็นการ์ด Flex เข้ากลุ่ม Sookkaya Management ผ่าน OA ผู้ช่วย
+ *  แทน Google Apps Script ตัวเดิม
+ *
+ *  มีตัวจับเวลาสองตัวยิง route นี้ (ตั้งใจให้ซ้ำซ้อน):
+ *    pg_cron 22:00 ตรง      = ตัวหลัก (supabase/migrations/20260808160000_daily_report_exact_time.sql)
+ *    Vercel cron 22:00-22:59 = ตัวสำรอง เผื่อ pg_cron/pg_net ล่ม (ดู vercel.json)
+ *  ตัวไหนจองแถวใน daily_report_sends ได้ก่อน = ตัวที่ส่ง อีกตัวจบเงียบ
+ *
+ *  ?force=1 ข้ามด่านกันซ้ำ ใช้ตอนยิงมือเพื่อตรวจการ์ด
  *  spec: docs/superpowers/specs/2026-08-05-line-daily-report-design.md */
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   // route นี้อยู่ใต้ /api/cron ซึ่ง PUBLIC_ROUTES ปล่อยผ่าน จึงต้องกันคนนอกเอง
   const auth = request.headers.get("authorization")
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
+
+  const source = triggerSourceOf(request.nextUrl.searchParams.get("source"))
+  const force = request.nextUrl.searchParams.get("force") === "1"
 
   const supabase = createServiceClient()
   const today = todayInShopTz()
@@ -184,10 +199,42 @@ export async function GET(request: Request) {
     expenseEntries,
   })
 
+  // จองสิทธิ์ส่ง "ก่อน" ยิง LINE — ถ้าจองทีหลังจะมีช่องให้สองตัวจับเวลาส่งพร้อมกันได้
+  // ignoreDuplicates ทำให้ PostgREST ใช้ ON CONFLICT DO NOTHING แล้ว .select() คืนเฉพาะแถวที่ insert จริง
+  // แถวว่าง = วันนี้มีคนส่งไปแล้ว
+  const claim = await supabase
+    .from("daily_report_sends")
+    .upsert(
+      { report_date: report.date, source },
+      { onConflict: "report_date", ignoreDuplicates: true }
+    )
+    .select("report_date")
+  if (claim.error) {
+    console.error("daily-report claim failed", claim.error.message)
+    return NextResponse.json({ ok: false, error: claim.error.message })
+  }
+  const claimed = (claim.data ?? []).length > 0
+  if (!claimed && !force) {
+    return NextResponse.json({ ok: true, date: report.date, skipped: "already-sent" })
+  }
+
   const sent = await pushAssistantFlex(
     process.env.LINE_MANAGEMENT_GROUP_ID ?? "",
     dailyReportFlex(report)
   )
+
+  // ส่งไม่สำเร็จ = คืนสิทธิ์ให้ตัวสำรองลองใหม่ ไม่งั้นแถวที่จองค้างไว้จะบล็อกการ์ดทั้งคืน
+  // ลบเฉพาะแถวที่ "เราเป็นคนจอง" รอบนี้ — เคส force ที่ไปเจอแถวเดิมของคนอื่นต้องไม่โดนลบ
+  if (!sent && claimed) {
+    const rollback = await supabase
+      .from("daily_report_sends")
+      .delete()
+      .eq("report_date", report.date)
+    if (rollback.error) {
+      console.error("daily-report rollback failed", rollback.error.message)
+    }
+  }
+
   // ตอบ 200 เสมอแม้ส่งไม่สำเร็จ — ให้ Vercel เลิกยิงซ้ำ ไม่งั้นกลุ่มโดนสแปม
   return NextResponse.json({
     ok: sent,
@@ -195,5 +242,6 @@ export async function GET(request: Request) {
     empty: report.empty,
     netRevenue: report.netRevenue,
     priorDays: PRIOR_DAYS,
+    source,
   })
 }
