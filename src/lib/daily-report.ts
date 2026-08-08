@@ -116,6 +116,19 @@ export const CREDIT_LOW_BAHT = 1500
 /** เตือนเกินนี้คนจะเลิกอ่าน */
 export const MAX_ALERTS = 3
 
+/** ตัวจับเวลาที่ยิง route ได้ — ต้องตรงกับ CHECK constraint ของ daily_report_sends.source
+ *  pg_cron = ตัวหลัก ยิง 22:00 ตรง · vercel_cron = ตัวสำรอง (Hobby เลื่อนได้ถึง 1 ชม.) · manual = ยิงมือตอนตรวจ */
+export const TRIGGER_SOURCES = ["pg_cron", "vercel_cron", "manual"] as const
+
+export type TriggerSource = (typeof TRIGGER_SOURCES)[number]
+
+/** อ่านค่า ?source= จาก query string — ค่าแปลกปลอมตกเป็น vercel_cron
+ *  ห้ามส่งค่าดิบเข้าฐานข้อมูล CHECK constraint จะปัดตกแล้วการ์ดจะไม่ถูกส่งทั้งคืน */
+export function triggerSourceOf(raw: string | null | undefined): TriggerSource {
+  const found = TRIGGER_SOURCES.find((s) => s === raw)
+  return found ?? "vercel_cron"
+}
+
 function monthStart(isoDate: string): string {
   return `${isoDate.slice(0, 7)}-01`
 }
