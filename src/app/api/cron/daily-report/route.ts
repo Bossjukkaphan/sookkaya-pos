@@ -28,18 +28,33 @@ import { addDays } from "@/lib/date-range"
  *  ตัวไหนจองแถวใน daily_report_sends ได้ก่อน = ตัวที่ส่ง อีกตัวจบเงียบ
  *
  *  ?force=1 ข้ามด่านกันซ้ำ ใช้ตอนยิงมือเพื่อตรวจการ์ด
+ *  ?dry=1 จบทันทีหลังผ่านด่านตรวจสิทธิ์ — ไว้พิสูจน์ว่า secret ตรงโดยไม่ส่งการ์ดจริง
  *  spec: docs/superpowers/specs/2026-08-05-line-daily-report-design.md */
 export async function GET(request: NextRequest) {
   // route นี้อยู่ใต้ /api/cron ซึ่ง PUBLIC_ROUTES ปล่อยผ่าน จึงต้องกันคนนอกเอง
-  const auth = request.headers.get("authorization")
-  if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
+  // สองประตูเพราะสองระบบถือ secret คนละที่ที่ sync กันด้วยมือไม่ได้:
+  //   Vercel cron → env CRON_SECRET ที่ Vercel ใส่ header ให้เองตอนยิง
+  //   pg_cron     → secret ใน Supabase Vault ตรวจผ่าน RPC (migration 20260808181713)
+  const supabase = createServiceClient()
+  const auth = request.headers.get("authorization") ?? ""
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
+  let authed = Boolean(process.env.CRON_SECRET) && bearer === process.env.CRON_SECRET
+  // เช็ครูปแบบก่อนยิง RPC — ไม่ให้ request มั่วๆ จากอินเทอร์เน็ตเผาคิวรีฐานข้อมูลฟรี
+  // (secret ใน Vault มาจาก gen_random_bytes(32) เป็น hex 64 ตัวเสมอ)
+  if (!authed && /^[0-9a-f]{64}$/.test(bearer)) {
+    const check = await supabase.rpc("cron_secret_matches", { candidate: bearer })
+    authed = check.data === true
+  }
+  if (!authed) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 
   const source = triggerSourceOf(request.nextUrl.searchParams.get("source"))
   const force = request.nextUrl.searchParams.get("force") === "1"
+  if (request.nextUrl.searchParams.get("dry") === "1") {
+    return NextResponse.json({ ok: true, dry: true, source })
+  }
 
-  const supabase = createServiceClient()
   const today = todayInShopTz()
   const tomorrow = addDays(today, 1)
   // ต้นเดือนของเดือนที่แล้ว — ครอบทั้งฐานเฉลี่ย 7 วันและ MTD เดือนที่แล้วในคิวรีเดียว

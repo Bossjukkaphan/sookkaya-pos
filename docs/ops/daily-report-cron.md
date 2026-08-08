@@ -18,51 +18,59 @@ Vercel cron 22:00-22:59┘                                    ใครจอง
 - ยิง LINE ไม่สำเร็จ → ลบแถวที่จองทิ้ง ให้ตัวสำรองมีสิทธิ์ลองใหม่
 - ตัวสำรองมีไว้กันเคส pg_cron หรือ pg_net ล่ม การ์ดจะมาช้าหน่อยแต่ไม่เงียบหายทั้งคืน
 
+## สองประตูตรวจสิทธิ์ — ทำไมไม่ต้อง sync secret
+
+สองตัวจับเวลาถือ secret คนละที่ และไม่มีทางแก้ให้ตรงกันแบบอัตโนมัติ
+(Vercel env แก้ได้จากเครื่องเจ้าของร้านเท่านั้น) route จึงเปิดสองประตู:
+
+| ตัวจับเวลา | secret อยู่ที่ | route ตรวจด้วย |
+|---|---|---|
+| Vercel cron | env `CRON_SECRET` (Vercel ใส่ header ให้เอง) | เทียบ env ตรงๆ แบบเดิม |
+| pg_cron | Supabase Vault `daily_report_cron_secret` | RPC `cron_secret_matches` (migration `20260808181713`) |
+
+secret ฝั่ง Vault ถูก gen ในตัว Postgres (`gen_random_bytes(32)` → hex 64 ตัว)
+ไม่เคยออกนอกฐานข้อมูล — หมุนใหม่เมื่อไหร่ก็ได้โดยไม่กระทบ Vercel:
+
+```sql
+select vault.update_secret(
+  (select id from vault.secrets where name = 'daily_report_cron_secret'),
+  encode(extensions.gen_random_bytes(32), 'hex')
+);
+```
+
 ## สถานะติดตั้ง (8/8/2569)
 
 | ขั้น | สถานะ |
 |---|---|
-| migration (`20260808175641`) — extensions + ตาราง + ฟังก์ชัน + cron job | ✅ apply แล้วผ่าน Supabase MCP · job `daily-report-2200-ict` active |
-| vault secret `daily_report_url` | ✅ ใส่แล้ว |
-| vault secret `daily_report_cron_secret` | ✅ หมุนใหม่ gen ใน Postgres (`gen_random_bytes(32)` hex 64 ตัว) |
-| merge เข้า main + deploy (โค้ดกันการ์ดซ้ำ) | ✅ merge `d278069` — Vercel deploy อัตโนมัติ |
-| ทดสอบท่อ pg_cron → Vault → pg_net → route | ✅ ได้ 401 ตามคาด (Vercel ยังถือ secret เก่า) |
-| sync CRON_SECRET ฝั่ง Vercel ให้ตรงกับ Vault | ⬜ ขั้นเดียวที่เหลือ — ดูข้างล่าง |
+| migration `20260808175641` — extensions + ตาราง + ฟังก์ชัน + cron job | ✅ job `daily-report-2200-ict` active |
+| migration `20260808181713` — RPC ตรวจ secret จาก Vault | ✅ |
+| vault `daily_report_url` + `daily_report_cron_secret` | ✅ |
+| merge เข้า main + deploy โค้ดกันซ้ำและสองประตู | ✅ |
 
-## ขั้นที่เหลือ: sync CRON_SECRET ฝั่ง Vercel
+## ยืนยันว่าทั้งเส้นตรงกัน — ไม่ส่งการ์ดจริง
 
-secret ตัวใหม่ถูก gen ในตัว Postgres ตรงเข้า Vault (ไม่เคยอยู่ในแชทหรือไฟล์ไหน)
-ระหว่างที่ยังไม่ sync: pg_cron ยิงแล้วได้ 401 ทุกคืน → ไม่มีการ์ดจาก pg_cron ไม่มีการ์ดซ้ำ
-Vercel cron ตัวเดิมยังส่งการ์ดตามปกติ (ช้าได้ถึงชั่วโมงแบบเดิม) — ระบบไม่มีทางพัง แค่ยังไม่ตรงเวลา
-
-1. อ่านค่าใน SQL Editor ของ Supabase:
+`?dry=1` จบทันทีหลังผ่านด่านตรวจสิทธิ์ ใช้พิสูจน์ secret โดยไม่ยิง LINE และไม่แตะด่านกันซ้ำ
+วิธี: ชี้ URL ใน Vault ไปแบบ dry ชั่วคราว → ยิง → ดูผล → ชี้กลับ (รันใน SQL Editor)
 
 ```sql
-select decrypted_secret from vault.decrypted_secrets
-where name = 'daily_report_cron_secret';
-```
-
-2. เอาค่าไปทับ env เดิมแล้ว deploy ใหม่ (env ใหม่มีผลต่อเมื่อ deploy):
-
-```bash
-cd sookkaya-pos-v2
-npx vercel env rm CRON_SECRET production -y
-printf '<ค่าจากข้อ 1>' | npx vercel env add CRON_SECRET production
-npx vercel deploy --prod --yes
-```
-
-3. ยืนยันว่าตรงกันแล้ว — รันใน SQL Editor:
-
-```sql
+select vault.update_secret(
+  (select id from vault.secrets where name = 'daily_report_url'),
+  'https://sookkaya-pos.vercel.app/api/cron/daily-report?source=pg_cron&dry=1'
+);
 select public.trigger_daily_report();
 -- รอ ~5 วินาที
 select status_code, left(content, 120) from net._http_response order by id desc limit 1;
+-- ต้องได้ 200 กับ {"ok":true,"dry":true,"source":"pg_cron"} แล้วชี้ URL กลับ:
+select vault.update_secret(
+  (select id from vault.secrets where name = 'daily_report_url'),
+  'https://sookkaya-pos.vercel.app/api/cron/daily-report?source=pg_cron'
+);
 ```
 
-ต้องได้ `status_code = 200` — ถ้า content เป็น `{"ok":true,...}` การ์ดเข้ากลุ่มแล้ว
-ถ้าเป็น `{"ok":true,"skipped":"already-sent"}` แปลว่าการ์ดวันนี้ถูกส่งไปก่อนแล้ว ปกติเช่นกัน
+## ยิงมือดูการ์ดจริง (ไม่ต้องรอถึง 22:00)
 
-### 3. ยิงมือดูการ์ดจริง (ไม่ต้องรอถึง 22:00)
+**ระวัง: การ์ดจะเข้ากลุ่มจริง และแถวกันซ้ำของ "วันนี้" จะถูกจอง** — ถ้ายิงเล่นก่อน 22:00
+การ์ดรอบจริงของคืนนั้นจะโดนข้าม ต้องลบแถวทิ้งก่อน: `delete from daily_report_sends where report_date = current_date;`
 
 ```sql
 select public.trigger_daily_report();
