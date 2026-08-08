@@ -371,19 +371,22 @@ export type Database = {
         }
         Relationships: []
       }
-      daily_report_sends: {
+      cron_sends: {
         Row: {
-          report_date: string
+          job: string
+          run_date: string
           sent_at: string
           source: string
         }
         Insert: {
-          report_date: string
+          job: string
+          run_date: string
           sent_at?: string
           source: string
         }
         Update: {
-          report_date?: string
+          job?: string
+          run_date?: string
           sent_at?: string
           source?: string
         }

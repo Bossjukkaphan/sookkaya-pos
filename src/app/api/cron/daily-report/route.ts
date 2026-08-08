@@ -2,12 +2,8 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { createServiceClient } from "@/lib/supabase/service"
 import { pushAssistantFlex } from "@/lib/line-assistant"
-import {
-  buildDailyReport,
-  triggerSourceOf,
-  CREDIT_LOW_BAHT,
-  PRIOR_DAYS,
-} from "@/lib/daily-report"
+import { cronRequestAuthorized, triggerSourceOf } from "@/lib/cron-auth"
+import { buildDailyReport, CREDIT_LOW_BAHT, PRIOR_DAYS } from "@/lib/daily-report"
 import type {
   DailySummaryRow,
   ExpenseEntryRow,
@@ -22,30 +18,18 @@ import { addDays } from "@/lib/date-range"
 /** สรุปยอดขายวันนี้เป็นการ์ด Flex เข้ากลุ่ม Sookkaya Management ผ่าน OA ผู้ช่วย
  *  แทน Google Apps Script ตัวเดิม
  *
- *  มีตัวจับเวลาสองตัวยิง route นี้ (ตั้งใจให้ซ้ำซ้อน):
- *    pg_cron 22:00 ตรง      = ตัวหลัก (supabase/migrations/20260808175641_daily_report_exact_time.sql)
+ *  มีตัวจับเวลาสองตัวยิง route นี้ (ตั้งใจให้ซ้ำซ้อน — ดู src/lib/cron-auth.ts):
+ *    pg_cron 22:00 ตรง      = ตัวหลัก (job daily-report-2200-ict)
  *    Vercel cron 22:00-22:59 = ตัวสำรอง เผื่อ pg_cron/pg_net ล่ม (ดู vercel.json)
- *  ตัวไหนจองแถวใน daily_report_sends ได้ก่อน = ตัวที่ส่ง อีกตัวจบเงียบ
+ *  ตัวไหนจองแถวใน cron_sends ได้ก่อน = ตัวที่ส่ง อีกตัวจบเงียบ
  *
  *  ?force=1 ข้ามด่านกันซ้ำ ใช้ตอนยิงมือเพื่อตรวจการ์ด
  *  ?dry=1 จบทันทีหลังผ่านด่านตรวจสิทธิ์ — ไว้พิสูจน์ว่า secret ตรงโดยไม่ส่งการ์ดจริง
  *  spec: docs/superpowers/specs/2026-08-05-line-daily-report-design.md */
 export async function GET(request: NextRequest) {
   // route นี้อยู่ใต้ /api/cron ซึ่ง PUBLIC_ROUTES ปล่อยผ่าน จึงต้องกันคนนอกเอง
-  // สองประตูเพราะสองระบบถือ secret คนละที่ที่ sync กันด้วยมือไม่ได้:
-  //   Vercel cron → env CRON_SECRET ที่ Vercel ใส่ header ให้เองตอนยิง
-  //   pg_cron     → secret ใน Supabase Vault ตรวจผ่าน RPC (migration 20260808181713)
   const supabase = createServiceClient()
-  const auth = request.headers.get("authorization") ?? ""
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : ""
-  let authed = Boolean(process.env.CRON_SECRET) && bearer === process.env.CRON_SECRET
-  // เช็ครูปแบบก่อนยิง RPC — ไม่ให้ request มั่วๆ จากอินเทอร์เน็ตเผาคิวรีฐานข้อมูลฟรี
-  // (secret ใน Vault มาจาก gen_random_bytes(32) เป็น hex 64 ตัวเสมอ)
-  if (!authed && /^[0-9a-f]{64}$/.test(bearer)) {
-    const check = await supabase.rpc("cron_secret_matches", { candidate: bearer })
-    authed = check.data === true
-  }
-  if (!authed) {
+  if (!(await cronRequestAuthorized(supabase, request.headers.get("authorization")))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
 
@@ -218,12 +202,12 @@ export async function GET(request: NextRequest) {
   // ignoreDuplicates ทำให้ PostgREST ใช้ ON CONFLICT DO NOTHING แล้ว .select() คืนเฉพาะแถวที่ insert จริง
   // แถวว่าง = วันนี้มีคนส่งไปแล้ว
   const claim = await supabase
-    .from("daily_report_sends")
+    .from("cron_sends")
     .upsert(
-      { report_date: report.date, source },
-      { onConflict: "report_date", ignoreDuplicates: true }
+      { job: "daily-report", run_date: report.date, source },
+      { onConflict: "job,run_date", ignoreDuplicates: true }
     )
-    .select("report_date")
+    .select("run_date")
   if (claim.error) {
     console.error("daily-report claim failed", claim.error.message)
     return NextResponse.json({ ok: false, error: claim.error.message })
@@ -242,9 +226,10 @@ export async function GET(request: NextRequest) {
   // ลบเฉพาะแถวที่ "เราเป็นคนจอง" รอบนี้ — เคส force ที่ไปเจอแถวเดิมของคนอื่นต้องไม่โดนลบ
   if (!sent && claimed) {
     const rollback = await supabase
-      .from("daily_report_sends")
+      .from("cron_sends")
       .delete()
-      .eq("report_date", report.date)
+      .eq("job", "daily-report")
+      .eq("run_date", report.date)
     if (rollback.error) {
       console.error("daily-report rollback failed", rollback.error.message)
     }
