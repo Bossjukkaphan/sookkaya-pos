@@ -23,7 +23,7 @@ import { addDays } from "@/lib/date-range"
  *  แทน Google Apps Script ตัวเดิม
  *
  *  มีตัวจับเวลาสองตัวยิง route นี้ (ตั้งใจให้ซ้ำซ้อน):
- *    pg_cron 22:00 ตรง      = ตัวหลัก (supabase/migrations/20260808160000_daily_report_exact_time.sql)
+ *    pg_cron 22:00 ตรง      = ตัวหลัก (supabase/migrations/20260808175641_daily_report_exact_time.sql)
  *    Vercel cron 22:00-22:59 = ตัวสำรอง เผื่อ pg_cron/pg_net ล่ม (ดู vercel.json)
  *  ตัวไหนจองแถวใน daily_report_sends ได้ก่อน = ตัวที่ส่ง อีกตัวจบเงียบ
  *

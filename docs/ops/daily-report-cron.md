@@ -18,23 +18,27 @@ Vercel cron 22:00-22:59┘                                    ใครจอง
 - ยิง LINE ไม่สำเร็จ → ลบแถวที่จองทิ้ง ให้ตัวสำรองมีสิทธิ์ลองใหม่
 - ตัวสำรองมีไว้กันเคส pg_cron หรือ pg_net ล่ม การ์ดจะมาช้าหน่อยแต่ไม่เงียบหายทั้งคืน
 
-## ขั้นตอนติดตั้ง (ทำด้วยมือครั้งเดียว)
+## สถานะติดตั้ง (8/8/2569)
 
-> ทางลัด: `./scripts/setup-daily-report-cron.sh` ทำขั้น 1–2 ให้อัตโนมัติ
-> แล้วเขียนไฟล์ SQL ที่เติมค่าพร้อมวางใน SQL Editor ให้เลย
-> ข้างล่างนี้คือขั้นตอนแบบทำมือทีละขั้น เผื่อสคริปต์ใช้ไม่ได้
+| ขั้น | สถานะ |
+|---|---|
+| migration (`20260808175641`) — extensions + ตาราง + ฟังก์ชัน + cron job | ✅ apply แล้วผ่าน Supabase MCP · job `daily-report-2200-ict` active |
+| vault secret `daily_report_url` | ✅ ใส่แล้ว |
+| vault secret `daily_report_cron_secret` | ⬜ ค้างอยู่ — ดูขั้น 2 |
+| merge branch เข้า main + deploy (โค้ดกันการ์ดซ้ำ) | ⬜ ค้างอยู่ |
 
-### 1. รัน migration
+**ลำดับสำคัญ: ต้อง merge + deploy ก่อนใส่ `daily_report_cron_secret`**
+ตราบใดที่ secret ยังไม่ครบ ฟังก์ชันจะจบเงียบด้วย warning — ระบบเดินแบบเดิม (Vercel cron ตัวเดียว)
+แต่ถ้าใส่ secret ก่อนที่โค้ดกันซ้ำจะขึ้น production การ์ดจะเข้ากลุ่มคืนละ 2 ใบ
 
-```bash
-npx supabase db push
-```
+## ขั้นตอนที่เหลือ
 
-migration `20260808160000_daily_report_exact_time.sql` จะเปิด `pg_cron` + `pg_net`,
-สร้างตาราง `daily_report_sends`, สร้างฟังก์ชัน `public.trigger_daily_report()`
-และตั้ง cron job ชื่อ `daily-report-2200-ict` ที่ `0 15 * * *` (pg_cron อ่านเป็น UTC = 22:00 น. ไทย)
+> ทางลัด: `./scripts/setup-daily-report-cron.sh` ดึงค่าจาก Vercel แล้วเขียนไฟล์ SQL
+> ที่เติมค่าพร้อมวางใน SQL Editor ให้เลย (ขั้น db push จะเป็น no-op เพราะ apply ไปแล้ว)
 
-### 2. ใส่ secret ลง Vault
+### 1. merge เข้า main ให้โค้ดกันการ์ดซ้ำขึ้น production
+
+### 2. ใส่ CRON_SECRET ลง Vault
 
 ฟังก์ชันอ่าน URL กับ `CRON_SECRET` จาก Vault ไม่ฝังไว้ในไฟล์ migration และไม่ฝังใน `cron.job.command`
 (คอลัมน์นั้นเป็น text ธรรมดา ใครอ่านตารางได้ก็เห็น secret)
@@ -42,10 +46,6 @@ migration `20260808160000_daily_report_exact_time.sql` จะเปิด `pg_cr
 รันใน SQL Editor ของ Supabase — แทน `<CRON_SECRET>` ด้วยค่าจริงจาก Vercel env production:
 
 ```sql
-select vault.create_secret(
-  'https://sookkaya-pos.vercel.app/api/cron/daily-report?source=pg_cron',
-  'daily_report_url'
-);
 select vault.create_secret('<CRON_SECRET>', 'daily_report_cron_secret');
 ```
 
@@ -60,14 +60,7 @@ rm -f /tmp/dr.env
 > ยังไม่ใส่ secret = ฟังก์ชันไม่ยิงอะไรเลย ขึ้น `raise warning` ใน Postgres logs
 > แล้วปล่อยให้ Vercel cron ตัวสำรองทำงานไปก่อน ระบบไม่พัง แค่ยังไม่ตรงเวลา
 
-### 3. ตรวจว่าตั้งสำเร็จ
-
-```sql
--- job ต้องโผล่ 1 แถว active = true
-select jobid, jobname, schedule, active from cron.job where jobname = 'daily-report-2200-ict';
-```
-
-### 4. ยิงมือดูการ์ดจริง (ไม่ต้องรอถึง 22:00)
+### 3. ยิงมือดูการ์ดจริง (ไม่ต้องรอถึง 22:00)
 
 ```sql
 select public.trigger_daily_report();
