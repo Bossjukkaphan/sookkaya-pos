@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 
 import { createClient } from "@/lib/supabase/server"
+import { getServicesCached, getTherapistsCached } from "@/lib/cached-lookups"
 import { PosForm } from "./pos-form"
 import { GroupPosForm, type GroupPerson } from "./group-pos-form"
 
@@ -29,18 +30,10 @@ export default async function PosPage({
   // บิลจึงมีเวลาครบ 3 ชั้นเสมอ: เวลาบันทึก · เวลาจอง · เวลาเริ่มนวดจริง
   if (!queue && !group) redirect("/queue?from=pos")
 
-  const [{ data: therapists }, { data: services }, { data: promotions }, { data: beds }] =
+  const [allTherapists, allServices, { data: promotions }, { data: beds }, queueRes, groupRes] =
     await Promise.all([
-      supabase
-        .from("therapists")
-        .select("id, name")
-        .eq("status", "active")
-        .order("name"),
-      supabase
-        .from("services")
-        .select("id, name, price, commission")
-        .eq("is_active", true)
-        .order("name"),
+      getTherapistsCached(),
+      getServicesCached(),
       // ใช้ภายใน (Member / ถ่ายคอนเทนต์) ไม่ต้องขึ้นเป็นตัวเลือกให้พนักงานเลือกผิด
       supabase
         .from("promotions")
@@ -53,17 +46,35 @@ export default async function PosPage({
         .select("id, room, name")
         .eq("is_active", true)
         .order("sort"),
+      // เดิมสองตัวนี้รอหลัง lookup เสร็จทั้งที่ไม่พึ่งกัน — ยุบมารอบเดียว
+      queue
+        ? supabase
+            .from("queue_entries")
+            .select("*")
+            .eq("id", queue)
+            .not("status", "in", "(paid,pending,rejected)")
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      group
+        ? supabase
+            .from("queue_entries")
+            .select("*")
+            .eq("group_id", group)
+            .not("status", "in", "(paid,cancelled,pending,rejected)")
+            .order("start_time")
+        : Promise.resolve({ data: null }),
     ])
 
+  // เงื่อนไขกรองเดิมของหน้า — ย้ายจาก .eq ใน query มาไว้ที่นี่ (ข้อมูลมาจาก cache รวม)
+  const therapists = allTherapists
+    .filter((t) => t.status === "active")
+    .map((t) => ({ id: t.id, name: t.name }))
+  const services = allServices
+    .filter((s) => s.is_active)
+    .map((s) => ({ id: s.id, name: s.name, price: s.price, commission: s.commission }))
+
   // เก็บเงินทั้งกลุ่ม → โหลดทุกคนในกลุ่มที่ยังไม่จ่าย/ไม่ยกเลิก มาลงจอเดียว
-  const { data: groupEntries } = group
-    ? await supabase
-        .from("queue_entries")
-        .select("*")
-        .eq("group_id", group)
-        .not("status", "in", "(paid,cancelled,pending,rejected)")
-        .order("start_time")
-    : { data: null }
+  const groupEntries = groupRes.data
 
   if (groupEntries && groupEntries.length > 0) {
     const customerIds = [
@@ -119,14 +130,7 @@ export default async function PosPage({
   // มาจากการ์ดคิว → กรอกหมอ/เมนู/ลูกค้าให้ล่วงหน้า
   // (คิวที่จ่ายแล้วไม่รับซ้ำ · คิวที่ยังไม่อนุมัติ/ถูกปฏิเสธจากไลน์ห้ามเก็บเงินจนกว่าจะรับจองก่อน —
   // ปกติปุ่ม "เก็บเงิน" ไม่โผล่ให้กดตั้งแต่แรกอยู่แล้ว แต่กันไว้เผื่อเข้าลิงก์ตรง/บุ๊กมาร์กเก่า)
-  const { data: queueEntry } = queue
-    ? await supabase
-        .from("queue_entries")
-        .select("*")
-        .eq("id", queue)
-        .not("status", "in", "(paid,pending,rejected)")
-        .maybeSingle()
-    : { data: null }
+  const queueEntry = queueRes.data
 
   // คิวที่ระบุมาหาไม่เจอ/จ่ายไปแล้ว → กลับหน้าคิว (ห้ามเปิดฟอร์มเปล่าที่ไม่ผูกคิว)
   if (!queueEntry) redirect("/queue?from=pos")

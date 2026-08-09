@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { getServicesCached, getTherapistsCached } from "@/lib/cached-lookups"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { QueueBoard } from "./queue-board"
@@ -28,22 +29,15 @@ export default async function QueuePage({
   const isToday = boardDate === today
 
   const [
-    { data: therapists },
-    { data: services },
+    allTherapists,
+    allServices,
     { data: entries },
     { data: beds },
     { data: attendanceRows },
+    { count: turnAwayCount },
   ] = await Promise.all([
-      supabase
-        .from("therapists")
-        .select("id, name")
-        .eq("status", "active")
-        .order("name"),
-      supabase
-        .from("services")
-        .select("id, name, duration_min")
-        .eq("is_active", true)
-        .order("name"),
+      getTherapistsCached(),
+      getServicesCached(),
       supabase
         .from("queue_entries")
         .select("*")
@@ -60,12 +54,20 @@ export default async function QueuePage({
         .select("therapist_id")
         .eq("work_date", boardDate)
         .not("therapist_id", "is", null),
+      // ไม่พึ่งผลจาก batch แรก (ใช้แค่ boardDate ที่แปลงแล้ว) — ยุบมารอบเดียว
+      supabase
+        .from("turn_aways")
+        .select("id", { count: "exact", head: true })
+        .eq("queue_date", boardDate),
     ])
 
-  const { count: turnAwayCount } = await supabase
-    .from("turn_aways")
-    .select("id", { count: "exact", head: true })
-    .eq("queue_date", boardDate)
+  // เงื่อนไขกรองเดิมของหน้า — ย้ายจาก .eq ใน query มาไว้ที่นี่ (ข้อมูลมาจาก cache รวม)
+  const therapists = allTherapists
+    .filter((t) => t.status === "active")
+    .map((t) => ({ id: t.id, name: t.name }))
+  const services = allServices
+    .filter((s) => s.is_active)
+    .map((s) => ({ id: s.id, name: s.name, duration_min: s.duration_min }))
 
   // ค้างรับต่อการ์ด (เฉพาะการ์ดที่จ่ายแล้วและผูกบิลขาย) — โหลดเป็น batch เดียวจากบิลของวันนี้เท่านั้น
   // ห้าม query ต่อการ์ด: การ์ดคิวมีเป็นสิบใบต่อวัน ยิงทีละใบจะช้าและถล่ม DB โดยไม่จำเป็น
