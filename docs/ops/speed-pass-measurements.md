@@ -4,12 +4,14 @@
 
 ## Baseline (ก่อนแก้ — วันที่วัด: 2026-08-09)
 
+**หมายเหตุสำคัญ:** URL เว็บไซต์จริง (https://sookkaya-pos.vercel.app) ยิงไม่ถึงจากสภาพแวดล้อม sandbox นี้ — นโยบาย egress ของระบบบล็อกโฮสต์นั้น · ตัวเลข TTFB ที่วัดได้ (4ms) มาจากโปรกซี่ท้องถิ่น ไม่ใช่จากเว็บจริง ดังนั้น **ไม่สามารถใช้เป็น baseline เครือข่ายได้** · จะต้องวัดจากสภาพแวดล้อมที่มีสิทธิ์เข้าถึง (หรือโดยเจ้าของร้าน) ก่อน-หลังการ deploy เพื่อเปรียบเทียบผล
+
 | หน้า | TTFB มัธยฐาน | หมายเหตุ |
 |---|---|---|
-| /login | 4ms | วัดได้แค่ /login (ระบุ unauthenticated) |
+| — | — | ไม่สามารถวัดได้จากสภาพแวดล้อมนี้ |
 
-จำนวนจังหวะรอเรียงกัน (นับจากโค้ด ณ baseline):
+**Baseline โค้ด (นับจากการวิเคราะห์ source):**
 - layout: auth.getUser → profiles → Promise.all(queue/birthday/expense) = 3 จังหวะ (~5 query)
-- ไม่มี loading.tsx ในทุก route · Suspense มีแค่ commission/summary
+- ไม่มี loading.tsx ในทุก route · Suspense มีแค่ commission/summary และ login/page.tsx:117 LoginForm
 
 ## หลังเฟส 1 / 2 / 3 (เติมเมื่อวัดซ้ำ)
