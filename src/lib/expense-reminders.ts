@@ -5,6 +5,11 @@ import type { Database } from "@/types/database"
 /**
  * เตือนบันทึกค่าใช้จ่ายสำคัญบนกระดิ่ง — ค่ามือหมอ (รอบ 10/20/สิ้นเดือน) + เงินเดือน (สิ้นเดือน)
  * ดู docs/superpowers/specs/2026-08-02-expense-reminder-design.md
+ *
+ * กติการอบเตือน (10/20/สิ้นเดือน, ขั้นต่ำ 10000, D-3) ถูก replicate ไว้ใน SQL ของ
+ * `layout_bootstrap` (supabase/migrations/20260809134246_layout_bootstrap.sql)
+ * — แก้กติกาที่นี่ต้องแก้ SQL ด้วยเสมอ
+ * `expenseReminders()` ไม่มี caller ใน app แล้ว (layout ใช้ SQL แทน) เก็บไว้เป็น executable spec ของกติกา
  */
 
 export type ExpenseDuty = "therapist_fee" | "salary"

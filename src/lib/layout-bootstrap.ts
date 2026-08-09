@@ -22,22 +22,35 @@ const EMPTY: LayoutBootstrap = {
   expenseReminders: [],
 }
 
-/** แปลง jsonb จาก RPC — เพี้ยนตรงไหนคืนค่าว่างส่วนนั้น layout ต้องไม่ล้มเพราะแจ้งเตือน */
+/** แปลง jsonb จาก RPC — เพี้ยนตรงไหนคืนค่าว่างส่วนนั้น layout ต้องไม่ล้มเพราะแจ้งเตือน
+ *  รวมถึงสมาชิกใน array ที่เพี้ยนเป็นรายตัว (เช่น null, ไม่ใช่ object) — คัดทิ้งก่อน map
+ *  ไม่งั้น destructure ตัวที่เพี้ยนจะ throw ทั้งที่สมาชิกตัวอื่นในลิสต์ยังดีอยู่ */
 export function parseLayoutBootstrap(raw: unknown): LayoutBootstrap {
   if (!raw || typeof raw !== "object") return EMPTY
   const o = raw as Record<string, unknown>
   const reminders = Array.isArray(o.expense_reminders) ? o.expense_reminders : []
+  const birthdaysRaw = Array.isArray(o.birthdays) ? o.birthdays : []
   return {
     profile: (o.profile as MyProfile | null) ?? null,
     pendingCount: typeof o.pending_count === "number" ? o.pending_count : 0,
-    birthdays: Array.isArray(o.birthdays)
-      ? (o.birthdays as LayoutBootstrap["birthdays"])
-      : [],
+    birthdays: birthdaysRaw.filter(
+      (b): b is LayoutBootstrap["birthdays"][number] =>
+        !!b &&
+        typeof b === "object" &&
+        typeof (b as Record<string, unknown>).id === "string" &&
+        typeof (b as Record<string, unknown>).name === "string"
+    ),
     // SQL ส่ง duty+due ดิบ — ประกอบ label ไทยที่นี่ด้วยฟังก์ชันเดิม จะได้ไม่ก๊อปข้อความลง SQL
-    expenseReminders: reminders.map((r) => {
-      const { duty, due } = r as { duty: ExpenseDuty; due: string }
-      return { duty, label: expenseReminderLabel(duty, due) }
-    }),
+    // คัดตัวที่ไม่ใช่ object หรือไม่มี duty/due เป็น string ทิ้งก่อน ป้องกัน throw ตอน destructure
+    expenseReminders: reminders
+      .filter(
+        (r): r is { duty: ExpenseDuty; due: string } =>
+          !!r &&
+          typeof r === "object" &&
+          typeof (r as Record<string, unknown>).duty === "string" &&
+          typeof (r as Record<string, unknown>).due === "string"
+      )
+      .map((r) => ({ duty: r.duty, label: expenseReminderLabel(r.duty, r.due) })),
   }
 }
 

@@ -38,6 +38,19 @@ describe("parseLayoutBootstrap", () => {
     const r = parseLayoutBootstrap(null)
     expect(r).toEqual({ profile: null, pendingCount: 0, birthdays: [], expenseReminders: [] })
   })
+
+  it("สมาชิกใน array เพี้ยนเป็นรายตัว (เช่น null) → คัดทิ้งเฉพาะตัวนั้น ไม่ throw", () => {
+    const r = parseLayoutBootstrap({
+      profile: null,
+      pending_count: 0,
+      birthdays: [null, { id: "c1", name: "สมชาย", nickname: null }],
+      expense_reminders: [null, { duty: "salary", due: "2026-07-31" }],
+    })
+    expect(r.birthdays).toHaveLength(1)
+    expect(r.birthdays[0].id).toBe("c1")
+    expect(r.expenseReminders).toHaveLength(1)
+    expect(r.expenseReminders[0].label).toContain("เงินเดือน")
+  })
 })
 
 describe("layoutBootstrap", () => {

@@ -55,6 +55,9 @@ export default async function OverviewPage({
   const monthStart = `${month}-01`
   const nextMonthStart = `${shiftMonth(month, 1)}-01`
 
+  // query ทั้งชุดวิ่งก่อนเช็คสิทธิ์ (เพื่อรวม round trip) — ปลอดภัยเพราะ RLS คุมข้อมูลรายตาราง
+  // และ gate `canSeeInsights` ด้านล่างยังตัดสินผลลัพธ์ที่ผู้ใช้เห็นเหมือนเดิม
+  // ถ้า cache (getShopSettingsCached) โยน error จะเข้า error.tsx ของโซนนี้
   const [
     profile,
     { data: plRows },

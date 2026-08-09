@@ -5,7 +5,10 @@ import { daysUntilBirthday } from "@/lib/crm"
 
 export type BirthdayCustomer = { id: string; name: string; nickname: string | null }
 
-/** ลูกค้าที่ "วันเกิดวันนี้" ตามกติกาเดียวกับลิสต์ /crm เป๊ะ:
+/** กติกาวันเกิดถูก replicate ไว้ใน SQL เดียวกับ `expenseReminders()`
+ *  (supabase/migrations/20260809134246_layout_bootstrap.sql) — ไฟล์นี้ยังมี caller จริงที่ cron
+ *
+ *  ลูกค้าที่ "วันเกิดวันนี้" ตามกติกาเดียวกับลิสต์ /crm เป๊ะ:
  *  เดือน-วันตรงวันนี้ (เวลาไทย) · มีเบอร์ · ยังไม่ถูกบันทึกผล birthday ใน 30 วัน
  *  รับ client เป็นพารามิเตอร์ — layout ใช้สิทธิ์พนักงาน, cron ใช้ service ได้ทั้งคู่
  *  (ตัวเลขนี้โชว์บนกระดิ่ง + ข้อความเข้ากลุ่มทีมร้าน ถ้ากติกาไม่ตรง /crm พนักงานจะงงว่าหายไปไหน) */
