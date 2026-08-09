@@ -1,6 +1,6 @@
 "use server"
 
-import { revalidatePath } from "next/cache"
+import { revalidatePath, updateTag } from "next/cache"
 
 import { promoKey } from "@/lib/promo"
 import { createClient } from "@/lib/supabase/server"
@@ -46,6 +46,7 @@ export async function saveTherapist(formData: FormData): Promise<ActionResult> {
     : await supabase.from("therapists").insert({ name, status })
 
   if (error) return fail(error)
+  updateTag("therapists")
   refresh()
   return { ok: true }
 }
@@ -97,6 +98,7 @@ export async function saveService(formData: FormData): Promise<ActionResult> {
     : await supabase.from("services").insert(payload)
 
   if (error) return fail(error)
+  updateTag("services")
   refresh()
   return { ok: true }
 }
@@ -201,6 +203,7 @@ export async function saveSetting(key: string, value: string): Promise<ActionRes
     .upsert({ key, value }, { onConflict: "key" })
 
   if (error) return fail(error)
+  updateTag("settings")
   refresh()
   return { ok: true }
 }
