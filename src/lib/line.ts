@@ -34,6 +34,29 @@ export async function verifyLineIdToken(idToken: string): Promise<LineIdentity |
   }
 }
 
+/** broadcast ข้อความ text หาผู้ติดตาม OA ลูกค้าทุกคน — เรียกคืนไม่ได้ ใช้กับข้อความ
+ *  ที่เจ้าของร้านคอนเฟิร์มแล้วเท่านั้น (ท่อเรียก: /api/cron/broadcast-message ซึ่งมีด่านกันซ้ำ)
+ *  log status+body ของ LINE เมื่อพลาด ห้าม log token */
+export async function broadcastLineMessage(text: string): Promise<boolean> {
+  try {
+    const res = await fetch("https://api.line.me/v2/bot/message/broadcast", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.LINE_CHANNEL_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({ messages: [{ type: "text", text }] }),
+    })
+    if (!res.ok) {
+      console.error("LINE broadcast failed", res.status, await res.text())
+    }
+    return res.ok
+  } catch (e) {
+    console.error("LINE broadcast threw", e)
+    return false
+  }
+}
+
 /** push ข้อความ text — คืน false เมื่อส่งไม่สำเร็จ (ห้าม throw: การจองต้องเดินต่อ) */
 export async function pushLineMessage(to: string, text: string): Promise<boolean> {
   try {
