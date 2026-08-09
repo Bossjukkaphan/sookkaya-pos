@@ -1,9 +1,7 @@
-import { getMyProfile } from "@/lib/auth"
 import { signOut } from "@/app/actions"
 import { createClient } from "@/lib/supabase/server"
-import { birthdayTodayCustomers } from "@/lib/crm-birthday"
-import { expenseReminders } from "@/lib/expense-reminders"
 import { todayInShopTz } from "@/lib/datetime"
+import { layoutBootstrap } from "@/lib/layout-bootstrap"
 import { AppShell } from "@/components/app-shell"
 import {
   QueueBell,
@@ -23,24 +21,16 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
-  const profile = await getMyProfile()
-
-  // ป้ายจำนวนคำขอจองจากไลน์ที่รอตัดสินใจ — เตือนบนเมนูให้เห็นทุกหน้า
-  // ห้ามกรองวันที่ (ไม่มี .gte("queue_date", ...)): ถ้ากรองแค่วันนี้เป็นต้นไป
-  // รายการที่ค้างข้ามวันไปแล้ว (ร้านลืมตัดสินใจ) จะหายจากป้ายทั้งที่ลูกค้ายังเห็น
-  // "รอร้านยืนยัน" อยู่ฝั่งไลน์ตลอด — ต้องนับทุก pending จนกว่าพนักงานจะรับ/ปฏิเสธเอง
   const supabase = await createClient()
   const today = todayInShopTz()
-  const [{ count: pendingCount }, birthdays, expenseDue] = await Promise.all([
-    supabase
-      .from("queue_entries")
-      .select("id", { count: "exact", head: true })
-      .eq("status", "pending"),
-    // วันเกิดวันนี้ที่ยังไม่อวยพร — โชว์บนกระดิ่ง (กติกาเดียวกับลิสต์ /crm)
-    birthdayTodayCustomers(supabase, today),
-    // ค่ามือหมอ/เงินเดือนรอบล่าสุดที่ยังไม่บันทึก — ค้างบนกระดิ่งจนกว่าจะลงจริง
-    expenseReminders(supabase, today),
-  ])
+  // ป้ายจำนวนคำขอจองจากไลน์ที่รอตัดสินใจ — เตือนบนเมนูให้เห็นทุกหน้า
+  // ห้ามกรองวันที่ (ไม่มี .gte("queue_date", ...)) ใน SQL ของ layout_bootstrap:
+  // ถ้ากรองแค่วันนี้เป็นต้นไป รายการที่ค้างข้ามวันไปแล้ว (ร้านลืมตัดสินใจ) จะหายจากป้าย
+  // ทั้งที่ลูกค้ายังเห็น "รอร้านยืนยัน" อยู่ฝั่งไลน์ตลอด — ต้องนับทุก pending จนกว่าพนักงานจะรับ/ปฏิเสธเอง
+  // round trip เดียวแทน ~5 query เดิม — auth ไม่ต้อง getUser ซ้ำที่นี่:
+  // proxy เช็ค session ทุก request อยู่แล้ว และ RLS ใน RPC คุมสิทธิ์ข้อมูลอีกชั้น
+  const { profile, pendingCount, birthdays, expenseReminders: expenseDue } =
+    await layoutBootstrap(supabase, today)
 
   return (
     // ตัวแจ้งเตือนคิวจองไลน์แบบสด — ครอบทั้งโซนพนักงาน ให้เสียง/toast/ป้ายเมนู
