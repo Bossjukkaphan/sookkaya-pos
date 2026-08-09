@@ -54,6 +54,11 @@ latency ต่อ round trip ต่ำอยู่แล้ว ปัญหา�
   โดย `QueueNotificationsProvider` รับค่าเริ่มแบบ async แทนการ block ทั้ง layout
 - realtime subscription ของกระดิ่งทำงานเหมือนเดิมทุกอย่าง
 
+**หมายเหตุการ implement จริง:** implement จริงไม่ได้ห่อกระดิ่งด้วย Suspense — layout เหลือ
+1 round trip ผ่าน RPC `layout_bootstrap()` จึงไม่คุ้มความซับซ้อนของการ stream เข้า context provider
+ความรู้สึก "เปลือกขึ้นก่อน" ส่งมอบผ่าน `loading.tsx` แทน (เหตุผลเต็มดู "หมายเหตุการตัดสินใจ"
+ท้าย `docs/superpowers/plans/2026-08-09-speed-pass.md`)
+
 ### สิ่งที่ไม่เปลี่ยน
 
 กติกาธุรกิจทั้งหมดเหมือนเดิมเป๊ะ: นับคิวไม่กรองวัน, กติกาวันเกิดเดียวกับ `/crm`,
@@ -117,7 +122,7 @@ caching (`"use cache"` + `cacheTag`/`cacheLife` หรือ API ที่เอ
 | เฟส | เนื้องาน | ความเสี่ยง |
 |---|---|---|
 | 1 | `loading.tsx` + skeleton ทั้งหมด | ต่ำมาก — ไม่แตะ logic ใดๆ |
-| 2 | RPC `layout_bootstrap()` + streaming กระดิ่ง | กลาง — ย้าย logic ไป SQL (กันด้วย test เทียบผล) · migration ผ่าน MCP `apply_migration` + เก็บสำเนาลง `supabase/migrations/` ตามกติกา README |
+| 2 | RPC `layout_bootstrap()` + streaming กระดิ่ง (implement จริง: ไม่มี Suspense — ดูหมายเหตุ) | กลาง — ย้าย logic ไป SQL (กันด้วย test เทียบผล) · migration ผ่าน MCP `apply_migration` + เก็บสำเนาลง `supabase/migrations/` ตามกติกา README |
 | 3 | cache กึ่งนิ่ง + `Promise.all` หน้า top 5 | ต่ำ–กลาง — invalidate ผูกปุ่มบันทึกตรงๆ |
 
 เฟสไหนมีปัญหา revert เฉพาะเฟสนั้นได้โดยไม่กระทบเฟสอื่น
