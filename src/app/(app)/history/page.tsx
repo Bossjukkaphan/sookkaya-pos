@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { getTherapistsCached } from "@/lib/cached-lookups"
 import { PAYMENT_METHODS, formatBaht } from "@/lib/constants"
 import { billTotal, groupSalesByBill } from "@/lib/bill"
 import { todayInShopTz } from "@/lib/datetime"
@@ -65,14 +66,16 @@ export default async function HistoryPage({
   if (therapist) query = query.eq("therapist_id", therapist)
   if (payment) query = query.eq("payment_method", payment)
 
-  const [{ data: sales, count }, { data: therapists }, { data: beds }] =
+  const [{ data: sales, count }, allTherapists, { data: beds }] =
     await Promise.all([
       query,
-      supabase.from("therapists").select("id, name").order("name"),
+      getTherapistsCached(),
       supabase.from("beds").select("id, room, name"),
     ])
+  // เงื่อนไขคอลัมน์เดิมของหน้า — ย้ายจาก .select("id, name") มาไว้ที่นี่ (ข้อมูลมาจาก cache รวม)
+  const therapists = allTherapists.map((t) => ({ id: t.id, name: t.name }))
 
-  const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
+  const therapistName = new Map(therapists.map((t) => [t.id, t.name]))
   const bedLabel = new Map(
     (beds ?? []).map((b) => [b.id, `${b.room} ${b.name} (${shortBedName(b)})`])
   )
