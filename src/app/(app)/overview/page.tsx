@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
+import { getShopSettingsCached } from "@/lib/cached-lookups"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { isMonthIncomplete, targetRunRate } from "@/lib/finance"
@@ -46,12 +47,6 @@ export default async function OverviewPage({
   searchParams: Promise<{ month?: string }>
 }) {
   const supabase = await createClient()
-  const profile = await getMyProfile()
-
-  if (!canSeeInsights(profile?.role)) {
-    return <InsightsAccessDenied title="ภาพรวม" />
-  }
-
   const params = await searchParams
   const today = todayInShopTz()
   const month = params.month ?? today.slice(0, 7)
@@ -60,20 +55,22 @@ export default async function OverviewPage({
   const monthStart = `${month}-01`
   const nextMonthStart = `${shiftMonth(month, 1)}-01`
 
+  // query ทั้งชุดวิ่งก่อนเช็คสิทธิ์ (เพื่อรวม round trip) — ปลอดภัยเพราะ RLS คุมข้อมูลรายตาราง
+  // และ gate `canSeeInsights` ด้านล่างยังตัดสินผลลัพธ์ที่ผู้ใช้เห็นเหมือนเดิม
+  // ถ้า cache (getShopSettingsCached) โยน error จะเข้า error.tsx ของโซนนี้
   const [
+    profile,
     { data: plRows },
     { data: memberActivityRows },
-    { data: targetSetting },
+    settingsRows,
     { data: memberRows, count: memberCount },
     { data: therapistDays },
   ] = await Promise.all([
+    // เดิมรอเดี่ยวก่อนใครทั้งที่ไม่มีใครพึ่งผล — ย้ายมาวิ่งขนานกับ query อื่นของหน้านี้
+    getMyProfile(),
     supabase.from("v_monthly_pl").select("*").order("month"),
     supabase.from("v_monthly_member_activity").select("*").order("month"),
-    supabase
-      .from("settings")
-      .select("value")
-      .eq("key", "monthly_target")
-      .maybeSingle(),
+    getShopSettingsCached(),
     // member_balances มีหนึ่งแถวต่อ "ลูกค้าทุกคน" (พันกว่าแถว) ไม่ใช่ต่อสมาชิก
     // ถ้าดึงทั้ง view supabase-js จะตัดที่ 1000 แถวเงียบๆ แล้วยอดคงค้างจะขาด
     // และ 960 กว่าคนที่ยอดศูนย์คือลูกค้าเดินเข้าร้านที่ไม่เคยเติมเงิน
@@ -92,6 +89,13 @@ export default async function OverviewPage({
       .lt("work_date", nextMonthStart)
       .limit(1000),
   ])
+
+  if (!canSeeInsights(profile?.role)) {
+    return <InsightsAccessDenied title="ภาพรวม" />
+  }
+
+  // เงื่อนไข .eq("key", "monthly_target") เดิมของหน้า — ย้ายมาไว้ที่นี่ (ข้อมูลมาจาก cache รวม)
+  const targetSetting = settingsRows.find((s) => s.key === "monthly_target") ?? null
 
   // ลูกค้าคนเดียวเติมได้หลายใบ — ตัดซ้ำก่อนนับ
   const memberIds = [

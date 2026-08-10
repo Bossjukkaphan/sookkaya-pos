@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
+import { getServicesCached, getTherapistsCached } from "@/lib/cached-lookups"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
 import { billTotal, groupSalesByBill } from "@/lib/bill"
@@ -61,11 +62,11 @@ export default async function TodayPage({
   // view คืนวันละแถว ช่วงเดือนหนึ่งจึงไม่เกิน ~31 แถว เพดานไม่มีผล
   const [
     { data: sales },
-    { data: therapists },
+    allTherapists,
     { data: dailySummary },
     { data: paymentLines },
     { data: therapistDaily },
-    { data: services },
+    allServices,
     { data: promotions },
     { data: memberBalances },
     { data: topups },
@@ -80,7 +81,7 @@ export default async function TodayPage({
       .order("sale_time", { ascending: false })
       .limit(ROW_CAP),
     // ไม่กรอง status — หมอที่ลาออกแล้วยังต้องมีชื่อบนรายการเก่า
-    supabase.from("therapists").select("id, name, status").order("name"),
+    getTherapistsCached(),
     supabase
       .from("v_daily_summary")
       .select("sale_date, sessions, volume, net_revenue, cash_in, discount_total")
@@ -99,11 +100,7 @@ export default async function TodayPage({
       .select("work_date, therapist_id, sessions, request_fee, total_income")
       .gte("work_date", from)
       .lte("work_date", to),
-    supabase
-      .from("services")
-      .select("id, name, price, commission")
-      .eq("is_active", true)
-      .order("name"),
+    getServicesCached(),
     // ใช้ภายใน (Member / ถ่ายคอนเทนต์) ไม่ต้องขึ้นเป็นตัวเลือกให้พนักงานเลือกผิด
     supabase
       .from("promotions")
@@ -127,9 +124,16 @@ export default async function TodayPage({
   ])
   const canDeletePayments = profile?.role === "admin" || profile?.role === "manager"
 
+  // เงื่อนไขคอลัมน์เดิมของหน้า — ย้ายจาก .select("id, name, status") มาไว้ที่นี่ (ข้อมูลมาจาก cache รวม)
+  const therapists = allTherapists.map((t) => ({ id: t.id, name: t.name, status: t.status }))
+  // เงื่อนไขกรองเดิมของหน้า — ย้ายจาก .eq("is_active", true) มาไว้ที่นี่ (ข้อมูลมาจาก cache รวม)
+  const services = allServices
+    .filter((s) => s.is_active)
+    .map((s) => ({ id: s.id, name: s.name, price: s.price, commission: s.commission }))
+
   const rows = sales ?? []
   const truncated = rows.length === ROW_CAP
-  const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
+  const therapistName = new Map(therapists.map((t) => [t.id, t.name]))
 
   // บรรทัดชำระของบิล (bill_payments) + ยอดค้างรับ (v_bill_due) ของบิลที่แสดงอยู่ในหน้านี้ —
   // ต้องรู้ bill_key (bill_id ?? id) จาก rows ก่อน จึงดึงเป็นรอบสองต่อจาก sales (เหมือน topupCustomers ด้านล่าง)

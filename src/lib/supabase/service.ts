@@ -4,8 +4,12 @@ import type { Database } from "@/types/database"
 
 /**
  * Client สิทธิ์เต็ม (service role) — ใช้เฉพาะ server actions ของโซน /book
- * ที่ตรวจ LINE idToken แล้วเท่านั้น ห้าม import จากที่อื่น
+ * ที่ตรวจ LINE idToken แล้วเท่านั้น
  * (ลูกค้าไลน์ไม่ใช่ผู้ใช้ Supabase auth จึงผ่าน RLS แบบพนักงานไม่ได้)
+ *
+ * อนุญาตผู้เรียกอีกรายเดียว: src/lib/cached-lookups.ts (อ่านตาราง lookup
+ * ที่ staff เห็นได้ตาม RLS อยู่แล้ว แค่ฟังก์ชันใน unstable_cache อ่าน cookies ไม่ได้
+ * จึงต้องใช้ client นี้แทน) ห้าม import จากที่อื่นนอกเหนือสองรายนี้
  */
 export function createServiceClient() {
   return createClient<Database>(

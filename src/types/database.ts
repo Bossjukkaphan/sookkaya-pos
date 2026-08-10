@@ -317,6 +317,27 @@ export type Database = {
           },
         ]
       }
+      cron_sends: {
+        Row: {
+          job: string
+          run_date: string
+          sent_at: string
+          source: string
+        }
+        Insert: {
+          job: string
+          run_date: string
+          sent_at?: string
+          source: string
+        }
+        Update: {
+          job?: string
+          run_date?: string
+          sent_at?: string
+          source?: string
+        }
+        Relationships: []
+      }
       customers: {
         Row: {
           acquisition_source: string | null
@@ -368,27 +389,6 @@ export type Database = {
           phone?: string | null
           tags?: string | null
           updated_at?: string
-        }
-        Relationships: []
-      }
-      cron_sends: {
-        Row: {
-          job: string
-          run_date: string
-          sent_at: string
-          source: string
-        }
-        Insert: {
-          job: string
-          run_date: string
-          sent_at?: string
-          source: string
-        }
-        Update: {
-          job?: string
-          run_date?: string
-          sent_at?: string
-          source?: string
         }
         Relationships: []
       }
@@ -1694,8 +1694,8 @@ export type Database = {
     }
     Functions: {
       app_role: { Args: never; Returns: string }
-      cron_secret_matches: { Args: { candidate: string }; Returns: boolean }
       assistant_sql: { Args: { query: string }; Returns: Json }
+      cron_secret_matches: { Args: { candidate: string }; Returns: boolean }
       hourly_density: {
         Args: { from_date?: string }
         Returns: {
@@ -1705,8 +1705,13 @@ export type Database = {
           weekday: number
         }[]
       }
+      layout_bootstrap: { Args: { p_today: string }; Returns: Json }
       next_receipt_no: { Args: { p_date?: string }; Returns: string }
       promo_key: { Args: { txt: string }; Returns: string }
+      trigger_cron_route: {
+        Args: { url_secret_name: string }
+        Returns: undefined
+      }
     }
     Enums: {
       [_ in never]: never
