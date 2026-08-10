@@ -120,7 +120,7 @@ cron ของ Vercel ยังทำงานต่อเหมือนเด�
 
 | job | pg_cron | ยิงอะไร |
 |---|---|---|
-| `keep-warm-5min-ict` | `*/5 1-16 * * *` (ทุก 5 นาที 08:00-23:55 ไทย) | GET `/api/cron/keep-warm` — ตรวจสิทธิ์แล้วจบ ไม่แตะข้อมูล |
+| `keep-warm-5min-ict` | `*/5 * * * *` (ทุก 5 นาที ตลอด 24 ชม. — ขยายจากช่วงเวลาร้าน 10/8/2569) | GET `/api/cron/keep-warm` — ตรวจสิทธิ์แล้วจบ ไม่แตะข้อมูล |
 
 - Vault entry: `keep_warm_url` → `https://sookkaya-pos.vercel.app/api/cron/keep-warm?source=pg_cron`
 - ไม่มีตัวสำรอง Vercel cron (แผน Hobby เต็ม 2 ช่อง และงานนี้พลาดบางรอบได้ไม่เสียหาย)
