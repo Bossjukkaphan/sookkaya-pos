@@ -74,7 +74,9 @@ export async function birthdayUpcomingCustomers(
       id: c.id,
       name: c.name,
       nickname: c.nickname,
-      daysUntil: daysUntilBirthday(c.birthday, todayIso) as 0 | 1,
+      // birthday รับประกันไม่ null แล้วจาก .filter() ด้านบน แต่ TS ไม่สืบทอด narrowing
+      // ข้าม callback คนละตัว — ยืนยันด้วย non-null assertion แทนการเช็กซ้ำ
+      daysUntil: daysUntilBirthday(c.birthday!, todayIso) as 0 | 1,
     }))
     .sort((a, b) => a.daysUntil - b.daysUntil)
 }
