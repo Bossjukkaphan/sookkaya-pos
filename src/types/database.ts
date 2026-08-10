@@ -1695,6 +1695,7 @@ export type Database = {
     Functions: {
       app_role: { Args: never; Returns: string }
       assistant_sql: { Args: { query: string }; Returns: Json }
+      boss_hub_rollup: { Args: { p_from: string; p_to: string }; Returns: Json }
       cron_secret_matches: { Args: { candidate: string }; Returns: boolean }
       hourly_density: {
         Args: { from_date?: string }
