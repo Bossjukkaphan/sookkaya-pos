@@ -11,7 +11,9 @@ import { daysSince, dormantCutoff } from "@/lib/insights"
 import { detectAnomalies, type ExpenseRow } from "@/lib/expense-analytics"
 import { birthdayUpcomingCustomers } from "@/lib/crm-birthday"
 import { buildCareList, guaranteeFlags, topTherapists } from "@/lib/boss-hub"
+import { CREDIT_LOW_MAX } from "@/lib/member-credit"
 import {
+  WEEKS_COMPARED,
   delta,
   mtdRange,
   prevMtdRange,
@@ -32,9 +34,6 @@ export const metadata = { title: "ภาพรวม · สุขกายา PO
 
 const n = (x: number | string | null | undefined) => Number(x ?? 0)
 
-/** ค่าเฉลี่ยวันเดียวกันของสัปดาห์ ใช้ย้อนหลัง 4 สัปดาห์ตามสเปก (period-compare ก็อิงเลขนี้) */
-const WEEKS_COMPARED = 4
-
 /** ลูกค้าที่ "หายไปนาน" ใช้เกณฑ์เดียวกับแท็บ dormant ของ /crm (ค่าเริ่มต้น 60 วัน) */
 const DORMANT_DAYS = 60
 
@@ -42,13 +41,6 @@ const THAI_WEEKDAYS = [
   "วันอาทิตย์", "วันจันทร์", "วันอังคาร", "วันพุธ",
   "วันพฤหัสบดี", "วันศุกร์", "วันเสาร์",
 ]
-
-/**
- * ขอบบนของ bucket "ใกล้หมด" ตาม `creditBucket()` — คัดที่ฐานข้อมูลเลย จะได้ครบทุกคน
- * โดยไม่ต้องดึงสมาชิกทั้งร้านมากรองฝั่งหน้าเว็บ (member_balances เกิน 1000 แถว)
- * ต้องตรงกับ src/lib/member-credit.ts เสมอ — เปลี่ยนที่นั่นแล้วต้องตามมาแก้ที่นี่
- */
-const CREDIT_LOW_MAX = 1500
 
 // ════════════════════════════════════════════════════════════════════════════
 // ตัวช่วยเรื่อง "โซนไหนล้ม"
@@ -253,6 +245,23 @@ export default async function OverviewPage() {
     ),
     getShopSettingsCached(),
   ])
+
+  // ทาง diagnostic เดียวของ 17 query ขนานชุดนี้ — allSettled กลืน rejection ไว้ไม่ให้พังทั้งหน้า
+  // แต่ต้อง log ไว้ ไม่งั้นโซนไหนล้มเงียบๆ จะไม่มีทางรู้จนกว่าเจ้าของร้านมาบ่น
+  const settledLabels = [
+    "profile", "rollupMtd", "rollupPrev", "rollupWeek", "pl", "expense", "dailySummary",
+    "commissionDaily", "therapistDaily", "birthday", "dormant", "credit", "birthdayHealth",
+    "therapists", "attendance", "queue", "settings",
+  ]
+  ;[
+    profileR, rollupMtdR, rollupPrevR, rollupWeekR, plR, expenseR, dailySummaryR,
+    commissionDailyR, therapistDailyR, birthdayR, dormantR, creditR, birthdayHealthR,
+    therapistsR, attendanceR, queueR, settingsR,
+  ].forEach((r, i) => {
+    if (r.status === "rejected") {
+      console.error(`[overview] query "${settledLabels[i]}" ล้ม:`, r.reason)
+    }
+  })
 
   // โปรไฟล์ล้ม = ตัดสินสิทธิ์ไม่ได้ ห้ามเดาว่าเห็นได้ — โยนต่อให้ error.tsx ของโซน (app)
   if (profileR.status === "rejected") throw profileR.reason
