@@ -31,10 +31,14 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  // ห้ามใส่โค้ดคั่นระหว่าง createServerClient กับ getUser() — session จะ refresh ไม่ทัน
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // ห้ามใส่โค้ดคั่นระหว่าง createServerClient กับ getClaims() — session จะ refresh ไม่ทัน
+  //
+  // ใช้ getClaims() แทน getUser(): โปรเจกต์นี้ใช้ asymmetric signing key (ES256)
+  // จึงตรวจลายเซ็น JWT ในเครื่องได้เลย ไม่ต้องวิ่งไป Auth server ทุก request
+  // (token หมดอายุ SDK ยัง refresh ให้ผ่าน getSession() เหมือนเดิม
+  //  และถ้าเจอ token แบบ HS256 เก่า SDK fallback ไปเรียก getUser() เองในตัว)
+  const { data: claimsData } = await supabase.auth.getClaims()
+  const user = claimsData?.claims ?? null
 
   const { pathname } = request.nextUrl
   const isPublic = PUBLIC_ROUTES.some((route) => pathname.startsWith(route))
