@@ -8,7 +8,6 @@ import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { isMonthIncomplete, targetRunRate } from "@/lib/finance"
 import { monthShortLabel, shiftMonth } from "@/lib/month"
 import { daysSince, dormantCutoff } from "@/lib/insights"
-import { creditBucket } from "@/lib/member-credit"
 import { detectAnomalies, type ExpenseRow } from "@/lib/expense-analytics"
 import { birthdayUpcomingCustomers } from "@/lib/crm-birthday"
 import { buildCareList, guaranteeFlags, topTherapists } from "@/lib/boss-hub"
@@ -45,10 +44,11 @@ const THAI_WEEKDAYS = [
 ]
 
 /**
- * เพดาน 1000 แถวของ supabase-js ตัดผลลัพธ์เงียบๆ — ขอมาน้อยกว่านั้นแล้วเทียบกับ
- * count จริง จะได้รู้ตัวว่าโดนตัดและบอกผู้ใช้ได้ แทนที่จะแสดงตัวเลขที่ขาดไปเฉยๆ
+ * ขอบบนของ bucket "ใกล้หมด" ตาม `creditBucket()` — คัดที่ฐานข้อมูลเลย จะได้ครบทุกคน
+ * โดยไม่ต้องดึงสมาชิกทั้งร้านมากรองฝั่งหน้าเว็บ (member_balances เกิน 1000 แถว)
+ * ต้องตรงกับ src/lib/member-credit.ts เสมอ — เปลี่ยนที่นั่นแล้วต้องตามมาแก้ที่นี่
  */
-const MEMBER_LIMIT = 500
+const CREDIT_LOW_MAX = 1500
 
 // ════════════════════════════════════════════════════════════════════════════
 // ตัวช่วยเรื่อง "โซนไหนล้ม"
@@ -123,57 +123,6 @@ function parseRollup(json: unknown): Rollup {
 const sumRevenue = (rollup: Rollup) => rollup.daily.reduce((s, d) => s + d.revenue, 0)
 
 // ════════════════════════════════════════════════════════════════════════════
-// เครดิตสมาชิก — ยกก้อนเดิมของหน้ามาทั้งดุ้น (ต้องยิงสองต่อ topups → balances)
-// ════════════════════════════════════════════════════════════════════════════
-
-type CreditWatch = { id: string; name: string; balance: number }
-
-/**
- * สมาชิกที่เครดิต "ใกล้หมด" (bucket ต่ำสุดที่ยังมียอดเหลือ) — โซน 3 เอาไปต่อท้ายลิสต์ดูแลด่วน
- *
- * สองต่อในฟังก์ชันเดียว เพื่อให้ทั้งก้อนเป็นสมาชิกเดียวของ allSettled — ล้มก็ล้มแค่โซน 3
- */
-async function loadCreditWatch(
-  supabase: Awaited<ReturnType<typeof createClient>>
-): Promise<CreditWatch[]> {
-  // member_balances มีหนึ่งแถวต่อ "ลูกค้าทุกคน" (พันกว่าแถว) ไม่ใช่ต่อสมาชิก
-  // ถ้าดึงทั้ง view supabase-js จะตัดที่ 1000 แถวเงียบๆ แล้วยอดคงค้างจะขาด
-  // และ 960 กว่าคนที่ยอดศูนย์คือลูกค้าเดินเข้าร้านที่ไม่เคยเติมเงิน
-  // ไม่ใช่ "สมาชิกที่เครดิตหมด" — จึงต้องคัดคนที่เคยมีใบเติมเงินก่อน
-  // คัดจากใบเติมเงิน ไม่ใช่ customer_type='สมาชิก' เพราะ "เครดิตคงเหลือ" ของลูกค้าทั่วไป
-  // (ยอดจ่ายล่วงหน้าที่ใช้ไม่ครบ) ก็เป็นหนี้ที่ร้านค้างลูกค้าเหมือนกัน ต้องนับด้วย
-  const topups = await must(
-    supabase.from("member_topups").select("customer_id").limit(MEMBER_LIMIT)
-  )
-
-  // ลูกค้าคนเดียวเติมได้หลายใบ — ตัดซ้ำก่อนนับ
-  const memberIds = [
-    ...new Set(
-      (topups ?? [])
-        .map((m) => m.customer_id)
-        .filter((id): id is string => id !== null)
-    ),
-  ]
-  if (memberIds.length === 0) return []
-
-  const balances = await must(
-    supabase
-      .from("member_balances")
-      .select("customer_id, name, nickname, credit_balance")
-      .in("customer_id", memberIds)
-  )
-
-  return (balances ?? [])
-    .map((b) => ({
-      id: b.customer_id ?? "",
-      name: b.nickname || b.name || "ไม่ระบุชื่อ",
-      // ยอดมาจาก view ล้วนๆ — หน้านี้ไม่คิดสูตรเครดิตเอง
-      balance: n(b.credit_balance),
-    }))
-    .filter((b) => b.id !== "" && creditBucket(b.balance) === "low")
-}
-
-// ════════════════════════════════════════════════════════════════════════════
 
 export default async function OverviewPage() {
   const supabase = await createClient()
@@ -209,6 +158,7 @@ export default async function OverviewPage() {
     birthdayR,
     dormantR,
     creditR,
+    birthdayHealthR,
     therapistsR,
     attendanceR,
     queueR,
@@ -255,7 +205,36 @@ export default async function OverviewPage() {
         .order("lifetime_value", { ascending: false })
         .limit(5)
     ),
-    loadCreditWatch(supabase),
+    // สมาชิกเครดิต "ใกล้หมด" — คัดและเรียงที่ฐานข้อมูลแบบเดียวกับหน้า /members
+    // ยอดคงเหลือมาจาก view ล้วนๆ หน้านี้ไม่คิดสูตรเครดิตเอง · กรอง > 0 ตัดคนที่หมดแล้ว
+    // (ไม่มีอะไรให้ชวนเติมต่อ) และตัดลูกค้าเดินเข้าร้านที่ไม่เคยเติมเงินออกไปในตัว
+    must(
+      supabase
+        .from("member_balances")
+        .select("customer_id, name, nickname, credit_balance")
+        .gt("credit_balance", 0)
+        .lte("credit_balance", CREDIT_LOW_MAX)
+        .order("credit_balance")
+        .limit(3)
+    ),
+    // birthdayUpcomingCustomers กลืน error ไว้ข้างใน (คืนลิสต์ว่างแทนที่จะโยน) และแก้ lib
+    // ไม่ได้เพราะ cron ใช้ร่วม — ยิง head count สองตารางที่ lib อ่านเป็นตัวตรวจสุขภาพ
+    // อ่านไม่ได้เมื่อไหร่ โซน 3 จะขึ้น "โหลดไม่สำเร็จ" แทนที่จะโชว์ลิสต์ว่างเงียบๆ
+    // ราวกับวันนี้ไม่มีวันเกิดใครเลย (head:true ไม่ดึงแถว จึงแทบไม่มีต้นทุน)
+    Promise.all([
+      mustCount(
+        supabase
+          .from("customers")
+          .select("id", { count: "exact", head: true })
+          .not("birthday", "is", null)
+      ),
+      mustCount(
+        supabase
+          .from("crm_contacts")
+          .select("customer_id", { count: "exact", head: true })
+          .eq("list_type", "birthday")
+      ),
+    ]),
     getTherapistsCached(),
     // นับหัวคนที่เช็คอินวันนี้ (ทั้งหมอนวดและพนักงาน) — ให้ฐานข้อมูลนับ ไม่ต้องดึงแถวมา
     mustCount(
@@ -286,7 +265,8 @@ export default async function OverviewPage() {
   const zone2Failed = anyFailed(
     rollupMtdR, rollupPrevR, plR, expenseR, dailySummaryR, commissionDailyR, therapistDailyR
   )
-  const zone3Failed = anyFailed(birthdayR, dormantR, creditR)
+  // birthdayHealthR คือตัวตรวจสุขภาพของ query วันเกิด (lib กลืน error) — ดูเหตุผลที่ก้อน query
+  const zone3Failed = anyFailed(birthdayR, birthdayHealthR, dormantR, creditR)
   const zone4Failed = anyFailed(rollupMtdR, therapistsR, therapistDailyR, attendanceR, queueR)
 
   // ── โซน 1: วันนี้/เดือนนี้ ดีกว่าหรือแย่กว่าปกติ ──
@@ -373,8 +353,8 @@ export default async function OverviewPage() {
     (value(commissionDailyR) ?? []).map((r) => ({ date: r.work_date, value: r.commission }))
   )
 
-  // ตัวตรวจเดียวกับ /insights/expenses (เทียบค่ากลาง 3 เดือน) — เอาเฉพาะที่แรงสุด 3 อัน
-  const anomalyChips = detectAnomalies({
+  // ตัวตรวจเดียวกับ /insights/expenses (เทียบค่ากลาง 3 เดือน)
+  const anomalies = detectAnomalies({
     rows: expenseRows,
     revenueByDate,
     commissionByDate,
@@ -382,13 +362,21 @@ export default async function OverviewPage() {
     throughDay: dayOfMonth,
     monthClosed: false,
   })
-    .filter((d) => d.level === "alert" || d.level === "warn")
-    .sort((a, b) => Math.abs(b.impactBaht) - Math.abs(a.impactBaht))
-    .slice(0, 3)
-    .map((d) => ({
-      label: `${d.category} +${Math.round(d.deltaPct)}%`,
-      level: d.level as "alert" | "warn",
-    }))
+  // ต้นเดือน (วันน้อยกว่าเกณฑ์คิดสัดส่วน) หรือประวัติไม่ครบ 3 เดือน ทุกหมวดจะเป็น "unknown"
+  // ถ้าปล่อยชิปว่าง การ์ดจะขึ้น "รายจ่ายปกติดี ✓" ทั้งที่ยังไม่ได้ตรวจอะไรเลย —
+  // เป็นความเข้าใจผิด "ไม่เตือน = ตรวจแล้วปกติ" ที่ /insights/expenses กำกับห้ามไว้ชัดเจน
+  const decidable = anomalies.some((d) => d.level !== "unknown")
+  const anomalyChips = !decidable
+    ? [{ label: "ต้นเดือน ยังตัดสินรายจ่ายไม่ได้", level: "warn" as const }]
+    : anomalies
+        // เอาเฉพาะที่แรงสุด 3 อัน
+        .filter((d) => d.level === "alert" || d.level === "warn")
+        .sort((a, b) => Math.abs(b.impactBaht) - Math.abs(a.impactBaht))
+        .slice(0, 3)
+        .map((d) => ({
+          label: `${d.category} +${Math.round(d.deltaPct)}%`,
+          level: d.level as "alert" | "warn",
+        }))
 
   const plRows = (value(plR) ?? []).filter(
     (r): r is typeof r & { month: string } => r.month !== null
@@ -417,9 +405,13 @@ export default async function OverviewPage() {
       : profitDelta.pct >= 0
         ? `ดีกว่าเดือนก่อน ณ วันเดียวกัน ${profitDelta.pct}%`
         : `แย่กว่าเดือนก่อน ณ วันเดียวกัน ${Math.abs(profitDelta.pct)}%`
-  const moneyHeadline = `${profitMtd < 0 ? "เดือนนี้ขาดทุน" : "เดือนนี้กำไรแล้ว"} ${formatBaht(
-    Math.abs(profitMtd)
-  )}฿${margin === null ? "" : ` (margin ${margin.toFixed(1)}%)`} — ${profitVerdict}`
+  // คำว่า "เชิงบัญชี" ต้องอยู่ในประโยค — ตัวเลขนี้คือ profit_accrual ไม่ใช่กำไรเงินสด
+  // (ศัพท์ทางการตาม /finance) ถ้าเขียนลอยๆ ว่า "กำไร" จะถูกอ่านเทียบกับกราฟกำไรเงินสดในการ์ดเดียวกัน
+  const moneyHeadline = `${
+    profitMtd < 0 ? "เดือนนี้ขาดทุนเชิงบัญชี" : "เดือนนี้กำไรเชิงบัญชีแล้ว"
+  } ${formatBaht(Math.abs(profitMtd))}฿${
+    margin === null ? "" : ` (margin ${margin.toFixed(1)}%)`
+  } — ${profitVerdict}`
 
   // ── โซน 3: ลูกค้าที่ต้องดูแลด่วน ──
   const careItems = buildCareList({
@@ -438,7 +430,14 @@ export default async function OverviewPage() {
         ltv: n(d.lifetime_value),
         daysSinceVisit: daysSince(d.last_visit!, today),
       })),
-    lowCredit: value(creditR) ?? [],
+    // ฐานข้อมูลคัด/เรียง/ตัด 3 คนมาให้แล้ว — buildCareList เรียงซ้ำได้ ผลเหมือนกัน
+    lowCredit: (value(creditR) ?? [])
+      .filter((b) => b.customer_id !== null)
+      .map((b) => ({
+        id: b.customer_id!,
+        name: b.nickname || b.name || "ไม่ระบุชื่อ",
+        balance: n(b.credit_balance),
+      })),
   })
 
   // ── โซน 4: ทีมเป็นไง ──

@@ -34,14 +34,19 @@ export function MoneyZone({
       <CardContent className="space-y-3">
         <div className="grid grid-cols-3 gap-3">
           <div>
-            <p className="text-xs text-slate-500">กำไรเงินสด MTD</p>
+            {/* คำศัพท์ทางการของระบบตาม /finance: profit_cash = "กำไรเงินสด" ·
+                profit_accrual = "กำไรเชิงบัญชี" — ตัวเลขนี้คิดแบบ accrual (หักค่ามือจากงานจริง
+                แล้วไม่หักรายจ่ายหมวดค่ามือซ้ำ) ห้ามเรียกว่ากำไรเงินสด ต่างกันหลักหมื่น */}
+            <p className="text-xs text-slate-500">กำไรเชิงบัญชี MTD</p>
             {/* กำไรเขียว ขาดทุนแดง — ภาษาเดียวกันทุกหน้า */}
             <p className={`text-lg font-bold ${profit < 0 ? "text-red-700" : "text-emerald-700"}`}>
               {formatBaht(profit)} ฿
             </p>
           </div>
           <div>
-            <p className="text-xs text-slate-500">Margin</p>
+            {/* margin ตัวนี้หารด้วยกำไรเชิงบัญชี ไม่ใช่กำไรเงินสดตามนิยาม MONEY_INFO.margin
+                จึงต้องกำกับคำว่า "เชิงบัญชี" ไว้ ไม่งั้นอ่านเทียบกับหน้าอื่นแล้วเพี้ยน */}
+            <p className="text-xs text-slate-500">Margin เชิงบัญชี</p>
             <p
               className={`text-lg font-bold ${
                 margin !== null && margin < 0 ? "text-red-700" : "text-emerald-700"
@@ -87,6 +92,11 @@ export function MoneyZone({
           )}
         </div>
 
+        {/* กราฟมาจาก v_monthly_pl (เดือนเต็ม) ซึ่งเส้นกำไรเป็น "กำไรเงินสด" คนละสูตรกับ
+            ตัวเลขเชิงบัญชีข้างบน — ต้องเขียนบอก ไม่งั้นคนอ่านจะนึกว่าเป็นตัวเดียวกันคนละช่วง */}
+        <p className="text-xs text-slate-500">
+          กราฟ 6 เดือน (เดือนเต็ม) — เส้นกำไรเป็นกำไรเงินสด คนละสูตรกับกำไรเชิงบัญชีข้างบน
+        </p>
         <GroupedBarChart series={chart} unit=" ฿" />
 
         <div className="flex flex-wrap gap-2 pt-1">
