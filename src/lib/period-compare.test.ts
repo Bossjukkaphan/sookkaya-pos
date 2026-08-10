@@ -46,7 +46,7 @@ describe("delta", () => {
 })
 
 describe("verdictSentence", () => {
-  it("เดือนวิ่งเร็วกว่า + วันนี้สูงกว่าค่าเฉลี่ย", () => {
+  it("เดือนวิ่งเร็วกว่า + วันนี้สูงกว่าค่าเฉลี่ย พร้อมขนาด %", () => {
     const s = verdictSentence({
       mtd: delta(112000, 100000),
       today: { revenue: 8450, weekdayAvg: 7750, weeksUsed: 4 },
@@ -55,6 +55,10 @@ describe("verdictSentence", () => {
     expect(s).toContain("เร็วกว่า")
     expect(s).toContain("12%")
     expect(s).toContain("วันเสาร์")
+    // (8450-7750)/7750 ≈ +9%
+    expect(s).toContain("+9%")
+    // ครบ 4 สัปดาห์แล้ว ไม่ต้องกำกับจำนวนสัปดาห์
+    expect(s).not.toContain("สัปดาห์")
   })
   it("ไม่มีข้อมูลเดือนก่อน → บอกตรงๆ ไม่โชว์ delta หลอก", () => {
     const s = verdictSentence({
@@ -65,12 +69,35 @@ describe("verdictSentence", () => {
     expect(s).toContain("ยังเทียบเดือนก่อนไม่ได้")
     expect(s).not.toContain("%")
   })
-  it("ข้อมูลไม่ครบ 4 สัปดาห์ → ระบุจำนวนสัปดาห์ที่ใช้", () => {
+  it("ข้อมูลไม่ครบ 4 สัปดาห์ → ระบุจำนวนสัปดาห์ที่ใช้ ต่อท้ายส่วนวันนี้", () => {
     const s = verdictSentence({
       mtd: delta(90000, 100000),
       today: { revenue: 5000, weekdayAvg: 5200, weeksUsed: 2 },
       todayLabel: "วันพุธ",
     })
     expect(s).toContain("2 สัปดาห์")
+    // ต้องอยู่หลังส่วนเปรียบเทียบวันนี้ ไม่ใช่ห้อยลอยหลัง MTD
+    expect(s.indexOf("วันพุธนี้")).toBeLessThan(s.indexOf("2 สัปดาห์"))
+  })
+  it("weekdayAvg เป็น 0 → งดตัวเลข % (ห้ามหารศูนย์)", () => {
+    const s = verdictSentence({
+      mtd: delta(90000, 100000),
+      today: { revenue: 500, weekdayAvg: 0, weeksUsed: 1 },
+      todayLabel: "วันจันทร์",
+    })
+    expect(s).toContain("สูงกว่าค่าเฉลี่ยวันจันทร์")
+    expect(s).not.toMatch(/%\s*\(เทียบ/) // ไม่มี % ติดกับวงเล็บสัปดาห์ (ไม่มีขนาดให้โชว์)
+    expect(s).toContain("(เทียบ 1 สัปดาห์)")
+  })
+  it("mtd.pct มีค่า แต่ weekdayAvg เป็น null, weeksUsed=0 → ห้ามโผล่ '(เทียบ 0 สัปดาห์)'", () => {
+    const s = verdictSentence({
+      mtd: delta(90000, 100000),
+      today: { revenue: 500, weekdayAvg: null, weeksUsed: 0 },
+      todayLabel: "วันอังคาร",
+    })
+    expect(s).not.toContain("(เทียบ 0 สัปดาห์)")
+    expect(s).not.toContain("สัปดาห์")
+    // ยังต้องมีประโยค MTD ตามปกติ
+    expect(s).toContain("ช้ากว่า")
   })
 })

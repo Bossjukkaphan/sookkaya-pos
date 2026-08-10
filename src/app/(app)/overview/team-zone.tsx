@@ -46,7 +46,10 @@ export function TeamZone({
         {top.length === 0 ? (
           <p className="py-4 text-center text-sm text-slate-500">ยังไม่มีข้อมูลรายได้เดือนนี้</p>
         ) : (
-          <ul className="space-y-2 text-sm">
+          <>
+            {/* กันสับสนกับการ์ด "ค่ามือรายหมอ" ที่ /reports — เลขที่นี่คือยอดขาย ไม่ใช่ค่ามือที่หมอได้รับ */}
+            <p className="text-xs text-slate-500">ยอดขายที่ทำให้ร้าน (ไม่ใช่ค่ามือ)</p>
+            <ul className="space-y-2 text-sm">
             {top.map((t, i) => (
               <li key={t.therapistId}>
                 <div className="flex items-center justify-between gap-2">
@@ -66,7 +69,8 @@ export function TeamZone({
                 </div>
               </li>
             ))}
-          </ul>
+            </ul>
+          </>
         )}
 
         {flags.length > 0 && (

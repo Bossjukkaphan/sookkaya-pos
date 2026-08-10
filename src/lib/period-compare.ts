@@ -2,6 +2,9 @@ import { daysInMonth, shiftMonth } from "@/lib/month"
 
 export type Delta = { current: number; previous: number; pct: number | null }
 
+/** จำนวนสัปดาห์ย้อนหลังที่ใช้เฉลี่ย "วันเดียวกันของสัปดาห์" — ต้องตรงกับ page.tsx เสมอ */
+export const WEEKS_COMPARED = 4
+
 /**
  * ช่วง MTD ของเดือน ym ตัดที่วัน dayOfMonth (รวมวันนั้น) — คืน {from,to} YYYY-MM-DD
  */
@@ -69,19 +72,18 @@ export function verdictSentence(input: {
 }): string {
   const { mtd, today, todayLabel } = input
 
-  // If no data from previous month
+  // เดือนก่อนไม่มีข้อมูลให้เทียบเลย (previous=0) — บอกตรงๆ ดีกว่าโชว์ delta หลอก
   if (mtd.pct === null) {
     return "ยังเทียบเดือนก่อนไม่ได้ (ไม่มีข้อมูล)"
   }
 
-  // Build direction text
+  // ทิศทางของ MTD เทียบเดือนก่อน ณ วันเดียวกัน
   const direction = mtd.pct > 0 ? "เร็วกว่า" : mtd.pct < 0 ? "ช้ากว่า" : "เท่ากับ"
   const pctText = Math.abs(mtd.pct)
 
-  // Build weeks info if not full 4 weeks
-  const weeksInfo = today.weeksUsed < 4 ? ` (เทียบ ${today.weeksUsed} สัปดาห์)` : ""
-
-  // Build today comparison if available
+  // ประโยคเปรียบเทียบวันนี้กับค่าเฉลี่ยวันเดียวกันของสัปดาห์ — มีก็ต่อเมื่อคำนวณค่าเฉลี่ยได้จริง
+  // (weekdayAvg เป็น null แปลว่าไม่มีวันไหนในอดีตให้เทียบเลย ไม่ใช่ 0 บาท จึงต้องงดทั้งข้อความ
+  // รวมถึง "(เทียบ n สัปดาห์)" ด้วย — ระบุจำนวนสัปดาห์โดยไม่มีค่าเฉลี่ยให้กำกับจะสับสน)
   let todayComparison = ""
   if (today.weekdayAvg !== null) {
     const todayDirection =
@@ -90,8 +92,17 @@ export function verdictSentence(input: {
         : today.revenue < today.weekdayAvg
           ? "ต่ำกว่า"
           : "เท่ากับ"
-    todayComparison = ` และ${todayLabel}นี้${todayDirection}ค่าเฉลี่ย${todayLabel}`
+    // ขนาดของความต่างเป็น % เทียบค่าเฉลี่ย — ค่าเฉลี่ยเป็น 0 หารไม่ได้ ต้องงดตัวเลข ไม่ใช่โชว์ Infinity/NaN
+    const magnitudePct =
+      today.weekdayAvg !== 0
+        ? Math.round(((today.revenue - today.weekdayAvg) / today.weekdayAvg) * 100)
+        : null
+    const magnitudeText =
+      magnitudePct === null ? "" : ` ${magnitudePct >= 0 ? "+" : ""}${magnitudePct}%`
+    // จำนวนสัปดาห์ที่ใช้เฉลี่ย — กำกับค่าเฉลี่ยวันในสัปดาห์ตรงนี้ ไม่ใช่ตัวเลข MTD ข้างต้น
+    const weeksInfo = today.weeksUsed < WEEKS_COMPARED ? ` (เทียบ ${today.weeksUsed} สัปดาห์)` : ""
+    todayComparison = ` และ${todayLabel}นี้${todayDirection}ค่าเฉลี่ย${todayLabel}${magnitudeText}${weeksInfo}`
   }
 
-  return `เดือนนี้วิ่ง${direction}เดือนก่อน ${pctText}% ณ วันเดียวกัน${weeksInfo}${todayComparison}`
+  return `เดือนนี้วิ่ง${direction}เดือนก่อน ${pctText}% ณ วันเดียวกัน${todayComparison}`
 }
