@@ -41,12 +41,13 @@ export function buildCareList(input: {
       name: b.name,
       reason: "birthday",
       badge,
-      amountLabel: b.nickname ?? b.name,
+      amountLabel: "", // UI ไม่โชว์ถ้าว่าง
     })
   }
 
   // dormant — เรียงตาม ltv มาก→น้อย แล้วตัด top 5
-  const sortedDormant = input.dormant
+  // ใช้ copy ของ input เพื่อไม่ให้ mutate array ของ caller
+  const sortedDormant = [...input.dormant]
     .sort((a, b) => b.ltv - a.ltv)
     .slice(0, 5)
 
@@ -61,11 +62,13 @@ export function buildCareList(input: {
     })
   }
 
-  // เครดิตต่ำ — ตัด top 3 (เรียงตามข้อมูลที่ส่งมา สมมติว่าจัดเรียงมาแล้ว หรือตัดแค่ top 3)
-  const topLowCredit = input.lowCredit.slice(0, 3)
+  // เครดิตต่ำ — เรียงตาม balance น้อย→มาก (ด่วนสุด = ต่ำสุด) แล้วตัด top 3
+  const sortedLowCredit = [...input.lowCredit]
+    .sort((a, b) => a.balance - b.balance)
+    .slice(0, 3)
 
-  for (const c of topLowCredit) {
-    const badge = `💳 เหลือ ${formatBaht(c.balance)}`
+  for (const c of sortedLowCredit) {
+    const badge = `💳 เหลือ ${formatBaht(c.balance)}฿`
     items.push({
       customerId: c.id,
       name: c.name,
@@ -98,6 +101,7 @@ export function topTherapists(
   const limited = sorted.slice(0, limit)
 
   // หา max revenue สำหรับคำนวณ sharePct
+  // ถ้า maxRevenue <= 0 ให้ sharePct = 0 สำหรับทุกแถว (ไม่ NaN/Infinity)
   const maxRevenue = limited.length > 0 ? limited[0].revenue : 1
 
   // แปลงเป็น TherapistRank พร้อมคำนวณ sharePct
@@ -106,7 +110,7 @@ export function topTherapists(
     name: names.get(t.therapist_id)!,
     revenue: t.revenue,
     sessions: t.sessions,
-    sharePct: Math.round((t.revenue / maxRevenue) * 100),
+    sharePct: maxRevenue > 0 ? Math.round((t.revenue / maxRevenue) * 100) : 0,
   }))
 }
 
