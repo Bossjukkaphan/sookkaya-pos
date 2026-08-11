@@ -20,6 +20,12 @@ with expected(check_name, expected_value) as (values
   -- เป็นช่องโหว่ของสูตรใน Excel ไม่ใช่การตัดสินใจทางบัญชี — ฐานข้อมูลถูกกว่า
   ('net_revenue_2026_07_partial', 232337),
   ('member_credit_used',  209410),
+  -- ยอดตัดเครดิตที่ไม่มีก้อนเติมเงินรองรับ = คีย์ผิดใบลูกค้า (เคยเจอ 1,300 บาทของ "เดียร์"
+  -- ที่ควรเป็นของ "เดียร์22" แก้แล้ว 2026-08-11) ต้องเป็นศูนย์เสมอ
+  --
+  -- ตรวจข้อนี้แทนการดูยอดติดลบใน member_balances เพราะตั้งแต่เปลี่ยนเป็น FIFO
+  -- ยอดคงเหลือจะไม่ติดลบอีกแล้ว การคีย์ผิดใบจึงมองไม่เห็นจากยอดคงเหลืออีกต่อไป
+  ('orphan_credit_used', 0),
   ('commission_2026_06',  140415),
   ('expenses_fixed_06',   104648),
   -- Excel เดิมไม่มีงวด "ค่ามือพนักงานนวด 1-10/6/69" 42,935 บาท — เจ้าของร้านยืนยัน
@@ -79,13 +85,17 @@ with expected(check_name, expected_value) as (values
   -- แก้ไปแล้ว 1 ราย: สงกรานต์ เคยติดลบ 2,380 เพราะเปลี่ยนชื่อมาจาก "กล้วย" แล้วชีทเติมเงิน
   -- ยังใช้ชื่อเก่า ตอน import เลยแตกเป็นสองระเบียน — รวมแล้ว 28/7/2569 เหลือ 840
   --
-  -- ที่ยังเหลือ 1 ราย: เดียร์ (0816619535) ใช้เครดิต 1,300 จากสองบิลวันที่ 25/6
-  -- ทั้งที่ไม่เคยมีใบเติมเงินเลย และเจ้าของร้านยืนยันแล้วว่าคนละคนกับ "เดียร์22" ที่มีแพ็ก
-  -- สองบิลนั้นเป็นนวดฝ่าเท้า 120 นาที ใบละ 650 คนละหมอ (โมเม กับ แจง) = มาด้วยกันสองคน
-  -- น่าจะตัดจากแพ็กของคนที่มาด้วย แต่ชีทเก่าลงชื่อผู้รับบริการแทนเจ้าของแพ็ก — รอตรวจสอบ
+  -- แก้ไปแล้วอีก 1 ราย: เดียร์ (0816619535) เคยใช้เครดิต 1,300 จากสองบิลวันที่ 25/6
+  -- ทั้งที่ไม่เคยมีใบเติมเงินเลย ที่แท้เป็นคนละคนกับ "เดียร์22" ที่มีแพ็ก แก้แล้ว 2026-08-11
   --
-  -- ถ้าเลขนี้ขึ้นเป็น 2 = มีเคสใหม่ที่เกิดจากแอป ต้องสืบทันที (ของเดิมมาจาก import ทั้งหมด)
-  ('member_credit_negative_customers', 1),
+  -- ย้ายมาตรวจจากตาราง sales/member_topups ดิบแทนการอ่าน credit_balance ของ view member_balances
+  -- เพราะตั้งแต่ Task 1 เปลี่ยนยอดใช้เครดิตให้จัดสรรแบบ FIFO ยอดคงเหลือใน view จะไม่ติดลบอีกแล้ว
+  -- ถ้ายังตรวจจาก credit_balance ข้อนี้จะผ่าน (0) ตลอดไปโดยไม่มีความหมาย ตรวจไม่เจออะไรอีกต่อไป
+  -- ข้อนี้เลยนับลูกค้าที่ credit_used รวมมากกว่า credit_added รวมแทน — เงื่อนไขเดิมที่ตั้งใจจับ
+  -- แต่วัดจากตารางดิบซึ่งยังเห็นปัญหาได้จริง
+  --
+  -- ถ้าเลขนี้ขึ้นมากกว่า 0 = มีเคสใหม่ที่เกิดจากแอป ต้องสืบทันที (ของเดิมมาจาก import ทั้งหมด)
+  ('member_credit_negative_customers', 0),
 
   -- แบ่งชำระ (สเปก 2026-07-31): เครดิตห้ามเกินยอดบิล และต้องรู้ว่าตัดของใคร
   -- ด่านคู่นี้จับของจริงได้ทันทีที่ใส่เข้ามา (31/7/2569) — ทั้งคู่เป็นข้อมูล import จาก Excel:
@@ -222,8 +232,26 @@ actual(check_name, actual_value) as (
       or q.therapist_id is distinct from coalesce(s.therapist_id, q.therapist_id))
 
   union all
-  select 'member_credit_negative_customers', count(*)
-  from public.member_balances where credit_balance < 0
+  select 'member_credit_negative_customers', count(*)::bigint
+  from (
+    select c.id
+    from public.customers c
+    where coalesce((select sum(sa.credit_used) from public.sales sa
+                     where sa.customer_id = c.id and sa.credit_used > 0), 0)
+        > coalesce((select sum(mt.credit_added) from public.member_topups mt
+                     where mt.customer_id = c.id), 0)
+  ) over_used
+
+  union all
+  select 'orphan_credit_used', coalesce(sum(x.orphan), 0)::bigint
+  from (
+    select greatest(
+      coalesce((select sum(sa.credit_used) from public.sales sa
+                where sa.customer_id = c.id and sa.credit_used > 0), 0)
+      - coalesce((select sum(mt.credit_added) from public.member_topups mt
+                  where mt.customer_id = c.id), 0), 0) as orphan
+    from public.customers c
+  ) x
 
   union all
   select 'credit_used_exceeds_net', count(*)
