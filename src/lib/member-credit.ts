@@ -5,7 +5,7 @@
  * โมดูลนี้แค่บอกว่ายอดที่ได้มาตกอยู่ช่องไหนและรวมได้เท่าไหร่
  */
 
-export type CreditBucket = "empty" | "low" | "mid" | "ok"
+export type CreditBucket = "empty" | "expired" | "low" | "mid" | "ok"
 
 export type MemberCredit = { balance: number }
 
@@ -26,10 +26,69 @@ export const CREDIT_LOW_MAX = 1500
  * อีกต่อไป ต้องไปดูที่การตรวจ orphan_credit_used ใน supabase/reconciliation.sql แทน
  *
  * เงื่อนไข balance <= 0 ด้านล่างยังคงไว้เป็นเกราะกันพลาด ไม่ใช่เพราะคาดว่าจะเจอค่าติดลบจริง
+ *
+ * expired = หมดอายุแล้ว ยอดยังอยู่แต่ใช้ไม่ได้จนกว่าจะเติมใหม่ ต้องแยกจาก empty
+ * เพราะ "มีเงินแต่ใช้ไม่ได้" คือโอกาสขาย ส่วน "ไม่มีเงิน" คือคนละเรื่อง
  */
-export function creditBucket(balance: number): CreditBucket {
+export function creditBucket(balance: number, expired = false): CreditBucket {
   if (balance <= 0) return "empty"
+  if (expired) return "expired"
   if (balance <= CREDIT_LOW_MAX) return "low"
   if (balance <= 3000) return "mid"
   return "ok"
+}
+
+export type CreditSpendInput = {
+  /** วันหมดอายุของทั้งกระปุก (member_balances.next_expiry) — null = ไม่เคยเติมเงิน */
+  expiry: string | null
+  /** วันที่ของบิล ไม่ใช่วันนี้ — ร้านบันทึกย้อนหลังได้ บิลที่ให้บริการตอนเครดิตยังไม่หมดอายุต้องคีย์ได้ */
+  onDate: string
+  /** ยอดคงเหลือ รวมส่วนที่แช่แข็งด้วย */
+  balance: number
+  /** ยอดที่จะตัดครั้งนี้ */
+  wanted: number
+  /** ยอดที่บิลนี้เคยตัดไว้ (เฉพาะตอนแก้บิล) — ตัดเท่าเดิมหรือน้อยลงไม่ถือว่าใช้เครดิตใหม่ */
+  alreadyUsedOnThisBill?: number
+}
+
+export type CreditSpendResult =
+  | { ok: true }
+  | { ok: false; reason: "expired" | "insufficient"; message: string }
+
+/**
+ * ตัวกันเดียวที่ตัดสินว่าตัดเครดิตได้ไหม — ทั้ง createSale และ updateSale ต้องเรียกตัวนี้
+ *
+ * ก่อนหน้านี้การกัน "หมดอายุแล้วห้ามใช้" ซ่อนอยู่ในตัวเลข (view คัดก้อนที่หมดอายุออกให้เอง)
+ * ไม่ได้อยู่ในโค้ดเลยสักบรรทัด พอเปลี่ยนมาเป็นกระปุกเดียวที่ยอดรวมเครดิตแช่แข็งด้วย
+ * ตัวกันต้องย้ายออกมาอยู่ตรงนี้ ไม่งั้นเครดิตที่หมดอายุจะใช้ได้ฟรีทั้งก้อน
+ */
+export function checkCreditSpend(input: CreditSpendInput): CreditSpendResult {
+  const { expiry, onDate, balance, wanted } = input
+  const previously = input.alreadyUsedOnThisBill ?? 0
+
+  // วันหมดอายุวันนี้พอดียังใช้ได้ทั้งวัน จึงเทียบด้วย > ไม่ใช่ >=
+  // เทียบสตริง YYYY-MM-DD ตรง ๆ ได้เพราะเรียงตามพจนานุกรมตรงกับเรียงตามเวลา
+  const expired = expiry === null || onDate > expiry
+
+  // ตัดเท่าเดิมหรือน้อยลงบนบิลที่เคยตัดไว้แล้ว ไม่ใช่การใช้เครดิตใหม่ — แก้บิลเก่าได้เสมอ
+  if (expired && wanted > previously) {
+    return {
+      ok: false,
+      reason: "expired",
+      message:
+        expiry === null
+          ? "ลูกค้ายังไม่เคยซื้อแพ็กเกจสมาชิก จึงยังไม่มีเครดิตให้ตัด"
+          : `เครดิตหมดอายุเมื่อ ${expiry} — ยอด ${balance} ฿ ยังอยู่ครบ เติมแพ็กเกจใหม่แล้วใช้ได้ทันที`,
+    }
+  }
+
+  if (balance < wanted) {
+    return {
+      ok: false,
+      reason: "insufficient",
+      message: `เครดิตคงเหลือไม่พอ (มี ${balance} บาท ต้องใช้ ${wanted} บาท)`,
+    }
+  }
+
+  return { ok: true }
 }
