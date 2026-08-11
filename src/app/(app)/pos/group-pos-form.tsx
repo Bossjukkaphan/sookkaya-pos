@@ -22,6 +22,7 @@ import {
   promoKey,
 } from "@/lib/promo"
 import { type Bed } from "@/lib/beds"
+import { bedHolderInGroup, timeToMin } from "@/lib/queue"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Time24Field } from "@/components/time24-field"
 import { PAY_SELECTED, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
@@ -32,7 +33,14 @@ import { Card, CardContent } from "@/components/ui/card"
 import { ServiceCombobox } from "@/components/service-combobox"
 
 type Therapist = { id: string; name: string }
-type Service = { id: string; name: string; price: number; commission: number }
+type Service = {
+  id: string
+  name: string
+  price: number
+  commission: number
+  /** ใช้คิดว่าเตียงของแต่ละคนทับเวลากันจริงไหม (ไม่มี = คิด 60 นาทีเหมือนที่อื่น) */
+  duration_min: number | null
+}
 type Promotion = { id: string; name: string; discount_pct: number | null }
 
 /** ข้อมูลหนึ่งคนในกลุ่ม เตรียมมาจากการ์ดคิวฝั่ง server */
@@ -211,6 +219,13 @@ export function GroupPosForm({
   function setPerson(i: number, patch: Partial<(typeof people)[number]>) {
     setPeople((arr) => arr.map((p, j) => (j === i ? { ...p, ...patch } : p)))
   }
+
+  // ช่วงเวลาที่แต่ละคนใช้เตียง — เวลาว่าง (ยึดเวลาบันทึก) ส่ง null ให้ตัวเช็คกันไว้ก่อน
+  const bedRows = people.map((p) => ({
+    bedId: p.bedId,
+    startMin: /^\d{2}:\d{2}$/.test(p.serviceTime) ? timeToMin(p.serviceTime) : null,
+    durationMin: services.find((s) => s.id === p.serviceId)?.duration_min ?? 60,
+  }))
 
   // เลือกโปรที่ตั้ง % ไว้ → เติมส่วนลดเป็นบาทเต็มให้คนนั้นเอง เปลี่ยนเมนูก็คิดใหม่
   function withPromoDiscount(
@@ -416,7 +431,8 @@ export function GroupPosForm({
 
                   {/* เตียงรายคน (ไม่บังคับ) — เคสจริง 1/8/2569: กลุ่ม 2 คนชื่อเดียว
                       คนที่สองไม่มีที่เลือกเตียงเลย เพราะฟอร์มนี้เคยส่งต่อเฉพาะเตียงที่ติดมากับการ์ด
-                      แบบเดียวกับฟอร์มขายเดี่ยว — เตียงที่มีคนในกลุ่มนี้เลือกไปแล้วขึ้นจาง */}
+                      แบบเดียวกับฟอร์มขายเดี่ยว — เตียงที่คนในกลุ่มใช้ "ทับเวลากัน" ขึ้นจาง
+                      (เทียบเวลาด้วย ไม่ใช่แค่เตียงซ้ำ — ลูกค้าคนเดิมนวดต่ออีกคอร์สบนเตียงเดิมได้) */}
                   <div className="space-y-1">
                     <p className="text-xs font-medium text-slate-600">
                       เตียง <span className="font-normal text-slate-400">(ไม่บังคับ)</span>
@@ -429,11 +445,14 @@ export function GroupPosForm({
                     >
                       <option value="">— ไม่ระบุเตียง —</option>
                       {beds.map((b) => {
-                        const takenBy = people.findIndex(
-                          (x, j) => j !== i && x.bedId === b.id
-                        )
+                        const takenBy = bedHolderInGroup(bedRows, i, b.id)
                         return (
-                          <option key={b.id} value={b.id} disabled={takenBy >= 0}>
+                          <option
+                            key={b.id}
+                            value={b.id}
+                            // ตัวเลือกที่ตัวเองถืออยู่ห้าม disable ไม่งั้น select โชว์ค่าที่กดไม่ได้
+                            disabled={takenBy >= 0 && p.bedId !== b.id}
+                          >
                             {b.room} · {b.name}
                             {takenBy >= 0 ? ` (คนที่ ${takenBy + 1} ใช้อยู่)` : ""}
                           </option>

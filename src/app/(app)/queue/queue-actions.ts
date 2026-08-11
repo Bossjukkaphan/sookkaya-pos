@@ -15,6 +15,12 @@ import {
   overlaps,
   timeToMin,
 } from "@/lib/queue"
+import {
+  CLASH_COLUMNS,
+  CLASH_STATUS_FILTER,
+  clashLabel,
+  firstClash,
+} from "@/lib/bed-clash"
 import { computeSaleAmounts } from "@/lib/sale-math"
 import { GOWABI_METHOD, REQUEST_FEE } from "@/lib/constants"
 import { pushLineMessage } from "@/lib/line"
@@ -78,30 +84,11 @@ async function findResourceClash(
 ) {
   const { data } = await supabase
     .from("queue_entries")
-    .select("id, customer_name, service_name, duration_min, start_time, started_at")
+    .select(CLASH_COLUMNS)
     .eq("queue_date", queueDate)
     .eq(column, value)
-    .not("status", "in", "(cancelled,rejected)")
-  return (
-    (data ?? []).find(
-      (e) =>
-        !excludeIds.includes(e.id) &&
-        overlaps(bedStartMin(e), e.duration_min, startMin, durationMin)
-    ) ?? null
-  )
-}
-
-/** ช่วงเวลา+เจ้าของคิวที่ชน — ใช้ประกอบข้อความ error ให้พนักงานรู้ว่าติดใคร */
-function clashLabel(clash: {
-  customer_name: string | null
-  service_name: string
-  duration_min: number
-  start_time: string
-  started_at: string | null
-}): string {
-  const s = bedStartMin(clash)
-  const who = clash.customer_name ? `คุณ${clash.customer_name}` : clash.service_name
-  return `${minToTime(s)}–${minToTime(s + clash.duration_min)} (คิว${who})`
+    .not("status", "in", CLASH_STATUS_FILTER)
+  return firstClash(data ?? [], startMin, durationMin, excludeIds)
 }
 
 async function bedConflictError(
