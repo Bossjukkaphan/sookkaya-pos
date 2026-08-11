@@ -313,6 +313,8 @@ export type MyProfileData =
         tier: string | null
         creditBalance: number
         nextExpiry: string | null
+        /** เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) — งานที่ 1 */
+        creditExpired: boolean
       }
       visits: number
       usage: UsageBill[]
@@ -349,7 +351,7 @@ export async function getMyProfile(idToken: string): Promise<MyProfileData> {
     await Promise.all([
       db
         .from("member_balances")
-        .select("credit_balance, next_expiry")
+        .select("credit_balance, next_expiry, credit_expired")
         .eq("customer_id", customerId)
         .maybeSingle(),
       db
@@ -412,6 +414,7 @@ export async function getMyProfile(idToken: string): Promise<MyProfileData> {
       tier: lastTopup?.tier ?? null,
       creditBalance: balance?.credit_balance ?? 0,
       nextExpiry: balance?.next_expiry ?? null,
+      creditExpired: balance?.credit_expired ?? false,
     },
     visits: ltv?.visits ?? 0,
     usage: [...bills.values()].slice(0, 30),

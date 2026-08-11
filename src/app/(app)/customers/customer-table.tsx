@@ -6,6 +6,12 @@ import { type CustomerIssueRow, issueBadgeClass, issuesOf } from "@/lib/customer
 import { Badge } from "@/components/ui/badge"
 
 /**
+ * v_customer_issues (ฐานข้อมูล) ไม่มีคอลัมน์ credit_expired — งานที่ 1 เติมคอลัมน์นี้ไว้แค่ที่
+ * view member_balances เท่านั้น หน้า customers/page.tsx จึง join เพิ่มเองแล้วแนบเข้ามาที่นี่
+ */
+type Row = CustomerIssueRow & { credit_expired?: boolean }
+
+/**
  * รายชื่อลูกค้า — ตารางบนคอม/แท็บเล็ต · การ์ดบนมือถือ
  *
  * สลับด้วย CSS ไม่ใช่ JS เพราะหน้านี้เป็น server component ล้วน
@@ -94,9 +100,16 @@ function LineBadge({ row }: { row: CustomerIssueRow }) {
 
 /** ยอดเครดิต — ที่เดียวที่ตัดสินสีและรูปแบบ ไม่งั้นตารางกับการ์ดโชว์ไม่เหมือนกัน
  *  (เคยเพี้ยนมาแล้ว: ตารางไม่มีสัญลักษณ์บาท การ์ดมี) */
-function CreditAmount({ balance }: { balance: number | null }) {
+function CreditAmount({ balance, expired }: { balance: number | null; expired?: boolean }) {
   const n = balance ?? 0
   if (n === 0) return <span className="text-slate-300">—</span>
+  if (expired) {
+    return (
+      <span className="font-semibold whitespace-nowrap text-amber-600">
+        {formatBaht(n)} ฿ (หมดอายุ)
+      </span>
+    )
+  }
   return (
     <span className={`font-semibold whitespace-nowrap ${n < 0 ? "text-red-600" : "text-emerald-700"}`}>
       {formatBaht(n)} ฿
@@ -132,7 +145,7 @@ export function CustomerTable({
   /** true = กำลังกรองเบอร์ซ้ำ แถวเรียงตามเบอร์แล้ว จึงแรเงาสลับกลุ่มได้มีความหมาย */
   groupByPhone,
 }: {
-  rows: CustomerIssueRow[]
+  rows: Row[]
   sort: string
   /** query string เดิมทั้งหมด (ไม่รวม sort) สำหรับทำลิงก์หัวคอลัมน์ */
   query: URLSearchParams
@@ -199,7 +212,7 @@ export function CustomerTable({
                   </span>
                 </td>
                 <td className="px-2 py-2 text-right">
-                  <CreditAmount balance={r.credit_balance} />
+                  <CreditAmount balance={r.credit_balance} expired={Boolean(r.credit_expired) && (r.credit_balance ?? 0) > 0} />
                 </td>
                 <td className="px-2 py-2 text-right text-slate-600">{r.visits ?? 0}</td>
                 <td className="px-2 py-2 whitespace-nowrap text-slate-600">
@@ -249,7 +262,7 @@ export function CustomerTable({
               {(r.credit_balance ?? 0) !== 0 && (
                 <div className="shrink-0 text-right">
                   <p className="text-base font-bold">
-                    <CreditAmount balance={r.credit_balance} />
+                    <CreditAmount balance={r.credit_balance} expired={Boolean(r.credit_expired) && (r.credit_balance ?? 0) > 0} />
                   </p>
                   <p className="text-[10px] text-slate-400">เครดิตเหลือ</p>
                 </div>

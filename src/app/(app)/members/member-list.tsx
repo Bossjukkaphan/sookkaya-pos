@@ -104,6 +104,7 @@ export function MemberList({
                 balance={m.balance}
                 nextExpiry={m.nextExpiry}
                 expiringSoon={!!m.nextExpiry && m.nextExpiry <= thirtyDaysOut}
+                expired={m.expired}
               />
             </li>
           ))}

@@ -125,6 +125,7 @@ export function GroupPosForm({
   const [savingIndex, setSavingIndex] = useState<number | null>(null)
   // แบ่งชำระด้วยเครดิตสมาชิก — ใช้ได้เฉพาะบิลชุดลูกค้าคนเดียว (กลุ่มหลายคนเครดิตผูกรายบุคคล)
   const [creditBalance, setCreditBalance] = useState(0)
+  const [creditExpired, setCreditExpired] = useState(false)
   // เริ่ม "0" เสมอ — ไม่ auto-fill เพดานเครดิตให้แล้ว (สเปก 2026-08-01) พนักงานต้องกดปุ่ม "ใช้เครดิต" เอง
   const [creditUseInput, setCreditUseInput] = useState("0")
   // แบ่งจ่ายหลายวิธี (เฉพาะบิลชุด mergeBill) — บรรทัดแรกคือปุ่มช่องทางหลักด้านล่าง ยอด = ที่เหลือหลังหักบรรทัดเสริม
@@ -163,17 +164,21 @@ export function GroupPosForm({
       const supabase = createClient()
       const { data } = await supabase
         .from("member_balances")
-        .select("credit_balance")
+        .select("credit_balance, credit_expired")
         .eq("customer_id", billCustomerId)
         .single()
-      if (!cancelled) setCreditBalance(Number(data?.credit_balance ?? 0))
+      if (!cancelled) {
+        setCreditBalance(Number(data?.credit_balance ?? 0))
+        setCreditExpired(Boolean(data?.credit_expired))
+      }
     })()
     return () => {
       cancelled = true
     }
   }, [billCustomerId])
 
-  const canUseCredit = Boolean(billCustomerId) && creditBalance > 0
+  // ตัวกันจริงอยู่ฝั่ง server (ทุกรายการวิ่งผ่าน createSale) ตรงนี้กันไม่ให้พนักงานเสียเวลากรอก
+  const canUseCredit = Boolean(billCustomerId) && creditBalance > 0 && !creditExpired
   const creditCap = Math.min(creditBalance, total)
   const creditUse = canUseCredit
     ? Math.min(Math.max(0, Number(creditUseInput) || 0), creditCap)
@@ -590,6 +595,13 @@ export function GroupPosForm({
           </span>
         </Label>
       </div>
+
+      {creditExpired && creditBalance > 0 && (
+        <p className="text-sm text-amber-700">
+          เครดิตหมดอายุแล้ว — ยอด {formatBaht(creditBalance)} ฿ ยังอยู่ครบ
+          เติมแพ็กเกจใหม่แล้วใช้ได้ทันที
+        </p>
+      )}
 
       {/* กล่องแก้ยอดเครดิตบางส่วน — เปิดใช้จากปุ่ม "เครดิต" ในแถวช่องทาง (แบบ ThaiHand) */}
       {canUseCredit && creditUse > 0 && (

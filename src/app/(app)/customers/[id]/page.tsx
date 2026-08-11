@@ -30,7 +30,7 @@ export default async function CustomerDetailPage({
     supabase.from("customers").select("*").eq("id", id).single(),
     supabase
       .from("member_balances")
-      .select("credit_balance, credit_granted, bonus_granted, cash_paid, next_expiry")
+      .select("credit_balance, credit_granted, bonus_granted, cash_paid, next_expiry, credit_expired")
       .eq("customer_id", id)
       .single(),
     supabase
@@ -150,6 +150,11 @@ export default async function CustomerDetailPage({
             {balance?.next_expiry && (
               <p className="text-xs text-amber-700">
                 หมดอายุ {formatThaiDate(balance.next_expiry)}
+              </p>
+            )}
+            {balance?.credit_expired && credit > 0 && (
+              <p className="text-sm font-medium text-amber-700">
+                หมดอายุแล้ว — เติมเพิ่มเพื่อปลดล็อก {formatBaht(credit)} ฿
               </p>
             )}
           </CardContent>

@@ -11,6 +11,8 @@ export type MemberListItem = {
   tier: string | null
   balance: number
   nextExpiry: string | null
+  /** เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) — งานที่ 1 · optional กัน test เดิม/ผู้เรียกเดิมพัง */
+  expired?: boolean
 }
 
 export type MemberSort = "name" | "balance_desc" | "balance_asc" | "expiry_soon"

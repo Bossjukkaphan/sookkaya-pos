@@ -285,10 +285,19 @@ export default function ProfilePage() {
           <>
             <p className="mt-3 text-sm opacity-80">เครดิตคงเหลือ</p>
             <p className="text-4xl font-bold">{formatBaht(member.creditBalance)}฿</p>
-            {member.nextExpiry && (
-              <p className="mt-1 text-xs opacity-80">
-                ใช้ได้ถึง {formatThaiDate(member.nextExpiry)}
+            {/* หมดอายุแล้วห้ามใช้คำว่า "ใช้ได้ถึง" เพราะทำให้อ่านผิดว่ายังใช้ตัดได้ —
+                ต้องบอกยอดที่แช่แข็งเป็นตัวเลขชัดเจน ไม่ใช่แค่บอกว่าหมดอายุเฉยๆ */}
+            {member.creditExpired && member.creditBalance > 0 ? (
+              <p className="mt-1 text-xs font-semibold text-amber-200">
+                หมดอายุแล้ว — เครดิต {formatBaht(member.creditBalance)}฿ ยังอยู่ครบ
+                เติมแพ็กเกจใหม่แล้วใช้ได้ทันที
               </p>
+            ) : (
+              member.nextExpiry && (
+                <p className="mt-1 text-xs opacity-80">
+                  ใช้ได้ถึง {formatThaiDate(member.nextExpiry)}
+                </p>
+              )
             )}
           </>
         ) : (

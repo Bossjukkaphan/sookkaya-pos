@@ -148,7 +148,26 @@ export default async function CustomersPage({
     (sum, r) => sum + (r.credit_balance ?? 0),
     0
   )
-  const list = rows ?? []
+
+  // v_customer_issues (view ที่ query ด้านบน) ไม่มีคอลัมน์ credit_expired — งานที่ 1 เติมคอลัมน์นี้
+  // ไว้แค่ที่ member_balances เท่านั้น ต้อง join เพิ่มเองด้วย customer_id ของหน้านี้ (สูงสุด 50 คน/หน้า)
+  const pageCustomerIds = (rows ?? [])
+    .map((r) => r.customer_id)
+    .filter((id): id is string => id !== null)
+  const { data: expiryRows } = pageCustomerIds.length
+    ? await supabase
+        .from("member_balances")
+        .select("customer_id, credit_expired")
+        .in("customer_id", pageCustomerIds)
+    : { data: [] }
+  const expiredOf = new Map(
+    (expiryRows ?? []).map((e) => [e.customer_id, Boolean(e.credit_expired)])
+  )
+
+  const list = (rows ?? []).map((r) => ({
+    ...r,
+    credit_expired: r.customer_id ? (expiredOf.get(r.customer_id) ?? false) : false,
+  }))
   const total = count ?? list.length
   const from = total === 0 ? 0 : (page - 1) * PER_PAGE + 1
   const to = Math.min(page * PER_PAGE, total)

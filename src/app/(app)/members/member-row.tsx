@@ -19,6 +19,7 @@ export function MemberRow({
   balance,
   nextExpiry,
   expiringSoon,
+  expired = false,
 }: {
   customerId: string
   name: string
@@ -28,8 +29,12 @@ export function MemberRow({
   balance: number
   nextExpiry: string | null
   expiringSoon: boolean
+  /** เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) — default false ให้ผู้เรียกเดิมยังคอมไพล์ผ่าน */
+  expired?: boolean
 }) {
-  const low = creditBucket(balance) === "low"
+  const bucket = creditBucket(balance, expired)
+  const low = bucket === "low"
+  const isExpired = bucket === "expired"
   return (
     <Link href={`/customers/${customerId}`}>
       <Card className="transition-colors hover:bg-slate-50">
@@ -50,6 +55,14 @@ export function MemberRow({
                   {tierLabel(tier)}
                 </Badge>
               )}
+              {isExpired && (
+                <Badge
+                  variant="outline"
+                  className="shrink-0 border-amber-300 bg-amber-100 text-amber-700"
+                >
+                  หมดอายุแล้ว
+                </Badge>
+              )}
             </div>
             {nextExpiry && (
               <p
@@ -63,10 +76,10 @@ export function MemberRow({
             )}
           </div>
           <div className="shrink-0 text-right">
-            {/* ใกล้หมดเป็นสีเตือน bucket เดียวกับหน้าภาพรวม */}
+            {/* ใกล้หมด/หมดอายุแล้วเป็นสีเตือน bucket เดียวกับหน้าภาพรวม */}
             <p
               className={`text-base font-bold whitespace-nowrap ${
-                low ? "text-amber-600" : "text-emerald-700"
+                low || isExpired ? "text-amber-600" : "text-emerald-700"
               }`}
             >
               {formatBaht(balance)} ฿

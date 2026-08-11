@@ -22,7 +22,7 @@ export default async function MembersPage() {
   const [{ data: active }, { data: topups }] = await Promise.all([
     supabase
       .from("member_balances")
-      .select("customer_id, name, nickname, phone, credit_balance, next_expiry")
+      .select("customer_id, name, nickname, phone, credit_balance, next_expiry, credit_expired")
       .gt("credit_balance", 0)
       .order("name"),
     supabase
@@ -90,6 +90,7 @@ export default async function MembersPage() {
     tier: m.customer_id ? (tierOf.get(m.customer_id) ?? null) : null,
     balance: m.credit_balance ?? 0,
     nextExpiry: m.next_expiry,
+    expired: m.credit_expired ?? false,
   }))
 
   const topupRows: TopupRow[] = (topups ?? []).map((t) => ({

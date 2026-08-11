@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { createClient } from "@/lib/supabase/client"
 import { formatBaht } from "@/lib/constants"
+import { formatThaiDate } from "@/lib/datetime"
 import { ilikeOr } from "@/lib/search"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -33,6 +34,8 @@ export function CustomerPicker({
 }) {
   const [matches, setMatches] = useState<Match[]>([])
   const [balance, setBalance] = useState<number | null>(null)
+  const [creditExpired, setCreditExpired] = useState(false)
+  const [expiryDate, setExpiryDate] = useState<string | null>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
   // เงื่อนไขค้นหาคำนวณตอน render — ไม่ต้อง setState ล้างผลลัพธ์ใน effect
@@ -80,13 +83,15 @@ export function CustomerPicker({
       const supabase = createClient()
       const { data } = await supabase
         .from("member_balances")
-        .select("credit_balance")
+        .select("credit_balance, next_expiry, credit_expired")
         .eq("customer_id", customerId)
         .single()
 
       if (!cancelled) {
         const b = data?.credit_balance ?? 0
         setBalance(b)
+        setCreditExpired(Boolean(data?.credit_expired))
+        setExpiryDate(data?.next_expiry ?? null)
         onBalanceChange?.(b)
       }
     })()
@@ -108,11 +113,17 @@ export function CustomerPicker({
             {requireMember ? "(จำเป็นสำหรับ Member Credit)" : "(ไม่บังคับ)"}
           </span>
         </Label>
-        {shownBalance !== null && (
-          <Badge variant={shownBalance > 0 ? "default" : "secondary"}>
-            เครดิตคงเหลือ {formatBaht(shownBalance)} ฿
-          </Badge>
-        )}
+        {shownBalance !== null &&
+          (creditExpired && shownBalance > 0 && expiryDate !== null ? (
+            <Badge className="bg-amber-500 text-white hover:bg-amber-500">
+              เครดิต {formatBaht(shownBalance)} ฿ · หมดอายุ {formatThaiDate(expiryDate)} —
+              เติมใหม่ใช้ได้ทันที
+            </Badge>
+          ) : (
+            <Badge variant={shownBalance > 0 ? "default" : "secondary"}>
+              เครดิตคงเหลือ {formatBaht(shownBalance)} ฿
+            </Badge>
+          ))}
       </div>
 
       <div className="relative">
