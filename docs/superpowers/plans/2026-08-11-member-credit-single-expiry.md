@@ -410,18 +410,17 @@ export function checkCreditSpend(input: CreditSpendInput): CreditSpendResult {
 
   // วันหมดอายุวันนี้พอดียังใช้ได้ทั้งวัน จึงเทียบด้วย > ไม่ใช่ >=
   // เทียบสตริง YYYY-MM-DD ตรง ๆ ได้เพราะเรียงตามพจนานุกรมตรงกับเรียงตามเวลา
-  const หมดอายุ = expiry === null || onDate > expiry
+  const expired = expiry === null || onDate > expiry
 
   // ตัดเท่าเดิมหรือน้อยลงบนบิลที่เคยตัดไว้แล้ว ไม่ใช่การใช้เครดิตใหม่ — แก้บิลเก่าได้เสมอ
-  if (หมดอายุ && wanted > previously) {
-    const วันที่ = expiry ?? "ยังไม่เคยเติมแพ็กเกจ"
+  if (expired && wanted > previously) {
     return {
       ok: false,
       reason: "expired",
       message:
         expiry === null
           ? "ลูกค้ายังไม่เคยซื้อแพ็กเกจสมาชิก จึงยังไม่มีเครดิตให้ตัด"
-          : `เครดิตหมดอายุเมื่อ ${วันที่} — ยอด ${balance} ฿ ยังอยู่ครบ เติมแพ็กเกจใหม่แล้วใช้ได้ทันที`,
+          : `เครดิตหมดอายุเมื่อ ${expiry} — ยอด ${balance} ฿ ยังอยู่ครบ เติมแพ็กเกจใหม่แล้วใช้ได้ทันที`,
     }
   }
 
@@ -786,10 +785,10 @@ git commit -m "feat(credit): หน้าจอบอกสถานะเคร
 ใน `src/app/(app)/members/page.tsx` เพิ่ม `credit_expired` เข้า select บรรทัด 25 แล้วแยกผลรวมเป็นสองตัว:
 
 ```typescript
-  const ใช้ได้ = members
+  const usableCredit = members
     .filter((m) => !m.credit_expired)
     .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
-  const แช่แข็ง = members
+  const frozenCredit = members
     .filter((m) => m.credit_expired)
     .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
 ```
