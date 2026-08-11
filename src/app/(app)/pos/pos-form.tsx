@@ -45,9 +45,17 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Time24Field } from "@/components/time24-field"
 import { Card, CardContent } from "@/components/ui/card"
 import { ServiceCombobox } from "@/components/service-combobox"
+import { busyBedIds, timeToMin } from "@/lib/queue"
 
 type Therapist = { id: string; name: string }
-type Service = { id: string; name: string; price: number; commission: number }
+type Service = {
+  id: string
+  name: string
+  price: number
+  commission: number
+  /** ใช้คิดว่าบิลนี้ครองเตียงถึงกี่โมง (server ก็ยึดของเมนูเหมือนกัน) */
+  duration_min: number | null
+}
 type Promotion = { id: string; name: string; discount_pct: number | null }
 type Bed = { id: string; room: string; name: string }
 
@@ -95,12 +103,23 @@ export function PosForm({
   services,
   promotions,
   beds,
+  dayEntries = [],
   initial,
 }: {
   therapists: Therapist[]
   services: Service[]
   promotions: Promotion[]
   beds: Bed[]
+  /** คิวทั้งวันของการ์ดใบนี้ — ใช้บอกว่าเตียงไหนไม่ว่างช่วงเวลาที่กรอก
+   *  (ก่อนหน้านี้ฟอร์มนี้ไม่รู้จักคิวเลย เตียงจึงกดได้ทุกใบและจองซ้อนได้เงียบๆ) */
+  dayEntries?: {
+    id: string
+    bed_id: string | null
+    start_time: string
+    duration_min: number
+    status: string
+    started_at: string | null
+  }[]
   initial?: PosInitial
 }) {
   const [therapistId, setTherapistId] = useState(initial?.therapistId ?? "")
@@ -622,26 +641,42 @@ export function PosForm({
           เตียง <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
         </legend>
         <input type="hidden" name="bed_id" value={bedId} />
-        {[...new Set(beds.map((b) => b.room))].map((room) => (
-          <div key={room}>
-            <p className="text-xs text-slate-500">{room}</p>
-            <div className="mt-1 flex flex-wrap gap-1">
-              {beds
-                .filter((b) => b.room === room)
-                .map((b) => (
-                  <Button
-                    key={b.id}
-                    type="button"
-                    size="sm"
-                    variant={bedId === b.id ? "default" : "outline"}
-                    onClick={() => setBedId(bedId === b.id ? "" : b.id)}
-                  >
-                    {b.name}
-                  </Button>
-                ))}
+        {(() => {
+          // เตียงที่คิวใบอื่นครองอยู่คร่อมเวลาของบิลนี้ — ไม่นับการ์ดของบิลนี้เอง
+          // ระยะเวลายึดจากเมนู เหมือนที่ server จะมิเรอร์ลงการ์ด (queueMirrorFromSale)
+          const busy = busyBedIds(
+            dayEntries.filter((e) => e.id !== initial?.queueEntryId),
+            timeToMin(/^\d{2}:\d{2}$/.test(serviceTime) ? serviceTime : "10:00"),
+            services.find((s) => s.id === serviceId)?.duration_min ?? 60
+          )
+          return [...new Set(beds.map((b) => b.room))].map((room) => (
+            <div key={room}>
+              <p className="text-xs text-slate-500">{room}</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {beds
+                  .filter((b) => b.room === room)
+                  .map((b) => {
+                    const unavailable = busy.has(b.id) && bedId !== b.id
+                    return (
+                      <Button
+                        key={b.id}
+                        type="button"
+                        size="sm"
+                        variant={bedId === b.id ? "default" : "outline"}
+                        className={unavailable ? "opacity-40 line-through" : ""}
+                        // เตียงมีจำกัด — ไม่ว่างคือกดไม่ได้ (server เตือนซ้ำอีกชั้นถ้าหลุดมา)
+                        disabled={unavailable}
+                        onClick={() => setBedId(bedId === b.id ? "" : b.id)}
+                      >
+                        {b.name}
+                        {busy.has(b.id) ? " · ไม่ว่าง" : ""}
+                      </Button>
+                    )
+                  })}
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        })()}
       </fieldset>
 
       {/* ช่องทางชำระเงิน */}

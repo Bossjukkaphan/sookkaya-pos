@@ -142,13 +142,22 @@ export default async function PosPage({
   // คิวที่ระบุมาหาไม่เจอ/จ่ายไปแล้ว → กลับหน้าคิว (ห้ามเปิดฟอร์มเปล่าที่ไม่ผูกคิว)
   if (!queueEntry) redirect("/queue?from=pos")
 
-  const { data: queueCustomer } = queueEntry.customer_id
-    ? await supabase
-        .from("customers")
-        .select("id, name, phone")
-        .eq("id", queueEntry.customer_id)
-        .maybeSingle()
-    : { data: null }
+  // คิวทั้งวันของการ์ดใบนี้ — ให้ฟอร์มรู้ว่าเตียงไหนไม่ว่าง (กรองชุดเดียวกับบอร์ดคิว)
+  // ต้องรอ queueEntry ก่อนเพราะยึด "วันของการ์ด" ไม่ใช่วันนี้ (เก็บเงินคิวของวันอื่นได้)
+  const [{ data: queueCustomer }, { data: dayEntries }] = await Promise.all([
+    queueEntry.customer_id
+      ? supabase
+          .from("customers")
+          .select("id, name, phone")
+          .eq("id", queueEntry.customer_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("queue_entries")
+      .select("id, bed_id, start_time, duration_min, status, started_at")
+      .eq("queue_date", queueEntry.queue_date)
+      .not("status", "in", "(cancelled,rejected)"),
+  ])
 
   return (
     <div className="mx-auto max-w-3xl space-y-4">
@@ -162,6 +171,7 @@ export default async function PosPage({
         services={services ?? []}
         promotions={promotions ?? []}
         beds={beds ?? []}
+        dayEntries={dayEntries ?? []}
         initial={{
           queueEntryId: queueEntry.id,
           therapistId: queueEntry.therapist_id ?? "",

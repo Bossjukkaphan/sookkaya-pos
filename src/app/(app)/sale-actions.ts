@@ -14,7 +14,13 @@ import {
 import { computeSaleAmounts } from "@/lib/sale-math"
 import { parsePaymentLines, primaryMethod } from "@/lib/payments"
 import { pointExpiryDate, pointsForSale } from "@/lib/points"
-import { queueMirrorFromSale } from "@/lib/queue"
+import { queueMirrorFromSale, timeToMin } from "@/lib/queue"
+import {
+  CLASH_COLUMNS,
+  CLASH_STATUS_FILTER,
+  clashLabel,
+  firstClash,
+} from "@/lib/bed-clash"
 
 export type SaleResult =
   | {
@@ -26,6 +32,37 @@ export type SaleResult =
       warning?: string
     }
   | { ok: false; error: string }
+
+/**
+ * เตียงที่พนักงานเลือกตอนกดเก็บเงินชนกับคิวใบอื่นไหม — คืนข้อความเตือน (ไม่พบ = null)
+ *
+ * ทำไมเป็น "เตือน" ไม่ใช่ "ห้าม": เงินต้องเข้าระบบเสมอ ห้ามกันไม่ให้เก็บเงินเพราะช่อง
+ * ที่ไม่เกี่ยวกับเงิน (แนวเดียวกับ approveBooking ที่เตือนแต่ไม่บล็อกการรับจอง)
+ * การกันจริงอยู่ที่หน้าจอ — ปุ่มเตียงที่ไม่ว่างกดไม่ได้ ตรงนี้คือตาข่ายชั้นสุดท้าย
+ *
+ * เจอจริง 9/8/2569: เก้าอี้ 3 ถูกจองซ้อน 55 นาที (เอ็ม เมธี 13:55–15:55 กับ
+ * กอล์ฟฟี่ 15:00–16:30) เพราะเตียงทั้งคู่ถูกกำหนดตอนกดเก็บเงิน ซึ่งไม่เคยมีด่านตรวจเลย
+ */
+async function bedClashWarning(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  bedId: string | null,
+  saleDate: string,
+  startTime: string,
+  durationMin: number,
+  excludeIds: string[]
+): Promise<string | null> {
+  if (!bedId) return null
+  const { data } = await supabase
+    .from("queue_entries")
+    .select(CLASH_COLUMNS)
+    .eq("queue_date", saleDate)
+    .eq("bed_id", bedId)
+    .not("status", "in", CLASH_STATUS_FILTER)
+  const clash = firstClash(data ?? [], timeToMin(startTime), durationMin, excludeIds)
+  return clash
+    ? `บันทึกบิลแล้ว แต่เตียงนี้ชนกับ ${clashLabel(clash)} — เปิดการ์ดย้ายเตียงให้ถูกด้วย`
+    : null
+}
 
 function toNumber(value: FormDataEntryValue | null, fallback = 0): number {
   const n = Number(value)
@@ -396,6 +433,19 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   // กัน pending/rejected ด้วย — คิวที่ยังไม่อนุมัติ/ถูกปฏิเสธจากไลน์ ห้ามถูกผูกบิลจนกว่าจะรับจองก่อน
   // (cancelled ยังปล่อยผ่านเหมือนเดิม — พนักงานเปิดบิลให้คิวที่เคยยกเลิกได้ตั้งใจ ถ้าลูกค้ากลับมา)
   const queueEntryId = linkedQueueId
+
+  // ตรวจ "ก่อน" เขียนการ์ด — บิลที่คีย์ตรงจะสร้างการ์ดของตัวเองในอีกสองบรรทัด
+  // ถ้าตรวจทีหลังจะเจอการ์ดใบนั้นแล้วรายงานว่าชนกับตัวเอง
+  // (เงินบันทึกไปแล้วตั้งแต่ insert ด้านบน — ผลตรวจนี้แค่แนบไปกับคำเตือน ไม่ล้มบิล)
+  const bedWarning = await bedClashWarning(
+    supabase,
+    String(formData.get("bed_id") ?? "") || null,
+    saleDate,
+    saleTime,
+    service.duration_min ?? 60,
+    queueEntryId ? [queueEntryId] : []
+  )
+
   if (queueEntryId) {
     await supabase
       .from("queue_entries")
@@ -452,7 +502,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     ok: true,
     receiptNo: inserted.receipt_no ?? "",
     creditAfter,
-    warning: paymentsWarning,
+    warning: [paymentsWarning, bedWarning].filter(Boolean).join(" · ") || undefined,
   }
 }
 
