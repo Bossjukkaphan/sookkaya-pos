@@ -1487,6 +1487,7 @@ export type Database = {
           cash_paid: number | null
           created_at: string | null
           credit_balance: number | null
+          credit_expired: boolean | null
           credit_granted: number | null
           customer_id: string | null
           customer_type: string | null

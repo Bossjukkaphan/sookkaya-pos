@@ -26,6 +26,10 @@ with expected(check_name, expected_value) as (values
   -- ตรวจข้อนี้แทนการดูยอดติดลบใน member_balances เพราะตั้งแต่เปลี่ยนเป็น FIFO
   -- ยอดคงเหลือจะไม่ติดลบอีกแล้ว การคีย์ผิดใบจึงมองไม่เห็นจากยอดคงเหลืออีกต่อไป
   ('orphan_credit_used', 0),
+  -- ใบเติมเงินที่ไม่มีวันหมดอายุ = ข้อมูลผิด เพราะ createTopup ใส่ค่าเสมอ
+  -- สำคัญขึ้นมากตั้งแต่ 2026-08-11 เพราะวันหมดอายุของทั้งกระปุกคือ MAX ของทุกใบ
+  -- ใบที่ค่าว่างจะถูก MAX ข้ามไปเงียบ ๆ ทำให้ลูกค้าอาจหมดอายุเร็วกว่าที่ควร
+  ('topup_missing_expiry', 0),
   ('commission_2026_06',  140415),
   ('expenses_fixed_06',   104648),
   -- Excel เดิมไม่มีงวด "ค่ามือพนักงานนวด 1-10/6/69" 42,935 บาท — เจ้าของร้านยืนยัน
@@ -252,6 +256,10 @@ actual(check_name, actual_value) as (
                   where mt.customer_id = c.id), 0), 0) as orphan
     from public.customers c
   ) x
+
+  union all
+  select 'topup_missing_expiry', count(*)::bigint
+  from public.member_topups where expiry_date is null
 
   union all
   select 'credit_used_exceeds_net', count(*)
