@@ -89,6 +89,35 @@ describe("checkCreditSpend", () => {
     if (r.ok) return
     expect(r.reason).toBe("expired")
   })
+
+  it("wanted เท่ากับ 0 ไม่ตัดอะไรเลย จึงผ่านเสมอ", () => {
+    expect(checkCreditSpend({ ...ใช้ได้, wanted: 0 })).toEqual({ ok: true })
+  })
+
+  it("wanted ติดลบ (ไม่มีการตัดจริง) ผ่านเสมอเหมือนกับ 0", () => {
+    expect(checkCreditSpend({ ...ใช้ได้, wanted: -100 })).toEqual({ ok: true })
+  })
+
+  it("alreadyUsedOnThisBill มากกว่า balance (ข้อมูลขัดแย้งกันเอง) ไม่ทำให้ authorize ผิด — ตกไปเช็คยอดคงเหลือตามปกติ", () => {
+    const r = checkCreditSpend({
+      expiry: "2026-08-10", onDate: "2026-08-11", balance: 2300,
+      wanted: 3000, alreadyUsedOnThisBill: 5000,
+    })
+    // wanted (3000) <= previously (5000) จึงไม่ถูกกันด้วยเหตุผล expired
+    // แต่ยอดคงเหลือจริงมีแค่ 2300 ไม่พอ 3000 จึงต้องโดนกันด้วย insufficient ตามปกติ
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe("insufficient")
+  })
+
+  it("หมดอายุและยอดไม่พอพร้อมกัน ต้องตอบ expired ไม่ใช่ insufficient เพราะ insufficient จะชวนพนักงานไปเก็บเงินเพิ่มเฉย ๆ ทั้งที่ลูกค้าต้องซื้อแพ็กเกจใหม่เพื่อปลดล็อกเครดิตแช่แข็งก่อน", () => {
+    const r = checkCreditSpend({
+      expiry: "2026-08-10", onDate: "2026-08-11", balance: 100, wanted: 5000,
+    })
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toBe("expired")
+  })
 })
 
 describe("creditBucket กับสถานะหมดอายุ", () => {
