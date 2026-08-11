@@ -52,6 +52,7 @@ export async function GET(request: NextRequest) {
     bookings,
     creditEmpty,
     creditLow,
+    creditExpired,
     topups,
     expenseRows,
   ] = await Promise.all([
@@ -80,11 +81,20 @@ export async function GET(request: NextRequest) {
         .select("*", { count: "exact", head: true })
         .gt("credit_granted", 0)
         .lte("credit_balance", 0),
+      // credit_expired = false กันสมาชิกแช่แข็งไม่ให้ปนเข้ามานับเป็น "ใกล้หมด" — แช่แข็งต้องนับแยก
+      // เป็นกลุ่มของตัวเอง (creditExpired ด้านล่าง) เพราะคำชวนคนละแบบ
       supabase
         .from("member_balances")
         .select("*", { count: "exact", head: true })
         .gt("credit_balance", 0)
-        .lte("credit_balance", CREDIT_LOW_BAHT),
+        .lte("credit_balance", CREDIT_LOW_BAHT)
+        .eq("credit_expired", false),
+      // เครดิตหมดอายุ (แช่แข็ง) — ยอดยังอยู่แต่ใช้ไม่ได้จนกว่าจะซื้อแพ็กเกจใหม่
+      supabase
+        .from("member_balances")
+        .select("*", { count: "exact", head: true })
+        .gt("credit_balance", 0)
+        .eq("credit_expired", true),
       // ห้ามใช้ .neq("tier", EXCLUDED_TIER) ที่นี่ — ใน Postgres tier <> 'x' ให้ผล NULL
       // เมื่อ tier เป็น NULL แถวจะถูกตัดทิ้งไปด้วย ทั้งที่ต้องรอดแล้วโชว์เป็น "ไม่ระบุ"
       // ปล่อยดิบๆ ไปให้สูตรกรอง EXCLUDED_TIER เอง (buildMemberSignups)
@@ -116,6 +126,7 @@ export async function GET(request: NextRequest) {
     bookings,
     creditEmpty,
     creditLow,
+    creditExpired,
     topups,
     expenseRows,
   ]
@@ -193,6 +204,7 @@ export async function GET(request: NextRequest) {
     bookingsTomorrow: bookings.count ?? 0,
     memberCreditEmpty: creditEmpty.count ?? 0,
     memberCreditLow: creditLow.count ?? 0,
+    memberCreditExpired: creditExpired.count ?? 0,
     topups: topupRows,
     topupHistory,
     expenseEntries,

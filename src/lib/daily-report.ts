@@ -76,6 +76,9 @@ export type DailyReportInput = {
   bookingsTomorrow: number
   memberCreditEmpty: number
   memberCreditLow: number
+  /** เครดิตหมดอายุ (แช่แข็ง) — ยอดยังอยู่แต่ใช้ไม่ได้จนกว่าจะซื้อแพ็กเกจใหม่ ต้องแยกจาก memberCreditLow
+   *  เพราะคำชวนคนละแบบ: ใกล้หมด = เชียร์เติมต่อ, แช่แข็ง = ต้องซื้อใหม่ก่อนถึงจะใช้ได้เลย */
+  memberCreditExpired: number
   /** แถว member_topups ของวันนี้ — ส่งดิบๆ มาได้เลย สูตรตัด EXCLUDED_TIER เอง */
   topups: TopupRow[]
   /** ประวัติการเติมทั้งหมดของลูกค้าที่เติมวันนี้ — ส่งดิบๆ มาได้เลย สูตรตัด EXCLUDED_TIER เอง */
@@ -271,6 +274,9 @@ export function buildDailyReport(input: DailyReportInput): DailyReport {
     alerts.push(
       `🟠 Member ${input.memberCreditLow} คน เครดิตใกล้หมด (≤฿${CREDIT_LOW_BAHT.toLocaleString("th-TH")}) → เตือนเติมต่อ`
     )
+  }
+  if (input.memberCreditExpired > 0) {
+    alerts.push(`🥶 Member ${input.memberCreditExpired} คน เครดิตหมดอายุ (แช่แข็ง) → ชวนซื้อแพ็กเกจใหม่ปลดล็อกเครดิตเดิม`)
   }
   if (hasBaseline && avgSessions > 0 && sessions < avgSessions * LOW_SESSION_RATIO) {
     const gap = Math.round((1 - sessions / avgSessions) * 100)

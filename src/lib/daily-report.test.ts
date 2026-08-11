@@ -25,6 +25,7 @@ const base: DailyReportInput = {
   bookingsTomorrow: 0,
   memberCreditEmpty: 0,
   memberCreditLow: 0,
+  memberCreditExpired: 0,
   topups: [],
   topupHistory: [],
   expenseEntries: [],
@@ -197,6 +198,14 @@ describe("buildDailyReport — Action alerts", () => {
 
   it("ไม่มีสมาชิกเข้าเงื่อนไข = ไม่มีเตือนเรื่องเครดิต", () => {
     expect(buildDailyReport(base).alerts).toEqual([])
+  })
+
+  // เครดิตแช่แข็ง (หมดอายุแต่ยอดยังอยู่) ต้องแยกบรรทัดจาก "เครดิตใกล้หมด" — คำชวนคนละแบบ
+  it("เครดิตหมดอายุ (แช่แข็ง) ขึ้นเตือนแยกจากเครดิตใกล้หมด", () => {
+    const r = buildDailyReport({ ...base, memberCreditLow: 18, memberCreditExpired: 5 })
+    expect(r.alerts[0]).toContain("18 คน เครดิตใกล้หมด")
+    expect(r.alerts[1]).toContain("5 คน เครดิตหมดอายุ")
+    expect(r.alerts[1]).toContain("แช่แข็ง")
   })
 
   it("เซสชันต่ำกว่าค่าเฉลี่ย 7 วันเกิน 30% ขึ้นเตือน", () => {

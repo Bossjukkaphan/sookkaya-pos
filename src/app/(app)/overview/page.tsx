@@ -200,12 +200,15 @@ export default async function OverviewPage() {
     // สมาชิกเครดิต "ใกล้หมด" — คัดและเรียงที่ฐานข้อมูลแบบเดียวกับหน้า /members
     // ยอดคงเหลือมาจาก view ล้วนๆ หน้านี้ไม่คิดสูตรเครดิตเอง · กรอง > 0 ตัดคนที่หมดแล้ว
     // (ไม่มีอะไรให้ชวนเติมต่อ) และตัดลูกค้าเดินเข้าร้านที่ไม่เคยเติมเงินออกไปในตัว
+    // credit_expired = false กันสมาชิกที่แช่แข็งไม่ให้หลุดเข้ามาในลิสต์นี้ — คนแช่แข็งต้องใช้
+    // คำชวนคนละแบบ ("ซื้อแพ็กเกจใหม่ปลดล็อก" ไม่ใช่ "เครดิตใกล้หมด รีบเติม")
     must(
       supabase
         .from("member_balances")
         .select("customer_id, name, nickname, credit_balance")
         .gt("credit_balance", 0)
         .lte("credit_balance", CREDIT_LOW_MAX)
+        .eq("credit_expired", false)
         .order("credit_balance")
         .limit(3)
     ),

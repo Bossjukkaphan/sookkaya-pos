@@ -34,10 +34,14 @@ export default async function MembersPage() {
 
   const members = active ?? []
 
-  const totalOutstanding = members.reduce(
-    (sum, m) => sum + (m.credit_balance ?? 0),
-    0
-  )
+  // เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) ใช้จริงไม่ได้ — โชว์รวมกับยอดใช้ได้เป็นก้อนเดียว
+  // จะทำให้เจ้าของร้านเข้าใจผิดว่าเรียกคืนบริการได้เท่านี้ ทั้งที่ส่วนแช่แข็งต้องรอลูกค้าเติมแพ็กเกจใหม่ก่อน
+  const usableCredit = members
+    .filter((m) => !m.credit_expired)
+    .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
+  const frozenCredit = members
+    .filter((m) => m.credit_expired)
+    .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
   const expiringSoonCount = members.filter(
     (m) => !!m.next_expiry && m.next_expiry <= addDays(today, 30)
   ).length
@@ -110,9 +114,9 @@ export default async function MembersPage() {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <StatCard label="สมาชิกมีเครดิต" value={`${members.length} คน`} />
         <StatCard
-          label="เครดิตคงค้างทั้งหมด"
-          value={`${formatBaht(totalOutstanding)} ฿`}
-          hint="ภาระที่ร้านต้องให้บริการในอนาคต ไม่ใช่รายได้"
+          label="เครดิตคงค้าง"
+          value={`ใช้ได้ ${formatBaht(usableCredit)} ฿ · แช่แข็ง ${formatBaht(frozenCredit)} ฿`}
+          hint="ภาระที่ร้านต้องให้บริการในอนาคต ไม่ใช่รายได้ · แช่แข็ง = หมดอายุ รอเติมแพ็กเกจใหม่ปลดล็อก"
           tone="warn"
         />
         <StatCard
