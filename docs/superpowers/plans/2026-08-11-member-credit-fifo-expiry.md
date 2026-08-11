@@ -69,14 +69,54 @@ credit_balance = SUM(credit_added ของก้อนที่ยังไม�
 - Consumes: ตาราง `member_topups` (`customer_id, expiry_date, credit_added, bonus_added, cash_received, id`), ตาราง `sales` (`customer_id, credit_used`), ตาราง `customers`
 - Produces: view `member_balances` คอลัมน์เดิมทุกตัว — `customer_id, name, nickname, phone, credit_balance, credit_granted, bonus_granted, cash_paid, next_expiry, customer_type, created_at`
 
-- [ ] **Step 1: เขียนแบบทดสอบก่อน — บันทึกค่าฐานของวันนี้**
+- [ ] **Step 1: เขียนแบบทดสอบก่อน — เทียบสูตรเก่ากับสูตรใหม่ในคำสั่งเดียว**
 
-รันคำสั่งนี้แล้วจดค่าที่ได้ไว้ (ควรได้ `160070` และ `1091` ถ้าไม่มีการเติมเงิน/ขายด้วยเครดิตเพิ่มระหว่างนั้น):
+ฐานข้อมูลนี้มีพนักงานบันทึกขายอยู่ตลอดเวลา ห้ามใช้วิธี "จดตัวเลขไว้แล้วเทียบทีหลัง"
+เพราะถ้ามีคนเติมเงินหรือตัดเครดิตคั่นระหว่างนั้น ตัวเลขจะขยับด้วยเหตุผลที่ถูกต้อง
+แล้วเราจะแยกไม่ออกว่าเป็นเพราะ migration หรือเพราะการขายจริง
+
+คำสั่งนี้คำนวณทั้งสองสูตรจากข้อมูลชุดเดียวกัน ณ เสี้ยววินาทีเดียวกัน จึงไม่แพ้การเขียนสด:
 
 ```sql
-select round(sum(credit_balance)) as total_balance, count(*) as row_count
-from public.member_balances;
+with shop_today as (select (now() at time zone 'Asia/Bangkok')::date d),
+used as (
+  select customer_id, sum(credit_used) u from public.sales
+  where credit_used > 0 and customer_id is not null group by 1
+),
+old_formula as (
+  select c.id,
+    coalesce((select sum(mt.credit_added) from public.member_topups mt, shop_today t
+              where mt.customer_id = c.id and mt.expiry_date >= t.d), 0)
+    - coalesce((select sum(sa.credit_used) from public.sales sa
+                where sa.customer_id = c.id), 0) as bal
+  from public.customers c
+),
+alloc as (
+  select mt.customer_id, mt.expiry_date, mt.credit_added,
+    least(mt.credit_added, greatest(coalesce(u.u,0) - coalesce(sum(mt.credit_added) over (
+      partition by mt.customer_id order by mt.expiry_date, mt.id
+      rows between unbounded preceding and 1 preceding),0),0)) absorbed
+  from public.member_topups mt left join used u on u.customer_id = mt.customer_id
+),
+new_formula as (
+  select c.id,
+    coalesce((select sum(a.credit_added - a.absorbed) from alloc a, shop_today t
+              where a.customer_id = c.id and a.expiry_date >= t.d), 0) as bal
+  from public.customers c
+)
+select
+  count(*) filter (where round(o.bal,2) <> round(n.bal,2)) as customers_that_differ,
+  round(sum(o.bal)) as old_total,
+  round(sum(n.bal)) as new_total
+from old_formula o join new_formula n on n.id = o.id;
 ```
+
+คาดหวัง: `customers_that_differ = 0` และ `old_total = new_total`
+(ค่ารวมราว 160,070 ณ 11 ส.ค. แต่ตัวเลขนี้ขยับได้ตามการขายจริง — **ข้อที่ต้องเป็นจริงเสมอคือ
+สองคอลัมน์ต้องเท่ากันและจำนวนคนที่ต่างต้องเป็นศูนย์**)
+
+ถ้า `customers_that_differ > 0` ตั้งแต่ก่อนแก้ แปลว่ามีก้อนเติมเงินหมดอายุไปแล้ว
+ให้หยุดและรายงาน เพราะแปลว่าเลยเส้น 12 ต.ค. มาแล้วและมีลูกค้าโดนผลกระทบจริง
 
 - [ ] **Step 2: เขียน migration**
 
@@ -163,15 +203,51 @@ npx supabase db push
 
 หรือถ้าใช้ MCP: `apply_migration` ด้วยชื่อ `member_balances_fifo_expiry` และเนื้อ SQL ข้างบน
 
-- [ ] **Step 4: ตรวจว่าวันนี้ตัวเลขไม่ขยับแม้บาทเดียว**
+- [ ] **Step 4: ตรวจว่า view จริงให้ผลตรงกับสูตรเก่า และจำนวนแถวยังครบทุกคน**
 
 ```sql
-select round(sum(credit_balance)) as total_balance, count(*) as row_count
-from public.member_balances;
+with shop_today as (select (now() at time zone 'Asia/Bangkok')::date d),
+old_formula as (
+  select c.id,
+    coalesce((select sum(mt.credit_added) from public.member_topups mt, shop_today t
+              where mt.customer_id = c.id and mt.expiry_date >= t.d), 0)
+    - coalesce((select sum(sa.credit_used) from public.sales sa
+                where sa.customer_id = c.id), 0) as bal
+  from public.customers c
+)
+select
+  (select count(*) from public.member_balances) as view_rows,
+  (select count(*) from public.customers) as customer_rows,
+  count(*) filter (where round(o.bal,2) <> round(b.credit_balance,2)) as customers_that_differ,
+  round(sum(b.credit_balance)) as view_total
+from old_formula o join public.member_balances b on b.customer_id = o.id;
 ```
 
-คาดหวัง: ได้ค่าเท่ากับที่จดไว้ใน Step 1 เป๊ะ (`160070` / `1091`)
-ถ้าไม่เท่า = สูตรผิด ให้ย้อน view กลับเป็นของเดิมทันทีแล้วหาสาเหตุก่อนไปต่อ
+คาดหวัง: `view_rows = customer_rows` (view ต้องคืนทุกคน) และ `customers_that_differ = 0`
+ถ้าไม่เป็นตามนี้ = สูตรใหม่ผิด ให้ย้อน view กลับเป็นของเดิมทันทีแล้วหาสาเหตุก่อนไปต่อ
+
+SQL ย้อนกลับฉุกเฉิน (คืนสูตรเดิมเป๊ะ):
+
+```sql
+create or replace view public.member_balances
+with (security_invoker = true) as
+ SELECT c.id AS customer_id, c.name, c.nickname, c.phone,
+    COALESCE(t.credit_added, 0::numeric) - COALESCE(s.credit_used, 0::numeric) AS credit_balance,
+    COALESCE(t.credit_added, 0::numeric) AS credit_granted,
+    COALESCE(t.bonus_added, 0::numeric) AS bonus_granted,
+    COALESCE(t.cash_received, 0::numeric) AS cash_paid,
+    t.next_expiry, c.customer_type, c.created_at
+   FROM customers c
+     LEFT JOIN LATERAL ( SELECT sum(mt.credit_added) FILTER (WHERE mt.expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok'::text)::date) AS credit_added,
+            sum(mt.bonus_added) FILTER (WHERE mt.expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok'::text)::date) AS bonus_added,
+            sum(mt.cash_received) FILTER (WHERE mt.expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok'::text)::date) AS cash_received,
+            min(mt.expiry_date) FILTER (WHERE mt.expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok'::text)::date) AS next_expiry
+           FROM member_topups mt
+          WHERE mt.customer_id = c.id) t ON true
+     LEFT JOIN LATERAL ( SELECT sum(sa.credit_used) AS credit_used
+           FROM sales sa
+          WHERE sa.customer_id = c.id) s ON true;
+```
 
 - [ ] **Step 5: ตรวจว่าปัญหาวันที่ 13 ต.ค. หายไปแล้วจริง**
 
