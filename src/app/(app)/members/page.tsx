@@ -8,6 +8,7 @@ import { TopupHistoryList, type TopupRow } from "./topup-history-list"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { MemberListItem } from "@/lib/member-list"
+import { isCreditFrozen } from "@/lib/member-credit"
 
 export const metadata = { title: "สมาชิก · สุขกายา POS" }
 
@@ -36,11 +37,14 @@ export default async function MembersPage() {
 
   // เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) ใช้จริงไม่ได้ — โชว์รวมกับยอดใช้ได้เป็นก้อนเดียว
   // จะทำให้เจ้าของร้านเข้าใจผิดว่าเรียกคืนบริการได้เท่านี้ ทั้งที่ส่วนแช่แข็งต้องรอลูกค้าเติมแพ็กเกจใหม่ก่อน
+  // ใช้ isCreditFrozen แทนเช็ค credit_expired ตรงๆ — จุดตัดสินใจเดียวกับทุกหน้าจอ (POS, หน้าลูกค้า,
+  // ตารางลูกค้า) กันไว้ไม่ให้แถวยอด 0 (ถ้า query ต้นทางเปลี่ยนจนหลุด .gt("credit_balance", 0) ในอนาคต)
+  // ถูกนับผิดเป็น "แช่แข็ง" ทั้งที่ไม่มีอะไรให้ปลดล็อก
   const usableCredit = members
-    .filter((m) => !m.credit_expired)
+    .filter((m) => !isCreditFrozen(m.credit_balance ?? 0, m.credit_expired ?? false))
     .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
   const frozenCredit = members
-    .filter((m) => m.credit_expired)
+    .filter((m) => isCreditFrozen(m.credit_balance ?? 0, m.credit_expired ?? false))
     .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
   const expiringSoonCount = members.filter(
     (m) => !!m.next_expiry && m.next_expiry <= addDays(today, 30)
