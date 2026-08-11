@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest"
-import { CREDIT_LOW_MAX, checkCreditSpend, creditBucket, isCreditFrozen } from "./member-credit"
+import {
+  CREDIT_LOW_MAX,
+  checkCreditSpend,
+  creditBucket,
+  isCreditExpiredOn,
+  isCreditFrozen,
+} from "./member-credit"
 
 describe("creditBucket", () => {
   it("แบ่งช่องตามขอบเขตของแดชบอร์ดเดิม", () => {
@@ -156,12 +162,53 @@ describe("isCreditFrozen", () => {
     expect(isCreditFrozen(0, false)).toBe(false)
   })
 
-  it("ต้องจับคู่กับ balance > 0 เสมอ — ถ้าเช็คแค่ expired เฉยๆ (ไม่สนยอด) เคสยอด 0 จะพัง", () => {
-    // เท่ากับ regression guard ของบั๊กที่บอกลูกค้าทั่วไป (ไม่เคยมีเครดิต) ว่า "เครดิตหมดอายุ"
-    const balance = 0
-    const expired = true
-    const wrongImplementation = expired // ลืมจับคู่กับ balance > 0
-    expect(isCreditFrozen(balance, expired)).toBe(false)
-    expect(wrongImplementation).not.toBe(isCreditFrozen(balance, expired))
+  it("ต้องจับคู่กับ balance > 0 เสมอ — ผลลัพธ์ห้ามเท่ากับค่า expired ดิบทุกกรณี", () => {
+    // regression guard ของบั๊กที่บอกลูกค้าทั่วไป (ไม่เคยมีเครดิต) ว่า "เครดิตหมดอายุ"
+    // (เดิมข้อนี้เขียนว่า expect(wrongImplementation).not.toBe(...) โดยที่ wrongImplementation
+    //  เป็นค่าคงที่ true ทำให้เหลือ expect(true).not.toBe(false) — ปักหมุดอะไรไม่ได้เลย)
+    //
+    // ของจริงที่ต้องปักคือ: isCreditFrozen ไม่ใช่ alias ของ expired — ต้องมีอย่างน้อยหนึ่งคู่
+    // ที่ expired = true แต่ผลลัพธ์ต้องเป็น false และห้ามมีคู่ไหนที่ผลลัพธ์ = expired ดิบ ๆ ทั้งชุด
+    const cases: Array<[number, boolean]> = [
+      [0, true],   // ลูกค้าทั่วไปไม่เคยเป็นสมาชิก (view ให้ credit_expired = true เมื่อ next_expiry เป็น null)
+      [2300, true],
+      [0, false],
+      [2300, false],
+      [-1300, true], // คีย์บิลผิดใบจนยอดติดลบ — ไม่มีอะไรให้ปลดล็อก ห้ามชวนเติมแพ็กเกจ
+    ]
+    const actual = cases.map(([b, e]) => isCreditFrozen(b, e))
+    const rawExpiredFlags = cases.map(([, e]) => e)
+    expect(actual).toEqual([false, true, false, false, false])
+    expect(actual).not.toEqual(rawExpiredFlags)
+  })
+})
+
+describe("isCreditExpiredOn", () => {
+  // จุดที่ทุกจอ (POS จากการ์ดคิว, ฟอร์มกลุ่ม, กล่องแก้บิล, ฟอร์มคิว) ใช้แทนคอลัมน์ credit_expired
+  // ของ view ซึ่งคิดเทียบ "วันนี้" เสมอ — ต้องให้คำตอบเดียวกับด่าน checkCreditSpend ฝั่ง server เป๊ะ
+
+  it("บิลย้อนหลังที่ให้บริการก่อนวันหมดอายุ = ยังไม่หมดอายุ (แม้วันนี้จะเลยมาแล้ว)", () => {
+    expect(isCreditExpiredOn("2026-10-15", "2026-10-13")).toBe(false)
+  })
+
+  it("วันหมดอายุวันนั้นพอดี ยังใช้ได้ทั้งวัน", () => {
+    expect(isCreditExpiredOn("2026-10-15", "2026-10-15")).toBe(false)
+  })
+
+  it("บิลลงวันหลังวันหมดอายุ = หมดอายุ", () => {
+    expect(isCreditExpiredOn("2026-10-15", "2026-10-16")).toBe(true)
+  })
+
+  it("ไม่เคยเติมเงิน (ไม่มีวันหมดอายุ) = ใช้ไม่ได้", () => {
+    expect(isCreditExpiredOn(null, "2026-08-11")).toBe(true)
+  })
+
+  it("ต้องตอบตรงกับ checkCreditSpend ทุกคู่วัน — จอกับ server ห้ามตัดสินคนละอย่าง", () => {
+    const expiry = "2026-10-15"
+    for (const onDate of ["2026-10-13", "2026-10-15", "2026-10-16", "2026-12-31"]) {
+      const gate = checkCreditSpend({ expiry, onDate, balance: 12000, wanted: 650 })
+      const screen = isCreditExpiredOn(expiry, onDate)
+      expect(screen).toBe(!gate.ok && gate.reason === "expired")
+    }
   })
 })

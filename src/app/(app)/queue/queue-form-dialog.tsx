@@ -713,6 +713,8 @@ export function QueueFormDialog({
               setCustomerId("")
             }}
             onPhoneChange={setCustomerPhone}
+            // การ์ดใบนี้จะกลายเป็นบิลของวันบอร์ด — ป้ายเครดิตต้องบอกสถานะ ณ วันนั้น ไม่ใช่วันนี้
+            billDate={boardDate}
             requireMember={false}
           />
 

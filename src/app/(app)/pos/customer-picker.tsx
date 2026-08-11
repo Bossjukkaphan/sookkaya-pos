@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
-import { isCreditFrozen } from "@/lib/member-credit"
+import { isCreditExpiredOn, isCreditFrozen } from "@/lib/member-credit"
 import { ilikeOr } from "@/lib/search"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -22,6 +22,7 @@ export function CustomerPicker({
   onPhoneChange,
   onBalanceChange,
   onCreditExpiredChange,
+  billDate,
   requireMember,
 }: {
   customerId: string
@@ -33,8 +34,12 @@ export function CustomerPicker({
   /** เครดิตคงเหลือของลูกค้าที่เลือก — ใช้คำนวณช่องใช้เครดิตแบ่งชำระที่ pos-form.tsx (0 = ไม่มี/ล้างลูกค้า) */
   onBalanceChange?: (b: number) => void
   /** เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) ของลูกค้าที่เลือก — pos-form.tsx (ไม่ใช่บิลชุด)
-   *  ใช้ตัวนี้กันปุ่ม "ใช้เครดิต" แทนที่จะยิง query ซ้ำเอง เพราะ picker ดึงมาแล้วในนี้ */
+   *  ใช้ตัวนี้กันปุ่ม "ใช้เครดิต" แทนที่จะยิง query ซ้ำเอง เพราะ picker ดึงมาแล้วในนี้
+   *  คิดเทียบ billDate เสมอ (ดูคอมเมนต์ของ prop นั้น) ไม่ใช่คอลัมน์ credit_expired ที่เทียบวันนี้ */
   onCreditExpiredChange?: (expired: boolean) => void
+  /** วันที่ที่บิลใบนี้จะถูกบันทึก (YYYY-MM-DD) — การ์ดคิวใช้ queue_date ของการ์ด · ขายสดใช้วันนี้
+   *  ต้องเป็นวันเดียวกับ saleDate ที่ createSale คำนวณ ไม่งั้นจอกับ server ตัดสินคนละอย่าง */
+  billDate: string
   requireMember: boolean
 }) {
   const [matches, setMatches] = useState<Match[]>([])
@@ -87,18 +92,21 @@ export function CustomerPicker({
     let cancelled = false
     ;(async () => {
       const supabase = createClient()
+      // ไม่ดึงคอลัมน์ credit_expired มาใช้ — view คิดเทียบ "วันนี้" แต่ด่านฝั่ง server เทียบวันที่ของบิล
+      // ตัดสินเองจาก next_expiry + billDate ด้วย isCreditExpiredOn (ห่อ checkCreditSpend ตัวเดียวกับ server)
       const { data } = await supabase
         .from("member_balances")
-        .select("credit_balance, next_expiry, credit_expired")
+        .select("credit_balance, next_expiry")
         .eq("customer_id", customerId)
         .single()
 
       if (!cancelled) {
         const b = data?.credit_balance ?? 0
-        const expired = Boolean(data?.credit_expired)
+        const expiry = data?.next_expiry ?? null
+        const expired = isCreditExpiredOn(expiry, billDate)
         setBalance(b)
         setCreditExpired(expired)
-        setExpiryDate(data?.next_expiry ?? null)
+        setExpiryDate(expiry)
         onBalanceChange?.(b)
         onCreditExpiredChange?.(expired)
       }
@@ -107,7 +115,7 @@ export function CustomerPicker({
     return () => {
       cancelled = true
     }
-  }, [customerId, onBalanceChange, onCreditExpiredChange])
+  }, [customerId, billDate, onBalanceChange, onCreditExpiredChange])
 
   return (
     <div className="space-y-2" ref={boxRef}>

@@ -150,6 +150,25 @@ function startTimeError(startTime: string): string | null {
   return null
 }
 
+/**
+ * วันของการ์ดคิวคือ "วันที่ของบิล" ที่ createSale จะใช้ (saleDate อ่าน queue_date ของการ์ด)
+ * และวันนั้นคือตัวที่ด่านเครดิต checkCreditSpend เอาไปเทียบวันหมดอายุ — /queue?date= รับวันอะไรก็ได้
+ * แล้วส่งต่อมาที่นี่ตรง ๆ ถ้าไม่มีขอบ การ์ดที่ลงวันย้อนหลังไกล ๆ จะปลดล็อกเครดิตแช่แข็งได้ทั้งก้อน
+ *
+ * ใช้ขอบเดียวกับ updateSale/deleteSale/deleteTopup: ย้อนหลังได้แค่ในเดือนปัจจุบัน
+ * เดือนก่อนปิดงบไปแล้ว ห้ามมีบิลใบใหม่งอกขึ้นมาทีหลัง
+ *
+ * ล่วงหน้าไม่กัน (ต่างจาก updateSale ที่บังคับเดือนปัจจุบันทั้งสองทาง) — จองล่วงหน้าข้ามเดือนเป็น
+ * งานจริงของร้าน (ในฐานข้อมูลมีการ์ดที่จองล่วงหน้าถึง 4 วัน และมี 1 ใบข้ามเดือนแล้ว) และวันที่
+ * ในอนาคตยิ่ง "หมดอายุมากขึ้น" ไม่ใช่ทางปลดล็อกเครดิต จึงไม่อยู่ในภัยที่ขอบนี้กัน
+ */
+function queueDateError(queueDate: string): string | null {
+  if (queueDate.slice(0, 7) < todayInShopTz().slice(0, 7)) {
+    return `วันคิว ${queueDate} อยู่ในเดือนที่ปิดงบไปแล้ว — เพิ่มคิวย้อนหลังได้เฉพาะเดือนปัจจุบัน`
+  }
+  return null
+}
+
 export async function createQueueEntry(form: FormData): Promise<Result> {
   const supabase = await createClient()
   const serviceId = String(form.get("service_id") ?? "")
@@ -183,6 +202,10 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   {
     const timeErr = startTimeError(startTime)
     if (timeErr) return { ok: false, error: timeErr }
+  }
+  {
+    const dateErr = queueDateError(queueDate)
+    if (dateErr) return { ok: false, error: dateErr }
   }
   if (durationMin < 15 || durationMin > 240)
     return { ok: false, error: "ระยะเวลาไม่ถูกต้อง" }
@@ -314,6 +337,10 @@ export async function createQueueGroup(
   {
     const timeErr = startTimeError(startTime)
     if (timeErr) return { ok: false, error: timeErr }
+  }
+  {
+    const dateErr = queueDateError(queueDate)
+    if (dateErr) return { ok: false, error: dateErr }
   }
   if (!isCustomerSource(source))
     return { ok: false, error: "ที่มาลูกค้าไม่ถูกต้อง" }

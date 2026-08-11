@@ -68,7 +68,6 @@ export default async function TodayPage({
     { data: therapistDaily },
     allServices,
     { data: promotions },
-    { data: memberBalances },
     { data: topups },
     profile,
   ] = await Promise.all([
@@ -108,11 +107,6 @@ export default async function TodayPage({
       .eq("is_active", true)
       .neq("kind", "internal")
       .order("name"),
-    editable
-      ? supabase
-          .from("member_balances")
-          .select("customer_id, credit_balance, credit_granted, cash_paid")
-      : Promise.resolve({ data: null }),
     supabase
       .from("member_topups")
       .select("id, topup_date, cash_received, credit_added, tier, customer_id")
@@ -151,6 +145,24 @@ export default async function TodayPage({
       ])
     : [{ data: [] }, { data: [] }]
 
+  // ยอดเครดิตของลูกค้าที่มีบิลอยู่ในหน้านี้เท่านั้น — ต้องรู้ rows ก่อน จึงดึงรอบสองเหมือน billPayments
+  //
+  // ห้ามดึงทั้ง view: member_balances มีแถวละ "ลูกค้า" (1,094 แถว) เกินเพดาน 1,000 แถวที่
+  // supabase-js ตัดทิ้งเงียบๆ ไปแล้ว — ลูกค้าที่หลุดขอบจะได้ balance เป็น null ในกล่องแก้ไข
+  // ทั้งที่มีเครดิตจริง (กับดักเดียวกับที่ members/page.tsx เจอมาก่อน ดูคอมเมนต์ที่นั่น)
+  //
+  // next_expiry ไม่ใช่ credit_expired: คอลัมน์ credit_expired เทียบกับ "วันนี้" แต่ updateSale
+  // เทียบกับ sale_date ของบิล กล่องแก้ไขจึงต้องคิดจากวันของบิลใบนั้นเอง
+  const editCustomerIds = editable
+    ? [...new Set(rows.map((s) => s.customer_id).filter((id): id is string => !!id))]
+    : []
+  const { data: memberBalances } = editCustomerIds.length
+    ? await supabase
+        .from("member_balances")
+        .select("customer_id, credit_balance, credit_granted, cash_paid, next_expiry")
+        .in("customer_id", editCustomerIds)
+    : { data: null }
+
   const paymentsByBillKey = new Map<string, BillPaymentLine[]>()
   for (const p of billPayments ?? []) {
     const key = String(p.bill_key)
@@ -188,6 +200,7 @@ export default async function TodayPage({
         credit_balance: Number(b.credit_balance ?? 0),
         credit_granted: Number(b.credit_granted ?? 0),
         cash_paid: Number(b.cash_paid ?? 0),
+        next_expiry: b.next_expiry ?? null,
       },
     ])
   )
@@ -711,6 +724,7 @@ export default async function TodayPage({
 type SaleRecord = {
   id: string
   bill_id: string | null
+  sale_date: string
   sale_time: string | null
   receipt_no: string | null
   service_id: string | null
@@ -770,6 +784,7 @@ function SaleRow({
     id: s.id,
     bill_id: s.bill_id,
     receipt_no: s.receipt_no,
+    sale_date: s.sale_date,
     sale_time: s.sale_time,
     service_id: s.service_id,
     service_name: s.service_name,

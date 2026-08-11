@@ -8,7 +8,8 @@ import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { createClient } from "@/lib/supabase/client"
 import { allocateCredit } from "@/lib/bill"
-import { isCreditFrozen } from "@/lib/member-credit"
+import { isCreditExpiredOn, isCreditFrozen } from "@/lib/member-credit"
+import { todayInShopTz } from "@/lib/datetime"
 import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
   MEMBER_CREDIT_METHOD,
@@ -54,6 +55,9 @@ export type GroupPerson = {
   customerName: string
   customerPhone: string
   serviceTime: string
+  /** วันของการ์ดคิว (queue_date) = วันที่ของบิลคนนี้ ไม่ใช่วันที่กดบันทึก — ว่าง = ไม่ผ่านคิว (ใช้วันนี้)
+   *  createSale อ่าน queue_date ของการ์ดเดียวกันไปเทียบวันหมดอายุเครดิต จอจึงต้องใช้วันเดียวกัน */
+  queueDate: string
   bedId: string
   source: string
   bookingChannel: string
@@ -83,6 +87,7 @@ function blankPerson(groupId: string): GroupPerson {
     customerName: "",
     customerPhone: "",
     serviceTime: "",
+    queueDate: "",
     bedId: "",
     source: "walk_in",
     bookingChannel: "",
@@ -157,7 +162,17 @@ export function GroupPosForm({
       ? people[0].customerId
       : ""
 
+  // วันที่ของบิล = วันของการ์ดคิว ไม่ใช่วันที่กดบันทึก — createSale ตัดสินรายแถวด้วย queue_date ของ
+  // การ์ดแถวนั้น จึงเอาวันที่ "ไกลสุด" ในกลุ่มมาเป็นตัวตัดสินฝั่งจอ: ถ้าแถวไหนหลุดวันหมดอายุ server
+  // จะปฏิเสธแถวนั้น การเปิดปุ่มให้กดแล้วไปตกกลางทางแย่กว่าการปิดไว้ตั้งแต่แรก
+  // ไม่ผ่านคิว (standalone) ไม่มี queueDate → วันนี้คือวันที่ของบิลอยู่แล้ว พฤติกรรมเดิมไม่เปลี่ยน
+  const billDate = useMemo(() => {
+    const dates = people.map((p) => p.queueDate).filter(Boolean)
+    return dates.length > 0 ? dates.reduce((a, b) => (a > b ? a : b)) : todayInShopTz()
+  }, [people])
+
   // ยอดเครดิตของลูกค้าบิลชุด — ดึงแบบเดียวกับ CustomerPicker (ฟอร์มนี้โหมดคิวไม่มี picker ให้พึ่ง)
+  // ไม่ใช้คอลัมน์ credit_expired (view เทียบ "วันนี้") — ตัดสินจาก next_expiry เทียบ billDate ให้ตรงกับ server
   useEffect(() => {
     if (!billCustomerId) return
     let cancelled = false
@@ -165,18 +180,18 @@ export function GroupPosForm({
       const supabase = createClient()
       const { data } = await supabase
         .from("member_balances")
-        .select("credit_balance, credit_expired")
+        .select("credit_balance, next_expiry")
         .eq("customer_id", billCustomerId)
         .single()
       if (!cancelled) {
         setCreditBalance(Number(data?.credit_balance ?? 0))
-        setCreditExpired(Boolean(data?.credit_expired))
+        setCreditExpired(isCreditExpiredOn(data?.next_expiry ?? null, billDate))
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [billCustomerId])
+  }, [billCustomerId, billDate])
 
   // ตัวกันจริงอยู่ฝั่ง server (ทุกรายการวิ่งผ่าน createSale) ตรงนี้กันไม่ให้พนักงานเสียเวลากรอก
   const canUseCredit = Boolean(billCustomerId) && creditBalance > 0 && !creditExpired
@@ -406,6 +421,7 @@ export function GroupPosForm({
                         setPerson(i, { customerName: name, customerId: "" })
                       }
                       onPhoneChange={(phone) => setPerson(i, { customerPhone: phone })}
+                      billDate={billDate}
                       requireMember={false}
                     />
                   )}

@@ -109,6 +109,8 @@ export default async function PosPage({
         serviceTime: e.started_at
           ? toShopTime(e.started_at)
           : (e.start_time?.slice(0, 5) ?? ""),
+        // วันที่ของบิล = วันของการ์ด (createSale ใช้ค่านี้เป็น saleDate และเทียบวันหมดอายุเครดิต)
+        queueDate: e.queue_date ?? "",
         bedId: e.bed_id ?? "",
         source: e.source,
         bookingChannel: e.booking_channel ?? "",
@@ -189,6 +191,8 @@ export default async function PosPage({
           serviceTime: queueEntry.started_at
             ? toShopTime(queueEntry.started_at)
             : (queueEntry.start_time?.slice(0, 5) ?? ""),
+          // วันที่ของบิล = วันของการ์ด (createSale ใช้ค่านี้เป็น saleDate และเทียบวันหมดอายุเครดิต)
+          queueDate: queueEntry.queue_date ?? "",
         }}
       />
     </div>

@@ -10,6 +10,8 @@ import { deleteBillPayment } from "../payment-actions"
 import { CollectDueDialog } from "../collect-due-dialog"
 import { CustomerPicker } from "../pos/customer-picker"
 import { computeSaleAmounts } from "@/lib/sale-math"
+import { isCreditExpiredOn, isCreditFrozen } from "@/lib/member-credit"
+import { cn } from "@/lib/utils"
 import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
@@ -42,6 +44,8 @@ export type MemberBalance = {
   credit_balance: number
   credit_granted: number
   cash_paid: number
+  /** วันหมดอายุของทั้งกระปุก — null = ไม่เคยเติมเงิน · ใช้เทียบกับ sale_date ของบิล ไม่ใช่วันนี้ */
+  next_expiry: string | null
 }
 
 /** บรรทัดชำระของบิล (bill_payments) — บิลเก่า/Gowabi/KOL ไม่ track จึงไม่มีบรรทัดให้แสดง */
@@ -60,6 +64,8 @@ export type EditableSale = {
   /** บิลชุด (หลายรายการจ่ายรวม) — ว่าง = บิลเดี่ยว กุญแจบรรทัดชำระคือ bill_id ?? id เสมอ */
   bill_id: string | null
   receipt_no: string | null
+  /** วันที่ของบิล — updateSale เทียบวันหมดอายุเครดิตกับค่านี้ ไม่ใช่วันนี้ */
+  sale_date: string
   sale_time: string | null
   service_id: string | null
   service_name: string | null
@@ -276,6 +282,16 @@ function EditSaleForm({
       ? balance.cash_paid / balance.credit_granted
       : 1
 
+  // เครดิตแช่แข็ง ณ วันของบิลใบนี้ (ไม่ใช่วันนี้) — ตัดสินด้วยตัวเดียวกับด่านฝั่ง server ใน updateSale
+  // ถ้าไม่บอกตรงนี้ กล่องแก้ไขจะโชว์ "แก้เป็นได้สูงสุด X ฿" เขียวสนิทแล้วปล่อยให้พนักงานพิมพ์เลข
+  // ไปโดนปฏิเสธตอนกดบันทึกโดยไม่มีอะไรเตือนมาก่อนเลย (จอเดียวในระบบที่ยังไม่บอกสถานะแช่แข็ง)
+  const creditFrozen =
+    !!balance && isCreditFrozen(balance.credit_balance, isCreditExpiredOn(balance.next_expiry, sale.sale_date))
+  const frozenNotice = balance
+    ? `เครดิตหมดอายุแล้ว (${balance.next_expiry ?? "ไม่เคยเติมเงิน"}) — ยอด ${formatBaht(balance.credit_balance)} ฿ ยังอยู่ครบแต่ใช้ไม่ได้ ` +
+      `แก้ให้ตัดเพิ่มจาก ${formatBaht(sale.credit_used)} ฿ ไม่ได้จนกว่าลูกค้าจะเติมแพ็กเกจใหม่ (ตัดเท่าเดิมหรือน้อยลงยังทำได้)`
+    : ""
+
   // พรีวิวใช้ฟังก์ชันเดียวกับที่ server ใช้ตอนบันทึก ตัวเลขจึงไม่มีทางขัดกัน
   const preview = useMemo(
     () =>
@@ -386,6 +402,8 @@ function EditSaleForm({
           setCustomerId("")
         }}
         onPhoneChange={setCustomerPhone}
+        // updateSale เทียบวันหมดอายุกับ sale_date เดิมของบิล ป้ายเครดิตจึงต้องใช้วันเดียวกัน
+        billDate={sale.sale_date}
         requireMember={isMemberCredit}
       />
 
@@ -446,6 +464,11 @@ function EditSaleForm({
             <p className="text-xs text-slate-500">
               เครดิตคงเหลือ {formatBaht(balance.credit_balance + sale.credit_used)} ฿
               (รวมที่รายการนี้ตัดไปแล้ว)
+            </p>
+          )}
+          {customerId === sale.customer_id && creditFrozen && (
+            <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              ❄️ {frozenNotice}
             </p>
           )}
           {/* เปลี่ยนลูกค้าแล้วแต่บิลนี้เคยตัดเครดิตของคนเก่าไว้ — เตือนแบบเดียวกับสาขา Member Credit
@@ -589,14 +612,27 @@ function EditSaleForm({
           เพดานจะสูงเกินจริง เพราะ updateSale คืนเครดิตให้เฉพาะตอนที่ยังเป็นคนเดิม */}
       {isMemberCredit &&
         (customerId === sale.customer_id && balance ? (
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-xs">
+          <div
+            className={cn(
+              "rounded-md border p-3 text-xs",
+              creditFrozen
+                ? "border-amber-200 bg-amber-50 text-amber-900"
+                : "border-emerald-200 bg-emerald-50"
+            )}
+          >
             <p>
               เครดิตคงเหลือตอนนี้ <strong>{formatBaht(balance.credit_balance)} ฿</strong> ·
               รายการนี้ตัดไป <strong>{formatBaht(sale.credit_used)} ฿</strong>
             </p>
-            <p className="font-medium text-emerald-900">
-              แก้เป็นได้สูงสุด {formatBaht(balance.credit_balance + sale.credit_used)} ฿
-            </p>
+            {/* เครดิตแช่แข็ง: เพดานจริงคือ "เท่าที่บิลนี้เคยตัด" ไม่ใช่ยอดคงเหลือ + ที่เคยตัด
+                โชว์เลขเขียวสูงกว่านั้นคือชวนพนักงานพิมพ์เลขที่ server จะปฏิเสธ */}
+            {creditFrozen ? (
+              <p className="font-medium">❄️ {frozenNotice}</p>
+            ) : (
+              <p className="font-medium text-emerald-900">
+                แก้เป็นได้สูงสุด {formatBaht(balance.credit_balance + sale.credit_used)} ฿
+              </p>
+            )}
             {ratio < 1 && (
               <p className="mt-1 text-amber-700">
                 สัดส่วนรับรู้รายได้ตอนนี้คือ {Math.round(ratio * 100)}% —

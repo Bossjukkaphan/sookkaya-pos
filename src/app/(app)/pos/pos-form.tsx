@@ -31,7 +31,7 @@ import {
   PAY_SELECTED,
   PAY_SELECTED_DEFAULT,
 } from "@/lib/payment-colors"
-import { nowTimeInShopTz } from "@/lib/datetime"
+import { nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import {
   HAPPY_HOUR_KEY,
   happyHourDiscountBaht,
@@ -93,6 +93,9 @@ export type PosInitial = {
   notes: string
   /** เวลาเริ่มนวดจริงจากคิว (HH:MM) — บิลมักถูกคีย์หลังนวดเสร็จ เวลากดบันทึกไม่ใช่เวลาใช้บริการ */
   serviceTime: string
+  /** วันของการ์ดคิว (queue_date) = วันที่ของบิลใบนี้ ไม่ใช่วันที่กดบันทึก — createSale ใช้ค่านี้
+   *  เป็น saleDate และเอาไปเทียบวันหมดอายุเครดิต ฝั่งจอจึงต้องใช้วันเดียวกันเป๊ะ */
+  queueDate: string
   /** รีเควสหมอที่ติ๊กไว้ตั้งแต่ตอนจองคิว — ติ๊กให้เลย +40 อัตโนมัติ */
   isRequest: boolean
   /** ห้องสปาส่วนตัวจากคิว — ติ๊กให้เลย +100 (ลูกค้าจ่าย) */
@@ -169,6 +172,11 @@ export function PosForm({
   // รีเซ็ตกลับ auto ทุกครั้งที่ฐานคำนวณ (ลูกค้า/เมนู/เครดิต) เปลี่ยน กันเลขค้างซากจากบิลก่อนหน้า
   const [primaryInput, setPrimaryInput] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
+
+  // วันที่ของบิลใบนี้ = วันของการ์ดคิวที่เปิดฟอร์มมา (createSale ก็อ่าน queue_date ของการ์ดเดียวกัน)
+  // ขายสดที่ไม่ผ่านคิวจะไม่มี initial → วันนี้คือวันที่ของบิลอยู่แล้ว พฤติกรรมเดิมไม่เปลี่ยน
+  // ใช้ตัดสินว่าเครดิตของลูกค้าหมดอายุ "ณ วันของบิล" หรือยัง ให้ตรงกับด่านฝั่ง server
+  const billDate = initial?.queueDate || todayInShopTz()
 
   const service = useMemo(
     () => services.find((s) => s.id === serviceId),
@@ -572,6 +580,7 @@ export function PosForm({
         onPhoneChange={setCustomerPhone}
         onBalanceChange={setCreditBalance}
         onCreditExpiredChange={setCreditExpired}
+        billDate={billDate}
         requireMember={isMemberCredit}
       />
 

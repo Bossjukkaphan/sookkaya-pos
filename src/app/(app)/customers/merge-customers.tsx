@@ -6,6 +6,7 @@ import { toast } from "sonner"
 
 import { mergeCustomers } from "./customer-actions"
 import { CustomerPicker } from "../pos/customer-picker"
+import { todayInShopTz } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -91,6 +92,8 @@ export function MergeCustomers({
             setPickedId("")
           }}
           onPhoneChange={setPickedPhone}
+          // จอนี้แค่ค้นหาเรคคอร์ดซ้ำ ไม่มีบิล — ป้ายเครดิตจึงบอกสถานะ ณ วันนี้
+          billDate={todayInShopTz()}
           requireMember={false}
         />
         {pickedId && pickedId !== targetId && (
