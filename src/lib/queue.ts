@@ -122,6 +122,28 @@ export function busyBedIds(
   )
 }
 
+/** เวลาเริ่ม·ระยะเวลาของแต่ละรายการในคิวกลุ่ม
+ *
+ *  **ต้องให้ผลตรงกับ `createQueueGroup` ฝั่ง server เป๊ะ** — ฟอร์มใช้ค่านี้บอกว่าเตียงไหนว่าง
+ *  ถ้าสองที่คิดเวลาไม่ตรงกัน พนักงานจะเห็นเตียงว่างแล้วกดไปโดนเซิร์ฟเวอร์ตีกลับ (หรือแย่กว่า: จองซ้อน)
+ *
+ *  กติกาเดียวกับ server: รายการ "ต่อเวลา" (ลูกค้าคนเดิมทำหลายคอร์ส) เริ่มต่อจากรายการก่อนหน้าจบ
+ *  รายการปกติ (คนละคนมาด้วยกัน) เริ่มพร้อมกันทั้งกลุ่ม · ระยะเวลายึดจากเมนูเสมอ
+ *  (server อ่าน `services.duration_min` ไม่เชื่อค่าจากฟอร์ม — ไม่มีเมนู/ไม่มีระยะเวลาคิดเป็น 60) */
+export function groupSlotTimes(
+  people: { serviceId: string; sequential?: boolean }[],
+  startMin: number,
+  durationOf: (serviceId: string) => number | null | undefined
+): { startMin: number; durationMin: number }[] {
+  let chainEnd = startMin
+  return people.map((p) => {
+    const durationMin = durationOf(p.serviceId) ?? 60
+    const s = p.sequential ? chainEnd : startMin
+    chainEnd = s + durationMin
+    return { startMin: s, durationMin }
+  })
+}
+
 /** หมอว่าง = ไม่มีคิว (รอ/กำลังนวด) คร่อมเวลานี้ · คิวไม่ระบุหมอไม่ทำให้ใครติด */
 export function countFreeTherapists(
   therapistIds: string[],

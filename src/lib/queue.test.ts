@@ -9,6 +9,7 @@ import {
   busyTherapistIds,
   clampStart,
   countFreeTherapists,
+  groupSlotTimes,
   minToTime,
   minToX,
   overlaps,
@@ -208,5 +209,80 @@ describe("canMoveCardWindow — ย้ายเตียง/เปลี่ย�
     // ไม่มี started_at แต่เลยเวลาจบตามจองไปแล้ว — ห้ามย้ายย้อนหลัง
     const r = canMoveCardWindow(base, 19 * 60 + 1)
     expect(r.allowed).toBe(false)
+  })
+})
+
+describe("groupSlotTimes", () => {
+  const dur = (id: string) =>
+    ({ s60: 60, s90: 90, s30: 30 })[id as "s60" | "s90" | "s30"] ?? null
+
+  it("คนละคนมาพร้อมกัน — เริ่มเวลาเดียวกันทุกคน ระยะเวลายึดตามเมนูของแต่ละคน", () => {
+    const slots = groupSlotTimes(
+      [{ serviceId: "s60" }, { serviceId: "s90" }, { serviceId: "s30" }],
+      timeToMin("14:00"),
+      dur
+    )
+    expect(slots).toEqual([
+      { startMin: 840, durationMin: 60 },
+      { startMin: 840, durationMin: 90 },
+      { startMin: 840, durationMin: 30 },
+    ])
+  })
+
+  it("ต่อเวลา — เริ่มต่อจากรายการก่อนหน้าจบ ไม่ใช่พร้อมกัน", () => {
+    const slots = groupSlotTimes(
+      [{ serviceId: "s60" }, { serviceId: "s90", sequential: true }],
+      timeToMin("14:00"),
+      dur
+    )
+    expect(slots[1]).toEqual({ startMin: 900, durationMin: 90 })
+  })
+
+  it("ต่อเวลาซ้อนกันหลายใบ — ไล่ต่อกันเป็นลูกโซ่", () => {
+    const slots = groupSlotTimes(
+      [
+        { serviceId: "s60" },
+        { serviceId: "s30", sequential: true },
+        { serviceId: "s60", sequential: true },
+      ],
+      timeToMin("10:00"),
+      dur
+    )
+    expect(slots.map((s) => minToTime(s.startMin))).toEqual([
+      "10:00",
+      "11:00",
+      "11:30",
+    ])
+  })
+
+  it("คนปกติแทรกกลางลูกโซ่ — กลับไปเริ่มพร้อมกลุ่ม แต่ยังดันปลายลูกโซ่ต่อ (ตรงกับ server)", () => {
+    const slots = groupSlotTimes(
+      [
+        { serviceId: "s60" },
+        { serviceId: "s90", sequential: true },
+        { serviceId: "s30" },
+        { serviceId: "s60", sequential: true },
+      ],
+      timeToMin("10:00"),
+      dur
+    )
+    expect(slots.map((s) => minToTime(s.startMin))).toEqual([
+      "10:00",
+      "11:00",
+      "10:00",
+      "10:30",
+    ])
+  })
+
+  it("ยังไม่เลือกเมนู หรือเมนูไม่มีระยะเวลา → ใช้ 60 นาทีเหมือน server", () => {
+    const slots = groupSlotTimes(
+      [{ serviceId: "" }, { serviceId: "ไม่รู้จัก", sequential: true }],
+      timeToMin("10:00"),
+      dur
+    )
+    expect(slots).toEqual([
+      { startMin: 600, durationMin: 60 },
+      { startMin: 660, durationMin: 60 },
+    ])
   })
 })

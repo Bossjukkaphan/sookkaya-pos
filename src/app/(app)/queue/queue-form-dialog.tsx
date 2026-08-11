@@ -12,7 +12,15 @@ import {
   type BookingChannel,
   type CustomerSource,
 } from "@/lib/customer-source"
-import { busyBedIds, busyTherapistIds, minToTime, snapMin, timeToMin } from "@/lib/queue"
+import {
+  busyBedIds,
+  busyTherapistIds,
+  groupSlotTimes,
+  minToTime,
+  overlaps,
+  snapMin,
+  timeToMin,
+} from "@/lib/queue"
 import { Time24Field } from "@/components/time24-field"
 import {
   createQueueEntry,
@@ -121,6 +129,46 @@ export function QueueFormDialog({
   // กันยิงซ้ำแบบ synchronous — ปุ่ม disabled={pending} ไม่ทันเคสกดรัว/Enter+คลิก
   // เพราะ pending เพิ่งจะเปลี่ยนหลัง re-render (คลิกที่สองแทรกก่อนได้)
   const submittingRef = useRef(false)
+
+  const startMinSafe = timeToMin(
+    /^\d{2}:\d{2}$/.test(startTime) ? startTime : "10:00"
+  )
+  // โหมดแก้ไข: ไม่นับคิวใบที่กำลังแก้ ไม่งั้นเตียง/หมอของตัวเองขึ้น "ไม่ว่าง"
+  const otherEntries = entries.filter((en) => en.id !== entry?.id)
+  const rooms = [...new Set(beds.map((b) => b.room))]
+  // เวลาของทุกรายการในกลุ่ม คิดด้วยกติกาเดียวกับ server เป๊ะ (ดู groupSlotTimes)
+  // ดัชนี 0 = คนแรก (ช่องหลักด้านบน) · 1 เป็นต้นไป = extraPeople ตามลำดับ
+  const slots = groupSlotTimes(
+    [{ serviceId }, ...extraPeople],
+    startMinSafe,
+    (id) => services.find((s) => s.id === id)?.duration_min
+  )
+  // คิวกลุ่มยึดระยะเวลาจากเมนูเสมอ (server ไม่อ่านปุ่มระยะเวลาเลยตอนสร้างกลุ่ม)
+  // คิวเดี่ยวยึดปุ่มระยะเวลาตามเดิม — ช่องเตียงต้องบอกความจริงว่าเซิร์ฟเวอร์จะจองยาวแค่ไหน
+  const mainSlot =
+    extraPeople.length > 0
+      ? slots[0]
+      : { startMin: startMinSafe, durationMin: duration }
+  const slotOf = (i: number) => (i === 0 ? mainSlot : slots[i])
+  const bedOf = (i: number) => (i === 0 ? bedId || null : extraPeople[i - 1].bedId)
+
+  /** เตียงที่คนอื่นในกลุ่มจองไว้คร่อมเวลาของรายการที่ i → หมายเลขคนที่จอง (นับจาก 1)
+   *  server ก็กันซ้ำในกลุ่มอีกชั้น (createQueueGroup) — ตรงนี้กันไม่ให้พนักงานเสียเที่ยว */
+  const bedsTakenInGroup = (i: number): Map<string, number> => {
+    const mine = slotOf(i)
+    const taken = new Map<string, number>()
+    slots.forEach((_, j) => {
+      if (j === i) return
+      const b = bedOf(j)
+      const other = slotOf(j)
+      if (
+        b &&
+        overlaps(other.startMin, other.durationMin, mine.startMin, mine.durationMin)
+      )
+        taken.set(b, j + 1)
+    })
+    return taken
+  }
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -305,38 +353,46 @@ export function QueueFormDialog({
               เตียง <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
             </legend>
             {(() => {
-              // โหมดแก้ไข: ไม่นับคิวใบที่กำลังแก้ ไม่งั้นเตียงตัวเองขึ้น "ไม่ว่าง"
               const busy = busyBedIds(
-                entries.filter((en) => en.id !== entry?.id),
-                timeToMin(/^\d{2}:\d{2}$/.test(startTime) ? startTime : "10:00"),
-                duration
+                otherEntries,
+                mainSlot.startMin,
+                mainSlot.durationMin
               )
-              const rooms = [...new Set(beds.map((b) => b.room))]
+              // เตียงที่คนอื่นในกลุ่ม (ที่ยังไม่ได้บันทึก) จองไว้ทับเวลาเดียวกัน
+              const takenInGroup = bedsTakenInGroup(0)
               return rooms.map((room) => (
                 <div key={room}>
                   <p className="text-xs text-slate-500">{room}</p>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {beds
                       .filter((b) => b.room === room)
-                      .map((b) => (
-                        <Button
-                          key={b.id}
-                          type="button"
-                          size="sm"
-                          variant={bedId === b.id ? "default" : "outline"}
-                          className={
-                            busy.has(b.id) && bedId !== b.id
-                              ? "opacity-40 line-through"
-                              : ""
-                          }
-                          // เตียงมีจำกัด — ไม่ว่างคือกดไม่ได้เลย (server กันซ้ำอีกชั้น)
-                          disabled={busy.has(b.id) && bedId !== b.id}
-                          onClick={() => setBedId(bedId === b.id ? "" : b.id)}
-                        >
-                          {b.name}
-                          {busy.has(b.id) ? " · ไม่ว่าง" : ""}
-                        </Button>
-                      ))}
+                      .map((b) => {
+                        const takenBy = takenInGroup.get(b.id)
+                        const unavailable =
+                          (busy.has(b.id) || takenBy !== undefined) &&
+                          bedId !== b.id
+                        return (
+                          <Button
+                            key={b.id}
+                            type="button"
+                            size="sm"
+                            variant={bedId === b.id ? "default" : "outline"}
+                            className={
+                              unavailable ? "opacity-40 line-through" : ""
+                            }
+                            // เตียงมีจำกัด — ไม่ว่างคือกดไม่ได้เลย (server กันซ้ำอีกชั้น)
+                            disabled={unavailable}
+                            onClick={() => setBedId(bedId === b.id ? "" : b.id)}
+                          >
+                            {b.name}
+                            {busy.has(b.id)
+                              ? " · ไม่ว่าง"
+                              : takenBy !== undefined
+                                ? ` · คนที่ ${takenBy} ใช้อยู่`
+                                : ""}
+                          </Button>
+                        )
+                      })}
                   </div>
                 </div>
               ))
@@ -390,7 +446,10 @@ export function QueueFormDialog({
                 <div key={i} className="space-y-1.5 rounded-lg border bg-slate-50/60 p-2">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-medium text-slate-600">
-                      {p.sequential ? `ต่อเวลา ${i + 2}` : `คนที่ ${i + 2}`}
+                      {p.sequential ? `ต่อเวลา ${i + 2}` : `คนที่ ${i + 2}`}{" "}
+                      <span className="font-normal text-slate-400">
+                        เริ่ม {minToTime(slots[i + 1].startMin)}
+                      </span>
                     </span>
                     <div className="flex items-center gap-3">
                       <label className="flex cursor-pointer items-center gap-1 text-xs text-slate-600">
@@ -466,6 +525,63 @@ export function QueueFormDialog({
                       </option>
                     ))}
                   </select>
+                  {/* เตียง/ห้องรายคน — เคยเลือกได้เฉพาะคนแรก ที่เหลือต้องไปจิ้มจากการ์ดทีหลัง
+                      เตียงจัดกลุ่มตามห้อง · ที่ไม่ว่างช่วงเวลาของ "คนนี้" เลือกไม่ได้
+                      (รายการต่อเวลาเริ่มคนละเวลากับกลุ่ม เตียงว่างจึงไม่เหมือนกัน) */}
+                  {(() => {
+                    const slot = slots[i + 1]
+                    const busy = busyBedIds(
+                      otherEntries,
+                      slot.startMin,
+                      slot.durationMin
+                    )
+                    const takenInGroup = bedsTakenInGroup(i + 1)
+                    return (
+                      <select
+                        value={p.bedId ?? ""}
+                        onChange={(e) =>
+                          setExtraPeople((arr) =>
+                            arr.map((x, j) =>
+                              j === i
+                                ? { ...x, bedId: e.target.value || null }
+                                : x
+                            )
+                          )
+                        }
+                        className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                        aria-label={`เตียงคนที่ ${i + 2}`}
+                      >
+                        <option value="">เตียง: ยังไม่ระบุ</option>
+                        {rooms.map((room) => (
+                          <optgroup key={room} label={room}>
+                            {beds
+                              .filter((b) => b.room === room)
+                              .map((b) => {
+                                const takenBy = takenInGroup.get(b.id)
+                                return (
+                                  <option
+                                    key={b.id}
+                                    value={b.id}
+                                    disabled={
+                                      (busy.has(b.id) ||
+                                        takenBy !== undefined) &&
+                                      p.bedId !== b.id
+                                    }
+                                  >
+                                    {b.name}
+                                    {busy.has(b.id)
+                                      ? " · ไม่ว่าง"
+                                      : takenBy !== undefined
+                                        ? ` · คนที่ ${takenBy} ใช้อยู่`
+                                        : ""}
+                                  </option>
+                                )
+                              })}
+                          </optgroup>
+                        ))}
+                      </select>
+                    )
+                  })()}
                 </div>
               ))}
               <div className="grid grid-cols-2 gap-2">
@@ -507,7 +623,7 @@ export function QueueFormDialog({
                   รวม {extraPeople.length + 1} รายการ ·
                   แถว &quot;คนที่&quot; เริ่ม {startTime} พร้อมกัน · แถว
                   &quot;ต่อเวลา&quot; เริ่มต่อจากรายการก่อนหน้าจบ ·
-                  เตียงของรายการถัดไปค่อยเลือกทีหลังได้จากการ์ด
+                  เลือกเตียงได้ทุกคน (เตียงที่ไม่ว่างช่วงเวลานั้นเลือกไม่ได้)
                 </p>
               )}
             </fieldset>
