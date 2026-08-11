@@ -174,6 +174,9 @@ export default async function ReportsPage({
     (sum, t) => sum + Number(t.cash_received ?? 0),
     0
   )
+  // เลขอ้างอิงไว้เช็คกับจอ ThaiHand เท่านั้น — สูตรเดียวกับ "รายรับทั้งหมด" ของเขา
+  // (ใช้บริการ + ขายแพ็กเกจ) ไม่ใช่รายได้ เพราะแพ็กเกจถูกนับซ้ำตอนลูกค้ามาใช้เครดิต
+  const thaihandTotal = volumeTotal + topupTotal
   const cashInTotal = (dailySummary ?? []).reduce(
     (sum, d) => sum + Number(d.cash_in ?? 0),
     0
@@ -462,6 +465,14 @@ export default async function ReportsPage({
             <p className="pl-3 text-xs text-slate-400">
               ไม่นับเป็นรายได้ (เป็นภาระให้บริการ) — ไปโผล่ในเงินเข้าบัญชีแทน
             </p>
+            <div className="flex justify-between border-t pt-1.5">
+              <span className="flex items-center gap-1 text-slate-600">
+                ยอดรวมเทียบ ThaiHand <InfoDot text={MONEY_INFO.thaihandTotal} />
+              </span>
+              <span className="font-semibold text-slate-700">
+                {formatBaht(thaihandTotal)}
+              </span>
+            </div>
           </div>
         </div>
 
