@@ -151,24 +151,44 @@ export function QueueFormDialog({
       : { startMin: startMinSafe, durationMin: duration }
   const slotOf = (i: number) => (i === 0 ? mainSlot : slots[i])
   const bedOf = (i: number) => (i === 0 ? bedId || null : extraPeople[i - 1].bedId)
+  const therapistOf = (i: number) =>
+    i === 0 ? therapistId || null : extraPeople[i - 1].therapistId
 
-  /** เตียงที่คนอื่นในกลุ่มจองไว้คร่อมเวลาของรายการที่ i → หมายเลขคนที่จอง (นับจาก 1)
+  /** เตียง/หมอที่คนอื่นในกลุ่มจองไว้คร่อมเวลาของรายการที่ i → หมายเลขคนที่จอง (นับจาก 1)
    *  server ก็กันซ้ำในกลุ่มอีกชั้น (createQueueGroup) — ตรงนี้กันไม่ให้พนักงานเสียเที่ยว */
-  const bedsTakenInGroup = (i: number): Map<string, number> => {
+  const takenInGroup = (
+    i: number,
+    resourceOf: (j: number) => string | null
+  ): Map<string, number> => {
     const mine = slotOf(i)
     const taken = new Map<string, number>()
     slots.forEach((_, j) => {
       if (j === i) return
-      const b = bedOf(j)
+      const r = resourceOf(j)
       const other = slotOf(j)
       if (
-        b &&
+        r &&
         overlaps(other.startMin, other.durationMin, mine.startMin, mine.durationMin)
       )
-        taken.set(b, j + 1)
+        taken.set(r, j + 1)
     })
     return taken
   }
+
+  /** แก้เมนู/เวลาทีหลังทำให้ตัวเลือกที่เคยถูกกลายเป็นชนได้ — ตัวเลือกของตัวเองห้าม disable
+   *  (ไม่งั้น select โชว์ค่าที่กดไม่ได้) จึงต้องกันที่ปุ่มบันทึกแทน ไม่ปล่อยให้ไปตายที่ server */
+  const groupClash = (() => {
+    if (extraPeople.length === 0) return null
+    for (let i = 0; i < slots.length; i++) {
+      const bed = bedOf(i)
+      if (bed && takenInGroup(i, bedOf).has(bed))
+        return `คนที่ ${i + 1}: เตียงซ้ำกับคนอื่นในกลุ่มช่วงเวลาเดียวกัน — เปลี่ยนเตียงหรือเวลา`
+      const t = therapistOf(i)
+      if (t && takenInGroup(i, therapistOf).has(t))
+        return `คนที่ ${i + 1}: หมอซ้ำกับคนอื่นในกลุ่มช่วงเวลาเดียวกัน — หมอหนึ่งคนรับได้ทีละคิว`
+    }
+    return null
+  })()
 
   function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -263,11 +283,14 @@ export function QueueFormDialog({
             <legend className="text-sm font-medium">หมอนวด</legend>
             {(() => {
               // หมอหนึ่งคนรับได้ทีละคิว (นับจากเวลานวดจริง) — โหมดแก้ไขไม่นับใบตัวเอง
+              // ใช้ช่วงเวลาชุดเดียวกับช่องเตียงเสมอ ไม่งั้นสองช่องในฟอร์มเดียวกันตอบคนละอย่าง
+              // (คิวกลุ่ม server ยึดระยะเวลาจากเมนู ไม่ใช่ปุ่มระยะเวลา — ดู mainSlot)
               const busyT = busyTherapistIds(
-                entries.filter((en) => en.id !== entry?.id),
-                timeToMin(/^\d{2}:\d{2}$/.test(startTime) ? startTime : "10:00"),
-                duration
+                otherEntries,
+                mainSlot.startMin,
+                mainSlot.durationMin
               )
+              const takenByOthers = takenInGroup(0, therapistOf)
               return (
                 <div className="grid grid-cols-3 gap-2">
                   <Button
@@ -277,23 +300,29 @@ export function QueueFormDialog({
                   >
                     ยังไม่ระบุ
                   </Button>
-                  {therapists.map((t) => (
-                    <Button
-                      key={t.id}
-                      type="button"
-                      variant={therapistId === t.id ? "default" : "outline"}
-                      className={
-                        busyT.has(t.id) && therapistId !== t.id
-                          ? "opacity-40 line-through"
-                          : ""
-                      }
-                      disabled={busyT.has(t.id) && therapistId !== t.id}
-                      onClick={() => setTherapistId(t.id)}
-                    >
-                      {t.name}
-                      {busyT.has(t.id) ? " · ติดคิว" : ""}
-                    </Button>
-                  ))}
+                  {therapists.map((t) => {
+                    const takenBy = takenByOthers.get(t.id)
+                    const unavailable =
+                      (busyT.has(t.id) || takenBy !== undefined) &&
+                      therapistId !== t.id
+                    return (
+                      <Button
+                        key={t.id}
+                        type="button"
+                        variant={therapistId === t.id ? "default" : "outline"}
+                        className={unavailable ? "opacity-40 line-through" : ""}
+                        disabled={unavailable}
+                        onClick={() => setTherapistId(t.id)}
+                      >
+                        {t.name}
+                        {busyT.has(t.id)
+                          ? " · ติดคิว"
+                          : takenBy !== undefined
+                            ? ` · คนที่ ${takenBy}`
+                            : ""}
+                      </Button>
+                    )
+                  })}
                 </div>
               )
             })()}
@@ -359,7 +388,7 @@ export function QueueFormDialog({
                 mainSlot.durationMin
               )
               // เตียงที่คนอื่นในกลุ่ม (ที่ยังไม่ได้บันทึก) จองไว้ทับเวลาเดียวกัน
-              const takenInGroup = bedsTakenInGroup(0)
+              const takenByOthers = takenInGroup(0, bedOf)
               return rooms.map((room) => (
                 <div key={room}>
                   <p className="text-xs text-slate-500">{room}</p>
@@ -367,7 +396,7 @@ export function QueueFormDialog({
                     {beds
                       .filter((b) => b.room === room)
                       .map((b) => {
-                        const takenBy = takenInGroup.get(b.id)
+                        const takenBy = takenByOthers.get(b.id)
                         const unavailable =
                           (busy.has(b.id) || takenBy !== undefined) &&
                           bedId !== b.id
@@ -506,25 +535,55 @@ export function QueueFormDialog({
                     aria-label={`เมนูคนที่ ${i + 2}`}
                     triggerClassName="h-11"
                   />
-                  <select
-                    value={p.therapistId ?? ""}
-                    onChange={(e) =>
-                      setExtraPeople((arr) =>
-                        arr.map((x, j) =>
-                          j === i ? { ...x, therapistId: e.target.value || null } : x
-                        )
-                      )
-                    }
-                    className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
-                    aria-label={`หมอนวดคนที่ ${i + 2}`}
-                  >
-                    <option value="">หมอ: ยังไม่ระบุ</option>
-                    {therapists.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        หมอ{t.name}
-                      </option>
-                    ))}
-                  </select>
+                  {/* หมอที่ติดคิวอื่น หรือคนอื่นในกลุ่มจองไปแล้ว เลือกไม่ได้
+                      (server กันซ้ำอีกชั้น — ตรงนี้กันไม่ให้ต้องคีย์ใหม่ทั้งกลุ่ม) */}
+                  {(() => {
+                    const slot = slots[i + 1]
+                    const busyT = busyTherapistIds(
+                      otherEntries,
+                      slot.startMin,
+                      slot.durationMin
+                    )
+                    const takenByOthers = takenInGroup(i + 1, therapistOf)
+                    return (
+                      <select
+                        value={p.therapistId ?? ""}
+                        onChange={(e) =>
+                          setExtraPeople((arr) =>
+                            arr.map((x, j) =>
+                              j === i
+                                ? { ...x, therapistId: e.target.value || null }
+                                : x
+                            )
+                          )
+                        }
+                        className="h-10 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                        aria-label={`หมอนวดคนที่ ${i + 2}`}
+                      >
+                        <option value="">หมอ: ยังไม่ระบุ</option>
+                        {therapists.map((t) => {
+                          const takenBy = takenByOthers.get(t.id)
+                          return (
+                            <option
+                              key={t.id}
+                              value={t.id}
+                              disabled={
+                                (busyT.has(t.id) || takenBy !== undefined) &&
+                                p.therapistId !== t.id
+                              }
+                            >
+                              หมอ{t.name}
+                              {busyT.has(t.id)
+                                ? " · ติดคิว"
+                                : takenBy !== undefined
+                                  ? ` · คนที่ ${takenBy} จองแล้ว`
+                                  : ""}
+                            </option>
+                          )
+                        })}
+                      </select>
+                    )
+                  })()}
                   {/* เตียง/ห้องรายคน — เคยเลือกได้เฉพาะคนแรก ที่เหลือต้องไปจิ้มจากการ์ดทีหลัง
                       เตียงจัดกลุ่มตามห้อง · ที่ไม่ว่างช่วงเวลาของ "คนนี้" เลือกไม่ได้
                       (รายการต่อเวลาเริ่มคนละเวลากับกลุ่ม เตียงว่างจึงไม่เหมือนกัน) */}
@@ -535,7 +594,7 @@ export function QueueFormDialog({
                       slot.startMin,
                       slot.durationMin
                     )
-                    const takenInGroup = bedsTakenInGroup(i + 1)
+                    const takenByOthers = takenInGroup(i + 1, bedOf)
                     return (
                       <select
                         value={p.bedId ?? ""}
@@ -557,7 +616,7 @@ export function QueueFormDialog({
                             {beds
                               .filter((b) => b.room === room)
                               .map((b) => {
-                                const takenBy = takenInGroup.get(b.id)
+                                const takenBy = takenByOthers.get(b.id)
                                 return (
                                   <option
                                     key={b.id}
@@ -660,10 +719,19 @@ export function QueueFormDialog({
             />
           </div>
 
+          {groupClash && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              {groupClash}
+            </p>
+          )}
+
           <Button
             type="submit"
             disabled={
-              pending || !serviceId || extraPeople.some((p) => !p.serviceId)
+              pending ||
+              !serviceId ||
+              extraPeople.some((p) => !p.serviceId) ||
+              groupClash !== null
             }
             className="h-12 w-full"
           >
