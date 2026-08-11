@@ -22,6 +22,14 @@ import { Input } from "@/components/ui/input"
 
 export const metadata = { title: "รายงาน · สุขกายา POS" }
 
+/**
+ * เพดานรายบิลที่ดึงมาทำส่วนแยกย่อย — PostgREST ก็ตัดให้เองอยู่แล้วที่ค่าประมาณนี้
+ * แต่เราไม่ผูกการตรวจ "โดนตัดไหม" กับตัวเลขนี้ (ดู salesCount ด้านล่าง) เพราะถ้าเพดานฝั่ง
+ * เซิร์ฟเวอร์ถูกตั้งต่ำกว่านี้ การเทียบ length === ROW_CAP จะเงียบสนิทอีกแบบ
+ * (ช่วง 60 วันของร้านนี้ = ~1,100 บิล เกินเพดานแล้ว)
+ */
+const ROW_CAP = 1000
+
 function shiftDate(isoDate: string, days: number): string {
   const d = new Date(`${isoDate}T00:00:00Z`)
   d.setUTCDate(d.getUTCDate() + days)
@@ -72,7 +80,7 @@ export default async function ReportsPage({
   const isSingleDay = from === to
 
   const [
-    { data: sales },
+    { data: sales, count: salesCount },
     { data: expenses },
     { data: therapists },
     { data: therapistDaily },
@@ -80,10 +88,13 @@ export default async function ReportsPage({
     supabase
       .from("sales")
       .select(
-        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, coupon_promo, source, booking_channel, customer_id, credit_used, bonus_used"
+        "sale_date, sale_time, therapist_id, service_name, net_amount, revenue_recognize, commission, request_fee, payment_method, discount, coupon_promo, source, booking_channel, customer_id, credit_used, bonus_used",
+        // ขอจำนวนแถวจริงมาด้วย เพื่อรู้แน่ว่าโดนตัดไปกี่บิล โดยไม่ต้องเดาว่าเพดานเท่าไหร่
+        { count: "exact" }
       )
       .gte("sale_date", from)
-      .lte("sale_date", to),
+      .lte("sale_date", to)
+      .limit(ROW_CAP),
     supabase
       .from("expenses")
       .select("amount, category")
@@ -108,7 +119,7 @@ export default async function ReportsPage({
   ] = await Promise.all([
       supabase
         .from("v_daily_summary")
-        .select("cash_in")
+        .select("sale_date, sessions, volume, net_revenue, discount_total, cash_in")
         .gte("sale_date", from)
         .lte("sale_date", to),
       supabase
@@ -131,13 +142,20 @@ export default async function ReportsPage({
     ])
 
   const rows = sales ?? []
+  // เทียบกับจำนวนจริงในฐานข้อมูล ไม่ใช่กับ ROW_CAP — จับได้ทุกกรณีที่ได้ไม่ครบ
+  const totalSalesRows = salesCount ?? rows.length
+  const truncated = totalSalesRows > rows.length
   const therapistName = new Map((therapists ?? []).map((t) => [t.id, t.name]))
 
-  const revenue = rows.reduce(
-    (sum, s) => sum + Number(s.revenue_recognize ?? s.net_amount),
+  // ยอดเงินทุกตัวมาจาก view รายวัน ไม่ใช่ rows — view คืนวันละแถว (ช่วงหนึ่งเดือน ~31 แถว)
+  // จึงไม่ชนเพดานแม้เลือกช่วงยาว · rows ถูกตัดที่ ROW_CAP และเคยทำให้ยอดต่ำกว่าจริงเงียบๆ
+  // (ช่วง 60 วันเคยขาดไป ~84,000 บาท = 10.8% โดยไม่มีอะไรเตือน)
+  const summaryRows = dailySummary ?? []
+  const revenue = summaryRows.reduce((sum, d) => sum + Number(d.net_revenue ?? 0), 0)
+  const discountTotal = summaryRows.reduce(
+    (sum, d) => sum + Number(d.discount_total ?? 0),
     0
   )
-  const discountTotal = rows.reduce((sum, s) => sum + Number(s.discount ?? 0), 0)
 
   // ส่วนลดแยกตามโปรโมชั่น: map ชื่อที่พนักงานพิมพ์ → โปรจริงผ่าน aliases
   // ที่จับคู่ไม่ได้รวมเป็น "อื่นๆ" พร้อมโชว์ข้อความดิบที่เจอบ่อยสุด
@@ -165,8 +183,10 @@ export default async function ReportsPage({
 
   // การ์ดเขียว/ม่วงแบบ Thai Hand — ตัวเลขทุกตัวจากสูตรกลางเดิม ไม่นิยามใหม่
   // สมการที่ต้องลงตัวเสมอ: ยอดรับจริง − เครดิตแถมที่ใช้ = รายได้ที่รับรู้
-  const volumeTotal = rows.reduce((sum, s) => sum + Number(s.net_amount ?? 0), 0)
-  const bonusUsedTotal = rows.reduce((sum, s) => sum + Number(s.bonus_used ?? 0), 0)
+  const volumeTotal = summaryRows.reduce((sum, d) => sum + Number(d.volume ?? 0), 0)
+  // ถอดจากสมการข้างบนแทนการบวก bonus_used รายแถว (สูตรเดียวกับหน้ายอดขาย) — แม่นแม้ rows โดนตัด
+  const bonusUsedTotal = volumeTotal - revenue
+  // ไม่มีคอลัมน์นี้ใน view — ตัวเดียวในการ์ดที่ยังบวกจาก rows จึงไม่ครบเมื่อโดนตัด (มีป้ายเตือนบอก)
   const creditUsedTotal = rows.reduce((sum, s) => sum + Number(s.credit_used ?? 0), 0)
   // มูลค่าเต็มตามเมนูก่อนหักส่วนลด — จุดตั้งต้นของ waterfall รายรับ
   const grossTotal = volumeTotal + discountTotal
@@ -262,13 +282,13 @@ export default async function ReportsPage({
   })
 
   // ยอดขาย/จำนวนบิลตามวัน — มีความหมายเมื่อช่วงเกิน 1 วัน
+  // มาจาก view รายวันเช่นกัน กราฟจะได้ไม่เตี้ยลงเงียบๆ ตอนช่วงยาวจน rows โดนตัด
   const byDay = new Map<string, { revenue: number; bills: number }>()
-  for (const s of rows) {
-    const d = s.sale_date
-    const agg = byDay.get(d) ?? { revenue: 0, bills: 0 }
-    agg.revenue += Number(s.revenue_recognize ?? s.net_amount)
-    agg.bills += 1
-    byDay.set(d, agg)
+  for (const d of summaryRows) {
+    byDay.set(String(d.sale_date), {
+      revenue: Number(d.net_revenue ?? 0),
+      bills: Number(d.sessions ?? 0),
+    })
   }
   const dayKeys = [...byDay.keys()].sort()
   const dayRevenuePoints = dayKeys.map((d) => ({
@@ -301,7 +321,8 @@ export default async function ReportsPage({
       byBookingChannel.set(ch, c)
     }
   }
-  const totalBills = rows.length
+  // จำนวนบิลจาก view เช่นกัน — เป็นตัวหารของ "เฉลี่ยต่อบิล" ถ้าต่ำกว่าจริงค่าเฉลี่ยจะเพี้ยนตาม
+  const totalBills = summaryRows.reduce((sum, d) => sum + Number(d.sessions ?? 0), 0)
   const sourceOrder = ["booking", "walk_in", "agency", "unknown"] as const
   const sourceLabel = (k: string) =>
     k === "unknown" ? "ไม่ทราบ (บิลเก่า)" : SOURCE_LABEL[k as keyof typeof SOURCE_LABEL]
@@ -406,6 +427,19 @@ export default async function ReportsPage({
           </Button>
         </form>
       </div>
+
+      {/* ยอดเงินมาจาก view รายวันจึงถูกเสมอ — ที่ไม่ครบคือส่วนแยกย่อยที่ต้องใช้รายบิล
+          บอกให้ชัดว่าอะไรเชื่อได้/อะไรไม่ได้ ดีกว่าปล่อยให้ตัวเลขต่ำกว่าจริงเงียบๆ แบบเดิม */}
+      {truncated && (
+        <Card className="border-amber-300 bg-amber-50">
+          <CardContent className="py-3 text-sm text-amber-900">
+            ช่วงนี้มี {totalSalesRows} บิล — ยอดเงินในการ์ดรายรับ/เงินเข้าบัญชี กราฟรายวัน
+            และจำนวนบิล ยังถูกต้องครบถ้วน แต่ส่วนที่แยกรายบิล (เมนูขายดี · ส่วนลดตามโปร ·
+            ช่วงเวลา · ช่องทางการจอง · ลูกค้า · เครดิตสมาชิก) นับได้แค่ {rows.length} บิลแรก
+            — เลือกช่วงให้แคบลงถ้าต้องการดูส่วนนั้นให้ครบ
+          </CardContent>
+        </Card>
+      )}
 
       {/* คู่การ์ดหลักแบบ Thai Hand: รายรับ (เขียว) · เงินเข้าบัญชี (ม่วง) */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -649,7 +683,9 @@ export default async function ReportsPage({
             .filter((k) => bySource.has(k))
             .map((k) => {
               const a = bySource.get(k)!
-              const pct = totalBills > 0 ? (a.count / totalBills) * 100 : 0
+              // หารด้วยจำนวนแถวที่นับมาจริง ไม่ใช่ totalBills (ที่มาจาก view และครบเสมอ)
+              // ไม่งั้นตอนโดนตัด เปอร์เซ็นต์จะรวมกันไม่ถึง 100
+              const pct = rows.length > 0 ? (a.count / rows.length) * 100 : 0
               return (
                 <div key={k}>
                   <div className="flex justify-between text-sm">
