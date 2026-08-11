@@ -38,6 +38,22 @@ export function creditBucket(balance: number, expired = false): CreditBucket {
   return "ok"
 }
 
+/**
+ * เครดิตแช่แข็งไหม (หมดอายุแล้วแต่ยอดยังอยู่ ไม่ใช่ยอด 0) — จุดตัดสินใจเดียวที่ทุกหน้าจอ
+ * (POS, หน้าลูกค้า, ตารางลูกค้า, การ์ดสมาชิก, โปรไฟล์ไลน์) เรียกใช้ก่อนโชว์ข้อความชวนเติม
+ * แพ็กเกจ — ผลลัพธ์ต้องตรงกับ creditBucket(balance, expired) === "expired" เป๊ะเสมอ (สร้าง
+ * มาจากสูตรเดียวกัน ไม่ใช่คัดลอกเงื่อนไขแยก) แต่ตั้งชื่อให้ผู้เรียกที่จุดแสดงผลไม่ต้องรู้จัก
+ * bucket ทั้งชุด แค่ต้องการ true/false ตัวเดียว
+ *
+ * ต้องเช็คคู่กับ balance > 0 เสมอ (ไม่ใช่แค่เช็ค expired เฉยๆ) เพราะคอลัมน์ credit_expired ใน
+ * member_balances เป็น true สำหรับลูกค้าทั่วไปที่ไม่เคยเป็นสมาชิกเลยด้วย (next_expiry เป็น
+ * null ก็นับว่า "หมดอายุ") ถ้าลืมจับคู่กับยอด ลูกค้าที่ไม่เคยมีเครดิตจะถูกบอกว่า "เครดิตหมดอายุ"
+ * ทั้งที่ไม่เคยมีอะไรให้หมดอายุตั้งแต่แรก
+ */
+export function isCreditFrozen(balance: number, expired: boolean): boolean {
+  return creditBucket(balance, expired) === "expired"
+}
+
 export type CreditSpendInput = {
   /** วันหมดอายุของทั้งกระปุก (member_balances.next_expiry) — null = ไม่เคยเติมเงิน */
   expiry: string | null

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
+import { isCreditFrozen } from "@/lib/member-credit"
 import { ilikeOr } from "@/lib/search"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -20,6 +21,7 @@ export function CustomerPicker({
   onNameChange,
   onPhoneChange,
   onBalanceChange,
+  onCreditExpiredChange,
   requireMember,
 }: {
   customerId: string
@@ -30,6 +32,9 @@ export function CustomerPicker({
   onPhoneChange: (phone: string) => void
   /** เครดิตคงเหลือของลูกค้าที่เลือก — ใช้คำนวณช่องใช้เครดิตแบ่งชำระที่ pos-form.tsx (0 = ไม่มี/ล้างลูกค้า) */
   onBalanceChange?: (b: number) => void
+  /** เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) ของลูกค้าที่เลือก — pos-form.tsx (ไม่ใช่บิลชุด)
+   *  ใช้ตัวนี้กันปุ่ม "ใช้เครดิต" แทนที่จะยิง query ซ้ำเอง เพราะ picker ดึงมาแล้วในนี้ */
+  onCreditExpiredChange?: (expired: boolean) => void
   requireMember: boolean
 }) {
   const [matches, setMatches] = useState<Match[]>([])
@@ -75,6 +80,7 @@ export function CustomerPicker({
   useEffect(() => {
     if (!customerId) {
       onBalanceChange?.(0)
+      onCreditExpiredChange?.(false)
       return
     }
 
@@ -89,17 +95,19 @@ export function CustomerPicker({
 
       if (!cancelled) {
         const b = data?.credit_balance ?? 0
+        const expired = Boolean(data?.credit_expired)
         setBalance(b)
-        setCreditExpired(Boolean(data?.credit_expired))
+        setCreditExpired(expired)
         setExpiryDate(data?.next_expiry ?? null)
         onBalanceChange?.(b)
+        onCreditExpiredChange?.(expired)
       }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [customerId, onBalanceChange])
+  }, [customerId, onBalanceChange, onCreditExpiredChange])
 
   return (
     <div className="space-y-2" ref={boxRef}>
@@ -114,7 +122,7 @@ export function CustomerPicker({
           </span>
         </Label>
         {shownBalance !== null &&
-          (creditExpired && shownBalance > 0 && expiryDate !== null ? (
+          (isCreditFrozen(shownBalance, creditExpired) && expiryDate !== null ? (
             <Badge className="bg-amber-500 text-white hover:bg-amber-500">
               เครดิต {formatBaht(shownBalance)} ฿ · หมดอายุ {formatThaiDate(expiryDate)} —
               เติมใหม่ใช้ได้ทันที

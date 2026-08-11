@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
+import { isCreditFrozen } from "@/lib/member-credit"
 import { type CustomerIssueRow, issueBadgeClass, issuesOf } from "@/lib/customer-issues"
 import { Badge } from "@/components/ui/badge"
 
@@ -212,7 +213,7 @@ export function CustomerTable({
                   </span>
                 </td>
                 <td className="px-2 py-2 text-right">
-                  <CreditAmount balance={r.credit_balance} expired={Boolean(r.credit_expired) && (r.credit_balance ?? 0) > 0} />
+                  <CreditAmount balance={r.credit_balance} expired={isCreditFrozen(r.credit_balance ?? 0, Boolean(r.credit_expired))} />
                 </td>
                 <td className="px-2 py-2 text-right text-slate-600">{r.visits ?? 0}</td>
                 <td className="px-2 py-2 whitespace-nowrap text-slate-600">
@@ -262,7 +263,7 @@ export function CustomerTable({
               {(r.credit_balance ?? 0) !== 0 && (
                 <div className="shrink-0 text-right">
                   <p className="text-base font-bold">
-                    <CreditAmount balance={r.credit_balance} expired={Boolean(r.credit_expired) && (r.credit_balance ?? 0) > 0} />
+                    <CreditAmount balance={r.credit_balance} expired={isCreditFrozen(r.credit_balance ?? 0, Boolean(r.credit_expired))} />
                   </p>
                   <p className="text-[10px] text-slate-400">เครดิตเหลือ</p>
                 </div>

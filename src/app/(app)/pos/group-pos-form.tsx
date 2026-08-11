@@ -8,6 +8,7 @@ import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { createClient } from "@/lib/supabase/client"
 import { allocateCredit } from "@/lib/bill"
+import { isCreditFrozen } from "@/lib/member-credit"
 import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
   MEMBER_CREDIT_METHOD,
@@ -596,7 +597,7 @@ export function GroupPosForm({
         </Label>
       </div>
 
-      {creditExpired && creditBalance > 0 && (
+      {isCreditFrozen(creditBalance, creditExpired) && (
         <p className="text-sm text-amber-700">
           เครดิตหมดอายุแล้ว — ยอด {formatBaht(creditBalance)} ฿ ยังอยู่ครบ
           เติมแพ็กเกจใหม่แล้วใช้ได้ทันที

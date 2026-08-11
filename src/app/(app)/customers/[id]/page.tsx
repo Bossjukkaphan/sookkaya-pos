@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
+import { isCreditFrozen } from "@/lib/member-credit"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { CustomerForm } from "../customer-form"
@@ -152,7 +153,7 @@ export default async function CustomerDetailPage({
                 หมดอายุ {formatThaiDate(balance.next_expiry)}
               </p>
             )}
-            {balance?.credit_expired && credit > 0 && (
+            {isCreditFrozen(credit, Boolean(balance?.credit_expired)) && (
               <p className="text-sm font-medium text-amber-700">
                 หมดอายุแล้ว — เติมเพิ่มเพื่อปลดล็อก {formatBaht(credit)} ฿
               </p>

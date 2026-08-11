@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CREDIT_LOW_MAX, checkCreditSpend, creditBucket } from "./member-credit"
+import { CREDIT_LOW_MAX, checkCreditSpend, creditBucket, isCreditFrozen } from "./member-credit"
 
 describe("creditBucket", () => {
   it("แบ่งช่องตามขอบเขตของแดชบอร์ดเดิม", () => {
@@ -131,5 +131,37 @@ describe("creditBucket กับสถานะหมดอายุ", () => {
 
   it("เรียกแบบเดิมที่ไม่ส่งพารามิเตอร์ที่สอง ต้องได้ผลเหมือนเดิม", () => {
     expect(creditBucket(2300)).toBe("mid")
+  })
+})
+
+describe("isCreditFrozen", () => {
+  // ทุกหน้าจอ (POS ทั้งสองแบบ, หน้าลูกค้า, ตารางลูกค้า, การ์ดสมาชิก, โปรไฟล์ไลน์) เรียกตัวนี้
+  // ตัวเดียวก่อนโชว์ข้อความ "เครดิตหมดอายุแล้ว ยอด X ฿ ยังอยู่ครบ" — ยังไม่เคยมีเคสจริงใน
+  // production เกิดขึ้นเลย (แพ็กเกจที่ยังไม่หมดอายุเร็วสุดคือ 2026-10-15) จึงต้องมี unit test
+  // ยืนยันเงื่อนไขไว้ตรงนี้ แทนที่จะรอเห็นจริงตอนแพ็กเกจแรกหมดอายุ
+
+  it("มีเครดิตและหมดอายุ = แช่แข็ง ต้องโชว์ข้อความชวนเติม", () => {
+    expect(isCreditFrozen(2300, true)).toBe(true)
+  })
+
+  it("ยอด 0 และหมดอายุ = ไม่ใช่แช่แข็ง (ไม่มีอะไรให้ปลดล็อก อย่าโชว์ข้อความ)", () => {
+    expect(isCreditFrozen(0, true)).toBe(false)
+  })
+
+  it("มีเครดิตแต่ยังไม่หมดอายุ = ไม่ใช่แช่แข็ง", () => {
+    expect(isCreditFrozen(2300, false)).toBe(false)
+  })
+
+  it("ลูกค้าทั่วไปไม่เคยเป็นสมาชิก (ยอด 0 ไม่หมดอายุ) = ไม่ใช่แช่แข็ง", () => {
+    expect(isCreditFrozen(0, false)).toBe(false)
+  })
+
+  it("ต้องจับคู่กับ balance > 0 เสมอ — ถ้าเช็คแค่ expired เฉยๆ (ไม่สนยอด) เคสยอด 0 จะพัง", () => {
+    // เท่ากับ regression guard ของบั๊กที่บอกลูกค้าทั่วไป (ไม่เคยมีเครดิต) ว่า "เครดิตหมดอายุ"
+    const balance = 0
+    const expired = true
+    const wrongImplementation = expired // ลืมจับคู่กับ balance > 0
+    expect(isCreditFrozen(balance, expired)).toBe(false)
+    expect(wrongImplementation).not.toBe(isCreditFrozen(balance, expired))
   })
 })

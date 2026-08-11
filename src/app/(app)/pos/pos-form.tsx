@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { checkPointCoupon, createSale, type CouponCheck } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { allocateCredit } from "@/lib/bill"
+import { isCreditFrozen } from "@/lib/member-credit"
 import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
   GOWABI_METHOD,
@@ -159,6 +160,7 @@ export function PosForm({
   const [checkingCoupon, setCheckingCoupon] = useState(false)
   // แบ่งชำระ: เครดิตสมาชิกของลูกค้าที่เลือก (มาจาก CustomerPicker) + ค่าที่พนักงานแก้เอง
   const [creditBalance, setCreditBalance] = useState(0)
+  const [creditExpired, setCreditExpired] = useState(false)
   // เริ่ม "0" เสมอ — ไม่ auto-fill เพดานเครดิตให้แล้ว (สเปก 2026-08-01) พนักงานต้องกดปุ่ม "ใช้เครดิต" เอง
   const [creditUseInput, setCreditUseInput] = useState("0")
   // บรรทัดแบ่งจ่ายเพิ่มเติม (บรรทัดแรกคือปุ่มช่องทางหลักเดิม ยอด = ที่เหลือหลังหักบรรทัดเสริม)
@@ -263,8 +265,14 @@ export function PosForm({
 
   // ช่องใช้เครดิตสมาชิกแบ่งชำระ — โชว์เฉพาะเลือกลูกค้าแล้ว + มีเครดิต + ไม่ใช่ Gowabi/KOL
   // + ไม่ใช่บิลคูปองแลกแต้ม (บิลนั้นเก็บ 0 บาทอยู่แล้ว ไม่มีอะไรให้แบ่ง)
+  // ตัวกันจริงอยู่ฝั่ง server (createSale) ตรงนี้กันไม่ให้พนักงานเสียเวลากรอกเครดิตที่หมดอายุแล้ว
   const canUseCredit =
-    Boolean(customerId) && creditBalance > 0 && !isGowabi && !isKol && !couponInfo
+    Boolean(customerId) &&
+    creditBalance > 0 &&
+    !creditExpired &&
+    !isGowabi &&
+    !isKol &&
+    !couponInfo
   const creditCap = Math.min(creditBalance, billTotalNet)
   const creditUse = canUseCredit
     ? Math.min(Math.max(0, Number(creditUseInput) || 0), creditCap)
@@ -342,6 +350,7 @@ export function PosForm({
     setCouponInfo(null)
     setCouponCode("")
     setCreditBalance(0)
+    setCreditExpired(false)
     setCreditUseInput("0")
     setExtraPayments([])
     setPrimaryInput(null)
@@ -562,8 +571,16 @@ export function PosForm({
         }}
         onPhoneChange={setCustomerPhone}
         onBalanceChange={setCreditBalance}
+        onCreditExpiredChange={setCreditExpired}
         requireMember={isMemberCredit}
       />
+
+      {isCreditFrozen(creditBalance, creditExpired) && (
+        <p className="text-sm text-amber-700">
+          เครดิตหมดอายุแล้ว — ยอด {formatBaht(creditBalance)} ฿ ยังอยู่ครบ
+          เติมแพ็กเกจใหม่แล้วใช้ได้ทันที
+        </p>
+      )}
 
       {/* กล่องแก้ยอดเครดิตบางส่วน — โผล่หลังกดปุ่ม "เครดิต" ในแถวช่องทาง (แบบ ThaiHand)
           ลูกค้าขอเก็บเครดิตไว้บางส่วน → แก้ตัวเลขตรงนี้ */}

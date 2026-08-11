@@ -13,6 +13,7 @@ import {
 } from "../points-actions"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
+import { isCreditFrozen } from "@/lib/member-credit"
 
 /** สีป้ายระดับสมาชิก — เรียงตามมูลค่าแพ็กเกจ */
 const TIER_STYLE: Record<string, string> = {
@@ -287,7 +288,7 @@ export default function ProfilePage() {
             <p className="text-4xl font-bold">{formatBaht(member.creditBalance)}฿</p>
             {/* หมดอายุแล้วห้ามใช้คำว่า "ใช้ได้ถึง" เพราะทำให้อ่านผิดว่ายังใช้ตัดได้ —
                 ต้องบอกยอดที่แช่แข็งเป็นตัวเลขชัดเจน ไม่ใช่แค่บอกว่าหมดอายุเฉยๆ */}
-            {member.creditExpired && member.creditBalance > 0 ? (
+            {isCreditFrozen(member.creditBalance, member.creditExpired) ? (
               <p className="mt-1 text-xs font-semibold text-amber-200">
                 หมดอายุแล้ว — เครดิต {formatBaht(member.creditBalance)}฿ ยังอยู่ครบ
                 เติมแพ็กเกจใหม่แล้วใช้ได้ทันที
