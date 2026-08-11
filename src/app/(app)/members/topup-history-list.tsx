@@ -27,23 +27,27 @@ export function TopupHistoryList({ topups }: { topups: TopupRow[] }) {
   const router = useRouter()
   const [term, setTerm] = useState("")
   // ลบมี 2 จังหวะ: กดครั้งแรกเปลี่ยนปุ่มเป็นยืนยัน กดซ้ำถึงลบจริง — กันมือลั่น
-  const [confirmId, setConfirmId] = useState<string | null>(null)
+  // ถ้าเซิร์ฟเวอร์ปฏิเสธเพราะลบแล้ววันหมดอายุจะถอยหลัง (deleteTopup คืน ok:false พร้อมข้อความเตือน)
+  // จะเข้าจังหวะที่ 3: ปุ่มเปลี่ยนข้อความอีกครั้ง กดซ้ำถึงส่ง confirmShorten=true ลบจริง
+  // เหตุผลอื่นที่ทำให้ลบไม่ได้ (เดือนปิดงบ/เครดิตถูกใช้ไปแล้ว) กดซ้ำแล้วเจอข้อความเดิมอีกครั้งแล้วเลิกเอง
+  const [confirmState, setConfirmState] = useState<{ id: string; shorten: boolean } | null>(null)
   const [pending, startTransition] = useTransition()
 
   function handleDelete(row: TopupRow) {
-    if (confirmId !== row.id) {
-      setConfirmId(row.id)
+    if (!confirmState || confirmState.id !== row.id) {
+      setConfirmState({ id: row.id, shorten: false })
       return
     }
     startTransition(async () => {
-      const r = await deleteTopup(row.id)
+      const r = await deleteTopup(row.id, confirmState.shorten)
       if (r.ok) {
         toast.success(`ลบใบเติมเงินของ ${row.customerName} แล้ว`)
         router.refresh()
+        setConfirmState(null)
       } else {
         toast.error(r.error)
+        setConfirmState(confirmState.shorten ? null : { id: row.id, shorten: true })
       }
-      setConfirmId(null)
     })
   }
 
@@ -91,13 +95,17 @@ export function TopupHistoryList({ topups }: { topups: TopupRow[] }) {
                   <p className="text-xs text-slate-500">รับ {formatBaht(t.cashReceived)} ฿</p>
                 </div>
                 <Button
-                  variant={confirmId === t.id ? "destructive" : "ghost"}
+                  variant={confirmState?.id === t.id ? "destructive" : "ghost"}
                   size="sm"
                   disabled={pending}
-                  className={confirmId === t.id ? "" : "text-red-600"}
+                  className={confirmState?.id === t.id ? "" : "text-red-600"}
                   onClick={() => handleDelete(t)}
                 >
-                  {confirmId === t.id ? "ยืนยันลบ?" : "ลบ"}
+                  {confirmState?.id === t.id
+                    ? confirmState.shorten
+                      ? "ยืนยันอีกครั้ง (วันหมดอายุจะถอย)"
+                      : "ยืนยันลบ?"
+                    : "ลบ"}
                 </Button>
               </div>
             </li>

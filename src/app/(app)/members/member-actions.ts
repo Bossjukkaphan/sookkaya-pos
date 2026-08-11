@@ -73,7 +73,10 @@ export async function createTopup(formData: FormData): Promise<TopupResult> {
  * ลบใบเติมเงิน (คีย์ผิด/ลูกค้าเปลี่ยนใจ เช่นเปลี่ยน 5,000 → 10,000: ลบใบเดิมแล้วเติมใหม่)
  * กันสองเรื่อง: เดือนที่ปิดงบแล้วห้ามแตะ · เครดิตที่ลูกค้าใช้ไปแล้วดึงคืนไม่ได้
  */
-export async function deleteTopup(id: string): Promise<TopupResult> {
+export async function deleteTopup(
+  id: string,
+  confirmShorten = false
+): Promise<TopupResult> {
   const supabase = await createClient()
 
   const { data: topup } = await supabase
@@ -99,6 +102,27 @@ export async function deleteTopup(id: string): Promise<TopupResult> {
     return {
       ok: false,
       error: `ลบไม่ได้ — เครดิตจากใบนี้ถูกใช้ไปแล้วบางส่วน (คงเหลือ ${remaining} จาก ${topup.credit_added} บาท) ต้องลบบิลที่จ่ายด้วยเครดิตของลูกค้าคนนี้ก่อน`,
+    }
+  }
+
+  // ลบใบที่ถือวันหมดอายุไกลสุดอยู่ = วันหมดอายุของทั้งกระปุกจะถอยหลัง
+  // ลูกค้าอาจกลายเป็นหมดอายุทันที ต้องบอกให้รู้ตัวก่อน ไม่ใช่ให้ไปเจอเอาตอนลูกค้ามาถึงร้าน
+  const { data: expiries } = await supabase
+    .from("member_topups")
+    .select("id, expiry_date")
+    .eq("customer_id", topup.customer_id)
+  const rows = expiries ?? []
+  const furthestOf = (list: typeof rows) =>
+    list.reduce<string | null>(
+      (max, r) => (max === null || String(r.expiry_date) > max ? String(r.expiry_date) : max),
+      null
+    )
+  const expiryNow = furthestOf(rows)
+  const expiryAfter = furthestOf(rows.filter((r) => r.id !== id))
+  if (expiryNow !== null && expiryAfter !== expiryNow && !confirmShorten) {
+    return {
+      ok: false,
+      error: `ลบใบนี้จะทำให้วันหมดอายุเครดิตถอยจาก ${expiryNow} เป็น ${expiryAfter ?? "ไม่มีเครดิตเหลือเลย"} — ถ้าแน่ใจให้กดยืนยันอีกครั้ง`,
     }
   }
 

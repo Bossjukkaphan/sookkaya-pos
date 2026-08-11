@@ -12,6 +12,7 @@ import {
   PRIVATE_ROOM_FEE,
 } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
+import { checkCreditSpend } from "@/lib/member-credit"
 import { parsePaymentLines, primaryMethod } from "@/lib/payments"
 import { pointExpiryDate, pointsForSale } from "@/lib/points"
 import { queueMirrorFromSale, timeToMin } from "@/lib/queue"
@@ -188,6 +189,20 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     return { ok: false, error: "ช่องทางนี้ใช้ร่วมกับเครดิตสมาชิกไม่ได้" }
   }
 
+  // วันที่ยอดขาย = วันที่ให้บริการ: บิลที่ผูกคิว (รวมจองล่วงหน้าจากไลน์) ใช้วันของคิว
+  // ไม่ใช่วันที่คีย์บิล — ยอดขาย/ค่ามือหมอ/ประกันรายวัน ต้องตกวันเดียวกับที่นวดจริง
+  // ต้องคำนวณก่อนด่านเครดิตด้านล่าง เพราะด่านนั้นต้องเทียบวันหมดอายุกับวันที่ของบิล ไม่ใช่วันนี้
+  const linkedQueueId = String(formData.get("queue_entry_id") ?? "")
+  let saleDate = todayInShopTz()
+  if (linkedQueueId) {
+    const { data: linkedQueue } = await supabase
+      .from("queue_entries")
+      .select("queue_date")
+      .eq("id", linkedQueueId)
+      .maybeSingle()
+    if (linkedQueue?.queue_date) saleDate = linkedQueue.queue_date
+  }
+
   // สัดส่วนรับรู้รายได้ของสมาชิก — อ่านก่อนคำนวณ เพราะสูตรต้องใช้
   let memberRatio: number | null = null
   // เครดิตคงเหลือหลังหักบิลนี้ — โชว์บนใบเสร็จให้ลูกค้าเห็นทันที (snapshot ณ ตอนขาย)
@@ -199,7 +214,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
 
     const { data: balance } = await supabase
       .from("member_balances")
-      .select("credit_balance, credit_granted, cash_paid")
+      .select("credit_balance, credit_granted, cash_paid, next_expiry")
       .eq("customer_id", customerId)
       .single()
 
@@ -212,11 +227,15 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       paymentMethod === MEMBER_CREDIT_METHOD
         ? priceNormal - discountInput + roomFee
         : creditRequested
-    if (credit < wanted) {
-      return {
-        ok: false,
-        error: `เครดิตคงเหลือไม่พอ (มี ${credit} บาท ต้องใช้ ${wanted} บาท)`,
-      }
+    // เทียบกับวันที่ของบิล ไม่ใช่วันนี้ — บิลที่ให้บริการตอนเครดิตยังไม่หมดอายุต้องคีย์ย้อนหลังได้
+    const spend = checkCreditSpend({
+      expiry: balance?.next_expiry ?? null,
+      onDate: saleDate,
+      balance: credit,
+      wanted,
+    })
+    if (!spend.ok) {
+      return { ok: false, error: spend.message }
     }
     creditAfter = credit - wanted
   }
@@ -292,18 +311,6 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .eq("id", user.id)
     .maybeSingle()
 
-  // วันที่ยอดขาย = วันที่ให้บริการ: บิลที่ผูกคิว (รวมจองล่วงหน้าจากไลน์) ใช้วันของคิว
-  // ไม่ใช่วันที่คีย์บิล — ยอดขาย/ค่ามือหมอ/ประกันรายวัน ต้องตกวันเดียวกับที่นวดจริง
-  const linkedQueueId = String(formData.get("queue_entry_id") ?? "")
-  let saleDate = todayInShopTz()
-  if (linkedQueueId) {
-    const { data: linkedQueue } = await supabase
-      .from("queue_entries")
-      .select("queue_date")
-      .eq("id", linkedQueueId)
-      .maybeSingle()
-    if (linkedQueue?.queue_date) saleDate = linkedQueue.queue_date
-  }
   // sale_time = เวลาที่ลูกค้าใช้บริการ (พนักงานแก้ได้ เพราะบิลมักคีย์หลังนวดเสร็จ)
   // ส่วนเวลาที่บันทึกจริงอยู่ที่ created_at ซึ่งฐานข้อมูลประทับให้เองเสมอ
   const saleTime = /^\d{2}:\d{2}$/.test(String(formData.get("sale_time") ?? ""))
@@ -699,7 +706,7 @@ export async function updateSale(
 
     const { data: balance } = await supabase
       .from("member_balances")
-      .select("credit_balance, credit_granted, cash_paid")
+      .select("credit_balance, credit_granted, cash_paid, next_expiry")
       .eq("customer_id", customerId)
       .single()
 
@@ -708,23 +715,32 @@ export async function updateSale(
 
     // ยอดคงเหลือปัจจุบันหักรายการนี้ไปแล้ว การแก้จะคืนของเดิมก่อนตัดใหม่
     // เพดานจึงเป็นคงเหลือ + ที่รายการนี้เคยตัด — แต่คืนได้เฉพาะเมื่อยังเป็นลูกค้าคนเดิม
-    // (headroom นี้ใช้กับทั้งสองโหมด — เครดิตเต็มบิล และแบ่งจ่ายบางส่วน)
     const sameCustomer = existing.customer_id === customerId
-    const headroom =
-      Number(balance?.credit_balance ?? 0) +
-      (sameCustomer ? Number(existing.credit_used ?? 0) : 0)
+    const previouslyUsed = sameCustomer ? Number(existing.credit_used ?? 0) : 0
+    const headroom = Number(balance?.credit_balance ?? 0) + previouslyUsed
 
-    // เครดิตเต็มบิลต้องพอทั้งบิล (เดิม) · แบ่งจ่ายต้องพอเท่าที่ขอตัด
     const wanted =
       paymentMethod === MEMBER_CREDIT_METHOD
         ? service.price -
           discountInput +
           (formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0)
         : creditRequested
-    if (headroom < wanted) {
+    // ใช้ sale_date ของบิลเดิม และส่ง previouslyUsed เพื่อให้แก้บิลเก่าของลูกค้าที่หมดอายุได้
+    // ตราบใดที่ไม่เพิ่มยอดตัด — ถ้าบล็อกทุกกรณี พนักงานจะแก้บิลที่คีย์ผิดไม่ได้เลย
+    const spend = checkCreditSpend({
+      expiry: balance?.next_expiry ?? null,
+      onDate: existing.sale_date,
+      balance: headroom,
+      wanted,
+      alreadyUsedOnThisBill: previouslyUsed,
+    })
+    if (!spend.ok) {
       return {
         ok: false,
-        error: `เครดิตคงเหลือไม่พอ (แก้เป็นได้สูงสุด ${headroom} บาท ต้องใช้ ${wanted} บาท)`,
+        error:
+          spend.reason === "insufficient"
+            ? `เครดิตคงเหลือไม่พอ (แก้เป็นได้สูงสุด ${headroom} บาท ต้องใช้ ${wanted} บาท)`
+            : spend.message,
       }
     }
     creditAfter = headroom - wanted
