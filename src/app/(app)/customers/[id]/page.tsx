@@ -134,7 +134,12 @@ export default async function CustomerDetailPage({
         <Card>
           <CardContent className="py-4">
             <p className="text-sm text-slate-600">เครดิตคงเหลือ</p>
-            <p className="text-2xl font-bold text-emerald-800">
+            {/* ยอดติดลบ = มีบิลตัดเครดิตของคนที่ไม่เคยเติมเงิน (คีย์ผิดใบ) — ต้องสะดุดตา
+                ตารางลูกค้าเปลี่ยนเป็นแดงอยู่แล้ว (customer-table.tsx CreditAmount) แต่หน้านี้
+                คือหน้าที่เปิดมาสืบว่าบิลไหนผิด เคยโชว์เขียวเหมือนยอดปกติ */}
+            <p
+              className={`text-2xl font-bold ${credit < 0 ? "text-red-600" : "text-emerald-800"}`}
+            >
               {formatBaht(credit)} ฿
             </p>
             {isLeftoverCredit && (

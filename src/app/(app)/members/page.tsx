@@ -46,8 +46,16 @@ export default async function MembersPage() {
   const frozenCredit = members
     .filter((m) => isCreditFrozen(m.credit_balance ?? 0, m.credit_expired ?? false))
     .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
+  // "ใกล้หมดอายุ" ต้องยังไม่หมดอายุ — เงื่อนไข next_expiry <= อีก 30 วัน เป็นจริงกับทุกวันในอดีตด้วย
+  // คนที่แช่แข็งไปแล้วจึงเคยถูกนับซ้ำทั้งในการ์ด "แช่แข็ง Y ฿" และการ์ด "ใกล้หมดอายุ" บนจอเดียวกัน
+  // ทั้งที่เป็นคนละกลุ่มคนละงาน (แช่แข็ง = ชวนเติมเพื่อปลดล็อก · ใกล้หมด = ชวนใช้ก่อนหมด)
+  // แยกด้วย isCreditFrozen ตัวเดียวกับสองบรรทัดข้างบน — Overview/Daily Report แยกด้วย
+  // .eq("credit_expired", false) ที่ฝั่ง SQL ด้วยเหตุผลเดียวกัน
   const expiringSoonCount = members.filter(
-    (m) => !!m.next_expiry && m.next_expiry <= addDays(today, 30)
+    (m) =>
+      !!m.next_expiry &&
+      m.next_expiry <= addDays(today, 30) &&
+      !isCreditFrozen(m.credit_balance ?? 0, m.credit_expired ?? false)
   ).length
 
   // ประวัติการเติมเงินอาจมีคนที่ใช้เครดิตหมดแล้ว ซึ่งไม่อยู่ในรายการข้างบน

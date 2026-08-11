@@ -116,6 +116,77 @@ describe("createSale — ด่านเครดิตหมดอายุ", (
       expect(r.creditAfter).toBe(500) // 1000 - 500 (ราคาบริการเต็มบิล)
     }
   })
+
+  it("เครดิตหมดอายุก่อนวันที่ของบิล ต้องปฏิเสธ แม้ยอดคงเหลือจะพอเหลือเฟือ", async () => {
+    const written: { insert: unknown[] } = { insert: [] }
+    // หมุดของด่านเครดิตฝั่ง createSale: ยอด 5,000 พอจ่ายบิล 500 สบาย ๆ แต่หมดอายุไปตั้งแต่ 2026-06-30
+    // ก่อนวันที่ของบิล (คิว 2026-07-01) — ยอดที่ยังอยู่ในกระปุกคือเครดิต "แช่แข็ง" ใช้ไม่ได้จนกว่าจะเติมใหม่
+    //
+    // เทสต์นี้ล้มทันทีถ้าใครถอด checkCreditSpend กลับไปเป็นเงื่อนไขเดิม `if (credit < wanted)`
+    // (เช่นตอนแก้ merge conflict) ซึ่งเป็นทางเดียวที่เครดิตแช่แข็งทั้งก้อนจะถูกใช้ฟรีอีกครั้ง
+    const tables = {
+      services: seqTable([{ data: { name: "นวดไทย", price: 500, commission: 100, duration_min: 60 } }]),
+      queue_entries: seqTable([{ data: { queue_date: "2026-07-01" } }]),
+      member_balances: seqTable([
+        { data: { credit_balance: 5000, credit_granted: 5000, cash_paid: 5000, next_expiry: "2026-06-30" } },
+      ]),
+      profiles: seqTable([{ data: { full_name: "Boss" } }]),
+      sales: seqTable([{ data: { id: SALE, receipt_no: "R0002" } }], written),
+      point_transactions: seqTable([{ data: null }]),
+    }
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
+
+    const fd = baseFormData({
+      therapist_id: "th1",
+      service_id: "svc1",
+      payment_method: MEMBER_CREDIT_METHOD,
+      customer_id: CUST,
+      discount: "0",
+      queue_entry_id: QUEUE,
+    })
+
+    const r = await createSale(fd)
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toContain("เครดิตหมดอายุเมื่อ 2026-06-30")
+      // ข้อความต้องบอกยอดที่ยังอยู่ครบ เพื่อให้พนักงานชวนลูกค้าเติมแพ็กเกจใหม่ ไม่ใช่บอกว่าเงินหาย
+      expect(r.error).toContain("5000")
+    }
+    // ด่านต้องกันก่อนเขียน — ไม่ใช่ปฏิเสธหลังบิลลงตารางไปแล้ว
+    expect(written.insert).toHaveLength(0)
+  })
+
+  it("ตัดเครดิตแบ่งชำระ (credit_requested) ก็ต้องผ่านด่านเดียวกัน ไม่ใช่เฉพาะช่องทาง Member Credit", async () => {
+    // ทางเข้าที่สองของการตัดเครดิต: จ่ายเงินสดแล้วตัดเครดิตบางส่วน — ถ้าด่านครอบเฉพาะ
+    // paymentMethod === "Member Credit" เครดิตแช่แข็งจะไหลออกทางนี้แทนแบบเงียบ ๆ
+    const tables = {
+      services: seqTable([{ data: { name: "นวดไทย", price: 500, commission: 100, duration_min: 60 } }]),
+      queue_entries: seqTable([{ data: { queue_date: "2026-07-01" } }]),
+      member_balances: seqTable([
+        { data: { credit_balance: 5000, credit_granted: 5000, cash_paid: 5000, next_expiry: "2026-06-30" } },
+      ]),
+      profiles: seqTable([{ data: { full_name: "Boss" } }]),
+      sales: seqTable([{ data: { id: SALE, receipt_no: "R0003" } }]),
+      point_transactions: seqTable([{ data: null }]),
+    }
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
+
+    const fd = baseFormData({
+      therapist_id: "th1",
+      service_id: "svc1",
+      payment_method: "เงินสด",
+      customer_id: CUST,
+      discount: "0",
+      credit_requested: "200",
+      queue_entry_id: QUEUE,
+    })
+
+    const r = await createSale(fd)
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("เครดิตหมดอายุเมื่อ 2026-06-30")
+  })
 })
 
 describe("updateSale — ด่านเครดิตหมดอายุ", () => {
