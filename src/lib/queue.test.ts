@@ -4,6 +4,7 @@ import {
   BOARD_END_MIN,
   BOARD_START_MIN,
   PX_PER_MIN,
+  bedHolderInGroup,
   bedStartMin,
   busyBedIds,
   busyTherapistIds,
@@ -284,5 +285,44 @@ describe("groupSlotTimes", () => {
       { startMin: 600, durationMin: 60 },
       { startMin: 660, durationMin: 60 },
     ])
+  })
+})
+
+describe("bedHolderInGroup", () => {
+  const row = (bedId: string, startMin: number | null, durationMin = 60) => ({
+    bedId,
+    startMin,
+    durationMin,
+  })
+
+  it("เตียงเดียวกันแต่คนละช่วงเวลา (ลูกค้าคนเดิมนวดต่อ) → ไม่ชน", () => {
+    const rows = [row("b1", 600), row("b1", 660)]
+    expect(bedHolderInGroup(rows, 1, "b1")).toBe(-1)
+  })
+
+  it("เตียงเดียวกันเวลาทับกัน → คืนดัชนีคนที่ถือเตียงอยู่", () => {
+    const rows = [row("b1", 600), row("b1", 630)]
+    expect(bedHolderInGroup(rows, 1, "b1")).toBe(0)
+  })
+
+  it("ชนขอบพอดี 10:00–11:00 กับ 11:00–12:00 → ไม่ชน", () => {
+    const rows = [row("b1", 600), row("b1", 660)]
+    expect(bedHolderInGroup(rows, 0, "b1")).toBe(-1)
+  })
+
+  it("เวลาไม่ครบ (เว้นว่าง = ใช้เวลาบันทึก) → กันไว้ก่อน ถือว่าชน", () => {
+    expect(bedHolderInGroup([row("b1", null), row("b1", 600)], 1, "b1")).toBe(0)
+    expect(bedHolderInGroup([row("b1", 600), row("b1", null)], 1, "b1")).toBe(0)
+  })
+
+  it("คนละเตียง · ไม่นับตัวเอง · เตียงว่างไม่ถือเป็นชน", () => {
+    expect(bedHolderInGroup([row("b1", 600), row("b2", 600)], 1, "b2")).toBe(-1)
+    expect(bedHolderInGroup([row("", 600), row("", 600)], 1, "")).toBe(-1)
+  })
+
+  it("ระยะเวลาต่างกันรายคน — ใช้ของแต่ละแถวคำนวณ", () => {
+    // คนแรก 10:00 ยาว 120 นาที · คนที่สอง 11:00 → ทับ
+    const rows = [row("b1", 600, 120), row("b1", 660, 60)]
+    expect(bedHolderInGroup(rows, 1, "b1")).toBe(0)
   })
 })

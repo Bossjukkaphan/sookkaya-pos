@@ -71,7 +71,14 @@ export default async function PosPage({
     .map((t) => ({ id: t.id, name: t.name }))
   const services = allServices
     .filter((s) => s.is_active)
-    .map((s) => ({ id: s.id, name: s.name, price: s.price, commission: s.commission }))
+    // duration_min ใช้คิดว่าเตียงของแต่ละคนทับเวลากันจริงไหม (ดู bedHolderInGroup)
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      price: s.price,
+      commission: s.commission,
+      duration_min: s.duration_min,
+    }))
 
   // เก็บเงินทั้งกลุ่ม → โหลดทุกคนในกลุ่มที่ยังไม่จ่าย/ไม่ยกเลิก มาลงจอเดียว
   const groupEntries = groupRes.data

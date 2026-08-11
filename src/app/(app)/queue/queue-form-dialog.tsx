@@ -662,16 +662,27 @@ export function QueueFormDialog({
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    setExtraPeople((arr) => [
-                      ...arr,
-                      {
-                        // ลูกค้าคนเดิมทำต่ออีกคอร์ส — หมอคนเดิมเป็นค่าตั้งต้น แก้ได้
-                        therapistId: therapistId || null,
-                        serviceId: "",
-                        bedId: null,
-                        sequential: true,
-                      },
-                    ])
+                    setExtraPeople((arr) => {
+                      // ลูกค้าคนเดิมทำต่ออีกคอร์ส — หมอ/เตียงเดิมเป็นค่าตั้งต้น แก้ได้
+                      // (นวดต่อเตียงเดิมคือเคสปกติ · ย้ายเตียงก็แค่เปลี่ยนในช่อง)
+                      // เตียงเดิมติดคิวอื่นในช่วงต่อเวลา = ไม่เติมให้ ปล่อยว่างไว้เลือกเอง
+                      const prevBed =
+                        arr.length > 0 ? arr[arr.length - 1].bedId : bedId || null
+                      const nextStart = slots[slots.length - 1]
+                      const startAfter = nextStart.startMin + nextStart.durationMin
+                      const free =
+                        prevBed !== null &&
+                        !busyBedIds(otherEntries, startAfter, 60).has(prevBed)
+                      return [
+                        ...arr,
+                        {
+                          therapistId: therapistId || null,
+                          serviceId: "",
+                          bedId: free ? prevBed : null,
+                          sequential: true,
+                        },
+                      ]
+                    })
                   }
                 >
                   + ต่อเวลา (คนเดิม)

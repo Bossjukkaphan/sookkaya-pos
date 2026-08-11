@@ -144,6 +144,27 @@ export function groupSlotTimes(
   })
 }
 
+/** คนอื่นในกลุ่มที่ถือเตียงนี้อยู่ทับช่วงเวลาของรายการที่ i → ดัชนีคนนั้น (ไม่พบ = -1)
+ *
+ *  เดิมจอเก็บเงินกลุ่มเทียบแค่ "เตียงซ้ำ" ไม่ดูเวลา — ลูกค้าคนเดิมนวดต่ออีกคอร์สบนเตียงเดิม
+ *  (รายการ "ต่อเวลา" ที่ส่งมาจากคิว) จึงถูกกันทั้งที่ถูกต้อง เพราะอยู่คนละช่วงเวลากัน
+ *
+ *  เวลาไม่ครบ (เว้นว่าง = ยึดเวลาบันทึก ซึ่งยังไม่รู้ตอนกรอก) ถือว่าชนไว้ก่อน —
+ *  เตียงจองซ้อนแก้ยากกว่าการให้พนักงานกรอกเวลาเพิ่มอีกช่อง */
+export function bedHolderInGroup(
+  rows: { bedId: string; startMin: number | null; durationMin: number }[],
+  i: number,
+  bedId: string
+): number {
+  if (!bedId) return -1
+  const mine = rows[i]
+  return rows.findIndex((r, j) => {
+    if (j === i || r.bedId !== bedId) return false
+    if (mine.startMin === null || r.startMin === null) return true
+    return overlaps(r.startMin, r.durationMin, mine.startMin, mine.durationMin)
+  })
+}
+
 /** หมอว่าง = ไม่มีคิว (รอ/กำลังนวด) คร่อมเวลานี้ · คิวไม่ระบุหมอไม่ทำให้ใครติด */
 export function countFreeTherapists(
   therapistIds: string[],
