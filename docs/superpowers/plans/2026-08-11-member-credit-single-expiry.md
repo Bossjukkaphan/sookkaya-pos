@@ -250,11 +250,14 @@ git commit -m "feat(credit): เครดิตสมาชิกเป็นก
 
 - [ ] **Step 1: เขียนเทสต์ที่ยังไม่ผ่าน**
 
-เพิ่มท้าย `src/lib/member-credit.test.ts`:
+ไฟล์ `src/lib/member-credit.test.ts` มีบรรทัด import อยู่แล้วคือ
+`import { CREDIT_LOW_MAX, creditBucket } from "./member-credit"`
+**ให้แก้บรรทัดนั้นเป็น** `import { CREDIT_LOW_MAX, checkCreditSpend, creditBucket } from "./member-credit"`
+อย่าเพิ่ม import ก้อนใหม่กลางไฟล์
+
+แล้วเพิ่มท้ายไฟล์:
 
 ```typescript
-import { checkCreditSpend } from "./member-credit"
-
 describe("checkCreditSpend", () => {
   const ใช้ได้ = { expiry: "2026-12-31", onDate: "2026-08-11", balance: 2300 }
 
@@ -546,7 +549,17 @@ git commit -m "feat(credit): ตรรกะกลาง checkCreditSpend + ส�
 
 - [ ] **Step 3: เตือนก่อนลบใบเติมเงินที่ทำให้วันหมดอายุถอยหลัง**
 
-ใน `src/app/(app)/members/member-actions.ts` เพิ่มหลังการตรวจยอดคงเหลือใน `deleteTopup` (หลังบล็อก `if (remaining < Number(topup.credit_added))`):
+ใน `src/app/(app)/members/member-actions.ts` **แก้ลายเซ็นของ `deleteTopup` ก่อน** จาก
+`export async function deleteTopup(id: string): Promise<TopupResult>` เป็น:
+
+```typescript
+export async function deleteTopup(
+  id: string,
+  confirmShorten = false
+): Promise<TopupResult> {
+```
+
+แล้วเพิ่มบล็อกนี้ต่อจากการตรวจยอดคงเหลือ (หลังบล็อก `if (remaining < Number(topup.credit_added))`):
 
 ```typescript
   // ลบใบที่ถือวันหมดอายุไกลสุดอยู่ = วันหมดอายุของทั้งกระปุกจะถอยหลัง
@@ -556,25 +569,24 @@ git commit -m "feat(credit): ตรรกะกลาง checkCreditSpend + ส�
     .select("id, expiry_date")
     .eq("customer_id", topup.customer_id)
   const rows = expiries ?? []
-  const เดิม = rows.reduce<string | null>(
-    (max, r) => (max === null || String(r.expiry_date) > max ? String(r.expiry_date) : max),
-    null
-  )
-  const ใหม่ = rows
-    .filter((r) => r.id !== id)
-    .reduce<string | null>(
+  const furthestOf = (list: typeof rows) =>
+    list.reduce<string | null>(
       (max, r) => (max === null || String(r.expiry_date) > max ? String(r.expiry_date) : max),
       null
     )
-  if (เดิม !== null && ใหม่ !== เดิม && formData_confirmShorten !== true) {
+  const expiryNow = furthestOf(rows)
+  const expiryAfter = furthestOf(rows.filter((r) => r.id !== id))
+  if (expiryNow !== null && expiryAfter !== expiryNow && !confirmShorten) {
     return {
       ok: false,
-      error: `ลบใบนี้จะทำให้วันหมดอายุเครดิตถอยจาก ${เดิม} เป็น ${ใหม่ ?? "ไม่มีเครดิตเหลือเลย"} — ถ้าแน่ใจให้กดยืนยันอีกครั้ง`,
+      error: `ลบใบนี้จะทำให้วันหมดอายุเครดิตถอยจาก ${expiryNow} เป็น ${expiryAfter ?? "ไม่มีเครดิตเหลือเลย"} — ถ้าแน่ใจให้กดยืนยันอีกครั้ง`,
     }
   }
 ```
 
-แก้ลายเซ็นเป็น `export async function deleteTopup(id: string, confirmShorten = false)` แล้วใช้ `confirmShorten` แทน `formData_confirmShorten` ในเงื่อนไขข้างบน จากนั้นแก้ผู้เรียกในหน้าสมาชิกให้ส่งค่ายืนยันเมื่อพนักงานกดซ้ำ
+ผู้เรียกเดิมที่ส่งอาร์กิวเมนต์เดียวยังคอมไพล์ผ่าน เพราะ `confirmShorten` มีค่าเริ่มต้น
+ผลคือครั้งแรกจะถูกปฏิเสธพร้อมข้อความ พนักงานกดยืนยันอีกครั้งแล้วผู้เรียกส่ง `true` เข้ามาจึงลบได้
+ให้แก้ผู้เรียกในหน้าสมาชิกให้ส่ง `true` เมื่อพนักงานกดยืนยันซ้ำ
 
 - [ ] **Step 4: typecheck + เทสต์**
 
@@ -634,21 +646,36 @@ git commit -m "feat(credit): กันการใช้เครดิตที
         .single()
 ```
 
-เก็บสถานะไว้ใน state แล้วเปลี่ยนป้ายเป็น:
+ไฟล์นี้มี state `balance` อยู่แล้ว ให้เพิ่มอีกสองตัวข้าง ๆ กัน:
+
+```typescript
+  const [creditExpired, setCreditExpired] = useState(false)
+  const [expiryDate, setExpiryDate] = useState<string | null>(null)
+```
+
+แล้วเซ็ตค่าในที่เดียวกับที่เรียก `setBalance(b)`:
+
+```typescript
+        setBalance(b)
+        setCreditExpired(Boolean(data?.credit_expired))
+        setExpiryDate(data?.next_expiry ?? null)
+        onBalanceChange?.(b)
+```
+
+จากนั้นเปลี่ยนป้าย (ต้อง `import { formatThaiDate } from "@/lib/datetime"` เพิ่มที่หัวไฟล์):
 
 ```tsx
-        {shownBalance !== null && (
-          expired && shownBalance > 0 ? (
-            <Badge className="bg-amber-500 text-white">
-              เครดิต {formatBaht(shownBalance)} ฿ · หมดอายุ {formatThaiDate(expiryDate!)} —
+        {shownBalance !== null &&
+          (creditExpired && shownBalance > 0 && expiryDate !== null ? (
+            <Badge className="bg-amber-500 text-white hover:bg-amber-500">
+              เครดิต {formatBaht(shownBalance)} ฿ · หมดอายุ {formatThaiDate(expiryDate)} —
               เติมใหม่ใช้ได้ทันที
             </Badge>
           ) : (
             <Badge variant={shownBalance > 0 ? "default" : "secondary"}>
               เครดิตคงเหลือ {formatBaht(shownBalance)} ฿
             </Badge>
-          )
-        )}
+          ))}
 ```
 
 - [ ] **Step 2: ปิดปุ่มจ่ายด้วยเครดิตในบิลชุด**
@@ -695,7 +722,8 @@ git commit -m "feat(credit): กันการใช้เครดิตที
 
 ใน `src/app/(app)/customers/customer-table.tsx` เพิ่ม `credit_expired` เข้าชนิดข้อมูลของแถว แล้วให้ `CreditAmount` แสดงสีเหลืองพร้อมคำว่า "(หมดอายุ)" ต่อท้ายเมื่อ `credit_expired` เป็นจริงและยอดมากกว่า 0
 
-ใน `src/app/(app)/members/member-row.tsx` เปลี่ยนบรรทัด 32 เป็น:
+ใน `src/app/(app)/members/member-row.tsx` เพิ่ม `expired?: boolean` เข้า props ของคอมโพเนนต์
+(ค่าเริ่มต้น `false` เพื่อให้ผู้เรียกเดิมยังคอมไพล์ผ่าน) แล้วเปลี่ยนบรรทัด 32 เป็น:
 
 ```typescript
   const bucket = creditBucket(balance, expired)
@@ -703,7 +731,11 @@ git commit -m "feat(credit): กันการใช้เครดิตที
   const isExpired = bucket === "expired"
 ```
 
-แล้วแสดงป้าย "หมดอายุแล้ว" เมื่อ `isExpired` (ต้องส่ง `expired` เข้ามาเป็น prop จากหน้าที่เรียก)
+แล้วแสดงป้าย `หมดอายุแล้ว` เมื่อ `isExpired`
+
+**หน้าที่เรียกคือ `src/app/(app)/members/page.tsx`** ซึ่งงานที่ 5 จะแก้ต่อในไฟล์เดียวกัน
+งานนี้ให้เพิ่มแค่ `credit_expired` เข้า select บรรทัด 25 และส่งต่อเป็น prop
+`expired={m.credit_expired ?? false}` ที่จุดที่ render `MemberRow` — อย่าเพิ่งแตะการรวมยอด
 
 - [ ] **Step 5: หน้าไลน์ของลูกค้า**
 
