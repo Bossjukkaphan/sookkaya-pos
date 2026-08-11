@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 import { createClient } from "@/lib/supabase/server"
+import { fetchAllRows } from "@/lib/fetch-all-rows"
 import { todayInShopTz } from "@/lib/datetime"
 import { ilikeOr } from "@/lib/search"
 import { formatBaht } from "@/lib/constants"
@@ -25,6 +26,12 @@ function toCsv(headers: string[], rows: unknown[][]): string {
   // BOM ให้ Excel อ่านภาษาไทยไม่เป็นตัวต่างดาว
   return "﻿" + lines.join("\r\n")
 }
+
+/**
+ * จำนวน bill_key ต่อหนึ่งคำขอ — UUID ยาว ถ้ายัดทีเดียวหมด URL จะยาวเกินจนคำขอพัง
+ * ข้อมูลจริงมีบรรทัดชำระมากสุด 2 บรรทัดต่อบิล 200 คีย์จึงได้ราว 400 แถว ต่ำกว่าขนาดหน้า
+ */
+const KEY_CHUNK = 200
 
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
@@ -62,16 +69,39 @@ export async function GET(request: NextRequest) {
   }
 
   if (type === "expenses") {
-    const { data } = await supabase
-      .from("expenses")
-      .select("expense_date, item, category, amount, paid_by, notes")
-      .gte("expense_date", from)
-      .lte("expense_date", to)
-      .order("expense_date")
+    let data: {
+      expense_date: string
+      item: string | null
+      category: string | null
+      amount: number | null
+      paid_by: string | null
+      notes: string | null
+    }[]
+    try {
+      data = await fetchAllRows((offset, limit) =>
+        supabase
+          .from("expenses")
+          .select("expense_date, item, category, amount, paid_by, notes", {
+            count: "exact",
+          })
+          .gte("expense_date", from)
+          .lte("expense_date", to)
+          // id เป็นตัวตัดสินให้ลำดับคงที่ — ถ้าเรียงด้วยวันที่อย่างเดียว รายการวันเดียวกัน
+          // อาจสลับตำแหน่งระหว่างหน้า ทำให้บางแถวถูกดึงซ้ำและบางแถวหายไป
+          .order("expense_date")
+          .order("id")
+          .range(offset, offset + limit - 1)
+      )
+    } catch (e) {
+      return NextResponse.json(
+        { error: `ดาวน์โหลดรายจ่ายไม่สำเร็จ: ${(e as Error).message}` },
+        { status: 500 }
+      )
+    }
 
     const csv = toCsv(
       ["วันที่", "รายการ", "หมวดหมู่", "จำนวนเงิน", "ผู้จ่าย", "หมายเหตุ"],
-      (data ?? []).map((e) => [
+      data.map((e) => [
         e.expense_date, e.item, e.category, e.amount, e.paid_by, e.notes,
       ])
     )
@@ -84,43 +114,73 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  // ตัวกรองชุดเดียวกับหน้าประวัติบิล — export ได้ตรงกับที่ตาเห็น
-  let salesQuery = supabase
-    .from("sales")
-    .select("*")
-    .gte("sale_date", from)
-    .lte("sale_date", to)
-    .order("sale_date")
-    .order("sale_time")
   const q = searchParams.get("q")?.trim()
-  // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
-  // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
-  // ที่นี่ร้ายสุด: ได้ไฟล์ CSV ที่มีแต่หัวตาราง หน้าตาเหมือน export สำเร็จแต่ข้อมูลหายหมด
-  if (q) {
-    salesQuery = salesQuery.or(ilikeOr(["customer_name", "customer_phone", "receipt_no"], q))
-  }
   const therapistFilter = searchParams.get("therapist")
-  if (therapistFilter) salesQuery = salesQuery.eq("therapist_id", therapistFilter)
   const paymentFilter = searchParams.get("payment")
-  if (paymentFilter) salesQuery = salesQuery.eq("payment_method", paymentFilter)
 
-  const [{ data: sales }, { data: therapists }, { data: beds }] = await Promise.all([
-    salesQuery,
-    supabase.from("therapists").select("id, name"),
-    supabase.from("beds").select("id, room, name"),
-  ])
+  // ตัวกรองชุดเดียวกับหน้าประวัติบิล — export ได้ตรงกับที่ตาเห็น
+  const salesPage = (offset: number, limit: number) => {
+    let qb = supabase
+      .from("sales")
+      .select("*", { count: "exact" })
+      .gte("sale_date", from)
+      .lte("sale_date", to)
+      // id เป็นตัวตัดสินให้ลำดับคงที่ — วันและเวลาซ้ำกันได้ ถ้าลำดับไม่คงที่
+      // การแบ่งหน้าจะทำให้บางบิลถูกดึงซ้ำและบางบิลหายไปจากไฟล์
+      .order("sale_date")
+      .order("sale_time")
+      .order("id")
+      .range(offset, offset + limit - 1)
+    // ilikeOr ครอบคำค้นด้วยเครื่องหมายคำพูด — ห้ามต่อสตริงเอง
+    // แค่ผู้ใช้พิมพ์จุลภาค PostgREST ก็อ่านเป็นตัวคั่นเงื่อนไขแล้วพังทั้ง query
+    // ที่นี่ร้ายสุด: ได้ไฟล์ CSV ที่มีแต่หัวตาราง หน้าตาเหมือน export สำเร็จแต่ข้อมูลหายหมด
+    if (q) qb = qb.or(ilikeOr(["customer_name", "customer_phone", "receipt_no"], q))
+    if (therapistFilter) qb = qb.eq("therapist_id", therapistFilter)
+    if (paymentFilter) qb = qb.eq("payment_method", paymentFilter)
+    return qb
+  }
 
-  // สรุปบรรทัดชำระต่อบิล (bill_key = bill_id ?? id) — join แบบแบตช์ครั้งเดียว กัน N+1
-  // ต่อแถวขาย บิลเก่า/Gowabi/KOL ได้บรรทัดสังเคราะห์บรรทัดเดียวจาก v_bill_payments เหมือนกันหมด
-  const billKeys = [...new Set((sales ?? []).map((s) => String(s.bill_id ?? s.id)))]
-  const { data: paymentLines } = billKeys.length
-    ? await supabase
-        .from("v_bill_payments")
-        .select("bill_key, method, amount")
-        .in("bill_key", billKeys)
-    : { data: [] }
+  let sales: Awaited<ReturnType<typeof salesPage>>["data"] & object
+  let paymentLines: { bill_key: string | null; method: string | null; amount: number | null }[]
+  let therapists: { id: string; name: string }[] | null
+  let beds: { id: string; room: string; name: string }[] | null
+  try {
+    const [salesRows, therapistRes, bedRes] = await Promise.all([
+      fetchAllRows(salesPage),
+      supabase.from("therapists").select("id, name"),
+      supabase.from("beds").select("id, room, name"),
+    ])
+    sales = salesRows
+    therapists = therapistRes.data
+    beds = bedRes.data
+
+    // สรุปบรรทัดชำระต่อบิล (bill_key = bill_id ?? id) — join แบบแบตช์ กัน N+1 ต่อแถวขาย
+    // บิลเก่า/Gowabi/KOL ได้บรรทัดสังเคราะห์บรรทัดเดียวจาก v_bill_payments เหมือนกันหมด
+    const billKeys = [...new Set(sales.map((s) => String(s.bill_id ?? s.id)))]
+    paymentLines = []
+    for (let i = 0; i < billKeys.length; i += KEY_CHUNK) {
+      const chunk = billKeys.slice(i, i + KEY_CHUNK)
+      const rows = await fetchAllRows((offset, limit) =>
+        supabase
+          .from("v_bill_payments")
+          .select("bill_key, method, amount", { count: "exact" })
+          .in("bill_key", chunk)
+          .order("bill_key")
+          .order("amount")
+          .order("method")
+          .range(offset, offset + limit - 1)
+      )
+      paymentLines.push(...rows)
+    }
+  } catch (e) {
+    return NextResponse.json(
+      { error: `ดาวน์โหลดรายการขายไม่สำเร็จ: ${(e as Error).message}` },
+      { status: 500 }
+    )
+  }
+
   const linesByBillKey = new Map<string, { method: string; amount: number }[]>()
-  for (const p of paymentLines ?? []) {
+  for (const p of paymentLines) {
     const key = String(p.bill_key)
     const arr = linesByBillKey.get(key) ?? []
     arr.push({ method: p.method ?? "ไม่ระบุ", amount: Number(p.amount) }) // view types nullable แต่ข้อมูลจริงไม่เคย null
@@ -152,7 +212,7 @@ export async function GET(request: NextRequest) {
       "โบนัสที่ใช้", "ที่มาลูกค้า", "ช่องทางจอง", "เตียง", "หมายเหตุ",
       "ผู้บันทึก", "ผู้แก้ไข",
     ],
-    (sales ?? []).map((s) => [
+    sales.map((s) => [
       s.receipt_no, s.sale_date, s.sale_time, s.customer_name, s.customer_phone,
       therapistName.get(s.therapist_id ?? "") ?? "",
       s.service_name, s.price_normal, s.coupon_promo, s.discount, s.net_amount,
