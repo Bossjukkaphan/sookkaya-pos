@@ -717,7 +717,9 @@ export async function updateSale(
     // เพดานจึงเป็นคงเหลือ + ที่รายการนี้เคยตัด — แต่คืนได้เฉพาะเมื่อยังเป็นลูกค้าคนเดิม
     const sameCustomer = existing.customer_id === customerId
     const previouslyUsed = sameCustomer ? Number(existing.credit_used ?? 0) : 0
-    const headroom = Number(balance?.credit_balance ?? 0) + previouslyUsed
+    const customerBalance = Number(balance?.credit_balance ?? 0)
+    const headroom = customerBalance + previouslyUsed
+    const expiry = balance?.next_expiry ?? null
 
     const wanted =
       paymentMethod === MEMBER_CREDIT_METHOD
@@ -728,19 +730,26 @@ export async function updateSale(
     // ใช้ sale_date ของบิลเดิม และส่ง previouslyUsed เพื่อให้แก้บิลเก่าของลูกค้าที่หมดอายุได้
     // ตราบใดที่ไม่เพิ่มยอดตัด — ถ้าบล็อกทุกกรณี พนักงานจะแก้บิลที่คีย์ผิดไม่ได้เลย
     const spend = checkCreditSpend({
-      expiry: balance?.next_expiry ?? null,
+      expiry,
       onDate: existing.sale_date,
       balance: headroom,
       wanted,
       alreadyUsedOnThisBill: previouslyUsed,
     })
     if (!spend.ok) {
+      // "insufficient" ใช้ headroom ของบิลนี้ตรงตามที่เป็นจริง (เพดานที่แก้ได้)
+      // "expired" ต้องพูดยอดจริงในกระปุกลูกค้า (customerBalance) ไม่ใช่ headroom — headroom บวก
+      // previouslyUsed (เครดิตที่บิลนี้เคยตัดไปแล้ว) เข้าไปด้วย ซึ่งไม่ใช่เงินที่ลูกค้ายังมีอยู่จริง
+      // ข้อความนี้พนักงานอ่านให้ลูกค้าฟังหน้าเคาน์เตอร์ ถ้าบอกยอดเกินจริงจะเป็นการสัญญาเงินที่ไม่มี
+      const message =
+        spend.reason === "insufficient"
+          ? `เครดิตคงเหลือไม่พอ (แก้เป็นได้สูงสุด ${headroom} บาท ต้องใช้ ${wanted} บาท)`
+          : expiry !== null
+            ? `เครดิตหมดอายุเมื่อ ${expiry} — ยอด ${customerBalance} ฿ ยังอยู่ครบ เติมแพ็กเกจใหม่แล้วใช้ได้ทันที`
+            : spend.message
       return {
         ok: false,
-        error:
-          spend.reason === "insufficient"
-            ? `เครดิตคงเหลือไม่พอ (แก้เป็นได้สูงสุด ${headroom} บาท ต้องใช้ ${wanted} บาท)`
-            : spend.message,
+        error: message,
       }
     }
     creditAfter = headroom - wanted
