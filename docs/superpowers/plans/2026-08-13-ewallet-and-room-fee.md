@@ -1402,6 +1402,13 @@ export type TopupRow = {
   // เพราะกดผิดแล้วกดใหม่ได้ ไม่มีข้อมูลไหนเสียหาย
   const [editingId, setEditingId] = useState<string | null>(null)
 
+  // เปิด/ปิดแผงแก้ช่องทาง — ต้องปลดปุ่มลบที่ค้างสถานะ "ยืนยันลบ?" ไว้ด้วยเสมอ
+  // ไม่งั้นพอย้อนกลับมากดลบอีกครั้งเดียวจะลบทันที ข้ามการยืนยันสองจังหวะที่ตั้งใจกันมือลั่นไว้
+  function toggleEditPanel(row: TopupRow) {
+    setConfirmState(null)
+    setEditingId(editingId === row.id ? null : row.id)
+  }
+
   function handleChangeMethod(row: TopupRow, method: string) {
     if (method === row.paymentMethod) {
       setEditingId(null)
@@ -1450,7 +1457,7 @@ export type TopupRow = {
                       size="sm"
                       disabled={pending}
                       className="h-6 px-2 text-xs text-slate-500"
-                      onClick={() => setEditingId(editingId === t.id ? null : t.id)}
+                      onClick={() => toggleEditPanel(t)}
                     >
                       {editingId === t.id ? "ปิด" : "แก้ช่องทาง"}
                     </Button>
