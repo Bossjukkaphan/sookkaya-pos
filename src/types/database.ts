@@ -1,3 +1,7 @@
+/**
+ * Types สร้างจาก Supabase schema
+ * อัปเดตใหม่ด้วย: npx supabase gen types typescript --project-id jrioyrmicioqammeevgh
+ */
 export type Json =
   | string
   | number
