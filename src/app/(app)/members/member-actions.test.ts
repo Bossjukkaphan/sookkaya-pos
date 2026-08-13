@@ -196,10 +196,14 @@ describe("createTopup — ช่องทางชำระเงิน", () => 
 /**
  * supabase ปลอมสำหรับ updateTopupPaymentMethod — ลำดับการเรียกคือ
  *   1) select ใบเติมตาม id (.maybeSingle)
- *   2) update ใบเติม (.eq)
+ *   2) update ใบเติม (.eq().select("id").maybeSingle()) — ขอแถวที่ถูกแก้กลับมาด้วย
  * เก็บ patch ที่ส่งเข้า update ไว้เพื่อพิสูจน์ว่าไม่มีคอลัมน์เงินถูกแตะ
+ * updatedRow ปรับได้: แถวจริง = อัปเดตสำเร็จ, null = 0 แถว (RLS ปิดเงียบ/ใบถูกลบ)
  */
-function fakeSupabaseForUpdate(topup: Row | null) {
+function fakeSupabaseForUpdate(
+  topup: Row | null,
+  updatedRow: Row | null = { id: "updated-1" }
+) {
   const patches: Record<string, unknown>[] = []
   let calls = 0
 
@@ -216,7 +220,13 @@ function fakeSupabaseForUpdate(topup: Row | null) {
     return {
       update: vi.fn((patch: Record<string, unknown>) => {
         patches.push(patch)
-        return { eq: vi.fn(async () => ({ error: null })) }
+        return {
+          eq: vi.fn(() => ({
+            select: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({ data: updatedRow, error: null })),
+            })),
+          })),
+        }
       }),
     }
   })
@@ -295,5 +305,18 @@ describe("updateTopupPaymentMethod", () => {
 
     expect(result).toEqual({ ok: true })
     expect(fake.patches).toHaveLength(1)
+  })
+
+  it("อัปเดตได้ 0 แถว (สิทธิ์ไม่พอหรือใบถูกลบไปแล้ว) — ต้องไม่รายงานว่าสำเร็จ", async () => {
+    // .update().eq() ไม่ error แต่ไม่มีแถวไหนถูกแก้จริง (เช่น RLS บล็อกเงียบ ๆ)
+    const fake = fakeSupabaseForUpdate(TOPUP_ROW, null)
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const result = await updateTopupPaymentMethod("topup-9", "บัตรเครดิต")
+
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).not.toBe("")
+    }
   })
 })

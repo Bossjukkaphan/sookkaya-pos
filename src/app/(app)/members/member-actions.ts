@@ -132,6 +132,7 @@ export async function deleteTopup(
 
   revalidatePath("/members")
   revalidatePath("/today")
+  revalidatePath("/reports")
   revalidatePath(`/customers/${topup.customer_id}`)
   return { ok: true }
 }
@@ -168,7 +169,7 @@ export async function updateTopupPaymentMethod(
   if (!topup) return { ok: false, error: "ไม่พบใบเติมเงินนี้" }
 
   const staff = await getMyProfile()
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("member_topups")
     .update({
       payment_method: method,
@@ -176,7 +177,15 @@ export async function updateTopupPaymentMethod(
       edited_at: new Date().toISOString(),
     })
     .eq("id", id)
+    .select("id")
+    .maybeSingle()
   if (error) return { ok: false, error: error.message }
+  // อัปเดต 0 แถวแต่ไม่มี error = สิทธิ์ไม่พอ (RLS ปิดเงียบ) หรือใบถูกลบไปก่อน
+  // ถ้าไม่ดักตรงนี้ หน้าจอจะขึ้นว่าสำเร็จทั้งที่ไม่มีอะไรเปลี่ยน ซึ่งเป็นความผิดพลาดแบบเดียว
+  // กับที่ระบบนี้ตั้งใจกำจัด
+  if (!updated) {
+    return { ok: false, error: "แก้ไม่สำเร็จ — สิทธิ์ไม่พอหรือใบเติมเงินนี้ถูกลบไปแล้ว" }
+  }
 
   revalidatePath("/members")
   revalidatePath("/today")
