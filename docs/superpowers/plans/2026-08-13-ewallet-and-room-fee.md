@@ -599,7 +599,7 @@ Expected: PASS ทั้งหมด
 - [ ] **Step 9: Commit**
 
 ```bash
-git add "src/app/(app)/members/topup-form.tsx" "src/app/(app)/members/member-actions.ts" "src/app/(app)/members/member-actions.test.ts" "src/app/(app)/payment-actions.ts" src/app/book/points-actions.ts
+git add "src/app/(app)/members/topup-form.tsx" "src/app/(app)/members/member-actions.ts" "src/app/(app)/members/member-actions.test.ts" "src/app/(app)/payment-actions.ts" "src/app/(app)/collect-due-dialog.tsx" "src/app/(app)/pos/group-pos-form.tsx" src/app/book/points-actions.ts
 git commit -m "feat: ให้เลือก E-Wallet ได้ในฟอร์มเติมเงินและการเก็บเงินค้าง"
 ```
 
