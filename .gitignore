@@ -45,3 +45,6 @@ scripts/sale-times-raw.json
 scripts/sale-time-backfill.sql
 scripts/material-cost.sql
 scripts/sale-times.csv
+
+# worktree ชั่วคราวของ superpowers — เป็น git repo ซ้อน ห้ามคอมมิตเข้ามา
+.claude/worktrees/
