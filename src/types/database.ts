@@ -1564,6 +1564,7 @@ export type Database = {
           cash_in: number | null
           discount_total: number | null
           net_revenue: number | null
+          room_fee_total: number | null
           sale_date: string | null
           sessions: number | null
           volume: number | null

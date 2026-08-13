@@ -34,6 +34,9 @@ with expected(check_name, expected_value) as (values
   -- สำคัญขึ้นมากตั้งแต่ 2026-08-11 เพราะวันหมดอายุของทั้งกระปุกคือ MAX ของทุกใบ
   -- ใบที่ค่าว่างจะถูก MAX ข้ามไปเงียบ ๆ ทำให้ลูกค้าอาจหมดอายุเร็วกว่าที่ควร
   ('topup_missing_expiry', 0),
+  -- room_fee_total ใน view ต้องตรงกับผลรวมในตาราง sales ทุกวัน ถ้าไม่ตรงแปลว่า
+  -- นิยาม view หลุดจากข้อมูลจริง แล้วบรรทัด "ค่าห้องสปา" ในการ์ดรายรับจะโกหก
+  ('room_fee_total_mismatch', 0),
   ('commission_2026_06',  140415),
   ('expenses_fixed_06',   104648),
   -- Excel เดิมไม่มีงวด "ค่ามือพนักงานนวด 1-10/6/69" 42,935 บาท — เจ้าของร้านยืนยัน
@@ -362,6 +365,18 @@ actual(check_name, actual_value) as (
       select p.method from public.bill_payments p
       where p.bill_key = d.bill_key
         and p.amount = (select max(p2.amount) from public.bill_payments p2 where p2.bill_key = d.bill_key))
+  ) bad
+
+  union all
+  select 'room_fee_total_mismatch', count(*)
+  from (
+    select d.sale_date
+    from public.v_daily_summary d
+    join (
+      select sale_date, sum(coalesce(room_fee, 0)) as raw_room_fee
+      from public.sales group by sale_date
+    ) s on s.sale_date = d.sale_date
+    where d.room_fee_total <> s.raw_room_fee
   ) bad
 )
 select
