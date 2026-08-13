@@ -4,10 +4,11 @@ import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
-import { deleteTopup } from "./member-actions"
-import { formatBaht } from "@/lib/constants"
+import { deleteTopup, updateTopupPaymentMethod } from "./member-actions"
+import { REAL_MONEY_METHODS, formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
 import { TIER_COLOR, TIER_COLOR_DEFAULT, tierLabel } from "@/lib/tier-colors"
+import { PAY_COLOR, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -20,6 +21,7 @@ export type TopupRow = {
   expiryDate: string
   creditAdded: number
   cashReceived: number
+  paymentMethod: string
 }
 
 /** ค้นหาในประวัติเติมเงิน 30 รายการล่าสุด — พิมพ์แล้วกรองชื่อทันที ไม่ต้องยิง query ใหม่ */
@@ -32,6 +34,27 @@ export function TopupHistoryList({ topups }: { topups: TopupRow[] }) {
   // เหตุผลอื่นที่ทำให้ลบไม่ได้ (เดือนปิดงบ/เครดิตถูกใช้ไปแล้ว) กดซ้ำแล้วเจอข้อความเดิมอีกครั้งแล้วเลิกเอง
   const [confirmState, setConfirmState] = useState<{ id: string; shorten: boolean } | null>(null)
   const [pending, startTransition] = useTransition()
+
+  // แผงเลือกช่องทางกางทีละแถว — ไม่ต้องยืนยันสองจังหวะเหมือนปุ่มลบ
+  // เพราะกดผิดแล้วกดใหม่ได้ ไม่มีข้อมูลไหนเสียหาย
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  function handleChangeMethod(row: TopupRow, method: string) {
+    if (method === row.paymentMethod) {
+      setEditingId(null)
+      return
+    }
+    startTransition(async () => {
+      const r = await updateTopupPaymentMethod(row.id, method)
+      if (r.ok) {
+        toast.success(`เปลี่ยนช่องทางของ ${row.customerName} เป็น ${method} แล้ว`)
+        setEditingId(null)
+        router.refresh()
+      } else {
+        toast.error(r.error)
+      }
+    })
+  }
 
   function handleDelete(row: TopupRow) {
     if (!confirmState || confirmState.id !== row.id) {
@@ -74,46 +97,82 @@ export function TopupHistoryList({ topups }: { topups: TopupRow[] }) {
       ) : (
         <ul className="divide-y">
           {shown.map((t) => (
-            <li
-              key={t.id}
-              className="flex items-center justify-between gap-3 px-1 py-3"
-            >
-              <div className="min-w-0">
-                <p className="font-medium">
-                  {t.customerName}{" "}
-                  <Badge variant="outline" className={TIER_COLOR[t.tier] ?? TIER_COLOR_DEFAULT}>
-                    {tierLabel(t.tier)}
-                  </Badge>
-                </p>
-                <p className="text-xs text-slate-500">
-                  {formatThaiDate(t.topupDate)} · หมดอายุ {formatThaiDate(t.expiryDate)}
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="text-right whitespace-nowrap">
-                  <p className="font-semibold">+{formatBaht(t.creditAdded)} ฿</p>
-                  <p className="text-xs text-slate-500">รับ {formatBaht(t.cashReceived)} ฿</p>
+            <li key={t.id} className="px-1 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    {t.customerName}{" "}
+                    <Badge variant="outline" className={TIER_COLOR[t.tier] ?? TIER_COLOR_DEFAULT}>
+                      {tierLabel(t.tier)}
+                    </Badge>
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {formatThaiDate(t.topupDate)} · หมดอายุ {formatThaiDate(t.expiryDate)}
+                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    <Badge
+                      variant="outline"
+                      className={PAY_COLOR[t.paymentMethod] ?? PAY_COLOR_DEFAULT}
+                    >
+                      {t.paymentMethod}
+                    </Badge>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={pending}
+                      className="h-6 px-2 text-xs text-slate-500"
+                      onClick={() => setEditingId(editingId === t.id ? null : t.id)}
+                    >
+                      {editingId === t.id ? "ปิด" : "แก้ช่องทาง"}
+                    </Button>
+                  </div>
                 </div>
-                <Button
-                  variant={confirmState?.id === t.id ? "destructive" : "ghost"}
-                  size="sm"
-                  disabled={pending}
-                  className={confirmState?.id === t.id ? "" : "text-red-600"}
-                  onClick={() => handleDelete(t)}
-                >
-                  {confirmState?.id === t.id
-                    ? confirmState.shorten
-                      ? "ยืนยันอีกครั้ง (วันหมดอายุจะถอย)"
-                      : "ยืนยันลบ?"
-                    : "ลบ"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <div className="text-right whitespace-nowrap">
+                    <p className="font-semibold">+{formatBaht(t.creditAdded)} ฿</p>
+                    <p className="text-xs text-slate-500">รับ {formatBaht(t.cashReceived)} ฿</p>
+                  </div>
+                  <Button
+                    variant={confirmState?.id === t.id ? "destructive" : "ghost"}
+                    size="sm"
+                    disabled={pending}
+                    className={confirmState?.id === t.id ? "" : "text-red-600"}
+                    onClick={() => handleDelete(t)}
+                  >
+                    {confirmState?.id === t.id
+                      ? confirmState.shorten
+                        ? "ยืนยันอีกครั้ง (วันหมดอายุจะถอย)"
+                        : "ยืนยันลบ?"
+                      : "ลบ"}
+                  </Button>
+                </div>
               </div>
+
+              {editingId === t.id && (
+                <div className="mt-2 flex flex-wrap gap-1.5 border-t pt-2">
+                  {REAL_MONEY_METHODS.map((m) => (
+                    <Button
+                      key={m}
+                      type="button"
+                      size="sm"
+                      variant={t.paymentMethod === m ? "default" : "outline"}
+                      disabled={pending}
+                      className="h-9 text-xs"
+                      onClick={() => handleChangeMethod(t, m)}
+                    >
+                      {m}
+                    </Button>
+                  ))}
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
       <p className="text-xs text-slate-400">
-        คีย์ผิดหรือลูกค้าเปลี่ยนแพ็กเกจ (เช่น 5,000 → 10,000): ลบใบเดิมแล้วเติมใหม่ ·
+        ช่องทางชำระเงินแก้ได้เลยโดยไม่ต้องลบใบ ยอดเครดิตของลูกค้าไม่กระทบ ·
+        คีย์ยอดผิดหรือลูกค้าเปลี่ยนแพ็กเกจ (เช่น 5,000 → 10,000): ลบใบเดิมแล้วเติมใหม่ ·
         ลบได้เฉพาะเดือนนี้และเฉพาะใบที่เครดิตยังไม่ถูกใช้
       </p>
     </div>

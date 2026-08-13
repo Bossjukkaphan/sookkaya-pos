@@ -28,7 +28,7 @@ export default async function MembersPage() {
       .order("name"),
     supabase
       .from("member_topups")
-      .select("id, topup_date, tier, cash_received, credit_added, bonus_added, expiry_date, customer_id")
+      .select("id, topup_date, tier, cash_received, credit_added, bonus_added, expiry_date, customer_id, payment_method")
       .order("topup_date", { ascending: false })
       .limit(30),
   ])
@@ -117,6 +117,7 @@ export default async function MembersPage() {
     expiryDate: t.expiry_date,
     creditAdded: t.credit_added,
     cashReceived: t.cash_received,
+    paymentMethod: t.payment_method,
   }))
 
   return (
