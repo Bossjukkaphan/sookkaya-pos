@@ -524,6 +524,8 @@ export type Database = {
           created_at: string
           credit_added: number
           customer_id: string
+          edited_at: string | null
+          edited_by: string | null
           expiry_date: string
           id: string
           notes: string | null
@@ -537,6 +539,8 @@ export type Database = {
           created_at?: string
           credit_added: number
           customer_id: string
+          edited_at?: string | null
+          edited_by?: string | null
           expiry_date: string
           id?: string
           notes?: string | null
@@ -550,6 +554,8 @@ export type Database = {
           created_at?: string
           credit_added?: number
           customer_id?: string
+          edited_at?: string | null
+          edited_by?: string | null
           expiry_date?: string
           id?: string
           notes?: string | null

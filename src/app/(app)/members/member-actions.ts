@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server"
 import { addMonths, todayInShopTz } from "@/lib/datetime"
 import { MEMBER_TIERS, REAL_MONEY_METHODS } from "@/lib/constants"
 import { pointExpiryDate, pointsForBaht } from "@/lib/points"
+import { getMyProfile } from "@/lib/auth"
 
 export type TopupResult = { ok: true } | { ok: false; error: string }
 
@@ -131,6 +132,55 @@ export async function deleteTopup(
 
   revalidatePath("/members")
   revalidatePath("/today")
+  revalidatePath(`/customers/${topup.customer_id}`)
+  return { ok: true }
+}
+
+/**
+ * แก้ช่องทางชำระเงินของใบเติมเงิน — เขียนคอลัมน์เดียว ไม่แตะยอดเงินหรือวันหมดอายุ
+ *
+ * ปลอดภัยเพราะไม่มีสูตรไหนในระบบอ่าน payment_method ไปคำนวณเครดิต
+ * ยอดคงเหลือของลูกค้าจึงนิ่งสนิทหลังแก้
+ *
+ * **ไม่ล็อกเดือน** ต่างจาก deleteTopup เพราะช่องทางไม่ทำให้ยอดรวมขยับสักบาท
+ * มีแต่ทำให้เดือนที่ปิดไปแล้วถูกต้องขึ้น (เคสจริง: ใบของ "โบว36" 10 ส.ค. 2026 คีย์เป็น
+ * QR Code ทั้งที่ลูกค้ารูดบัตร กว่าจะรู้ตัวคือตอนเอาไปเทียบกับ ThaiHand)
+ * ที่ตามรอยได้คือ edited_by / edited_at
+ *
+ * ถ้าจำนวนเงินผิด ห้ามแก้ที่นี่ — ให้ลบใบเดิมแล้วเติมใหม่ผ่าน deleteTopup
+ * ซึ่งมีกันชนเรื่องเดือนปิดงบ เครดิตที่ถูกใช้ไปแล้ว และวันหมดอายุที่จะถอยหลัง
+ */
+export async function updateTopupPaymentMethod(
+  id: string,
+  method: string
+): Promise<TopupResult> {
+  if (!(REAL_MONEY_METHODS as readonly string[]).includes(method)) {
+    return { ok: false, error: `ช่องทางต้องเป็น ${REAL_MONEY_METHODS.join(" / ")}` }
+  }
+
+  const supabase = await createClient()
+
+  const { data: topup } = await supabase
+    .from("member_topups")
+    .select("id, customer_id")
+    .eq("id", id)
+    .maybeSingle()
+  if (!topup) return { ok: false, error: "ไม่พบใบเติมเงินนี้" }
+
+  const staff = await getMyProfile()
+  const { error } = await supabase
+    .from("member_topups")
+    .update({
+      payment_method: method,
+      edited_by: staff?.full_name ?? null,
+      edited_at: new Date().toISOString(),
+    })
+    .eq("id", id)
+  if (error) return { ok: false, error: error.message }
+
+  revalidatePath("/members")
+  revalidatePath("/today")
+  revalidatePath("/reports")
   revalidatePath(`/customers/${topup.customer_id}`)
   return { ok: true }
 }

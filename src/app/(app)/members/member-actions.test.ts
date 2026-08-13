@@ -8,9 +8,12 @@ vi.mock("@/lib/datetime", () => ({
   todayInShopTz: vi.fn(() => "2026-08-11"),
   addMonths: vi.fn((d: string) => d),
 }))
+vi.mock("@/lib/auth", () => ({
+  getMyProfile: vi.fn(async () => ({ full_name: "ผู้จัดการ" })),
+}))
 
 import { createClient } from "@/lib/supabase/server"
-import { createTopup, deleteTopup } from "./member-actions"
+import { createTopup, deleteTopup, updateTopupPaymentMethod } from "./member-actions"
 
 const CUST = "22222222-2222-2222-2222-222222222222"
 const TOPUP_KEEP_FURTHEST = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" // ถือวันหมดอายุไกลสุด
@@ -187,5 +190,103 @@ describe("createTopup — ช่องทางชำระเงิน", () => 
 
     expect(result.ok).toBe(false)
     expect(fake.insertedTopups).toHaveLength(0)
+  })
+})
+
+/**
+ * supabase ปลอมสำหรับ updateTopupPaymentMethod — ลำดับการเรียกคือ
+ *   1) select ใบเติมตาม id (.maybeSingle)
+ *   2) update ใบเติม (.eq)
+ * เก็บ patch ที่ส่งเข้า update ไว้เพื่อพิสูจน์ว่าไม่มีคอลัมน์เงินถูกแตะ
+ */
+function fakeSupabaseForUpdate(topup: Row | null) {
+  const patches: Record<string, unknown>[] = []
+  let calls = 0
+
+  const from = vi.fn((table: string) => {
+    if (table !== "member_topups") throw new Error(`ตารางที่ไม่คาดคิด: ${table}`)
+    calls++
+    if (calls === 1) {
+      return {
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: topup })) })),
+        })),
+      }
+    }
+    return {
+      update: vi.fn((patch: Record<string, unknown>) => {
+        patches.push(patch)
+        return { eq: vi.fn(async () => ({ error: null })) }
+      }),
+    }
+  })
+
+  return { client: { from }, patches }
+}
+
+const TOPUP_ROW = { id: "topup-9", customer_id: CUST }
+
+describe("updateTopupPaymentMethod", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("เขียนเฉพาะ payment_method กับคอลัมน์ผู้แก้ ไม่แตะยอดเงินหรือวันหมดอายุเลย", async () => {
+    const fake = fakeSupabaseForUpdate(TOPUP_ROW)
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const result = await updateTopupPaymentMethod("topup-9", "บัตรเครดิต")
+
+    expect(result).toEqual({ ok: true })
+    expect(fake.patches).toHaveLength(1)
+    const patch = fake.patches[0]
+    expect(patch.payment_method).toBe("บัตรเครดิต")
+    expect(patch.edited_by).toBe("ผู้จัดการ")
+    expect(patch.edited_at).toEqual(expect.any(String))
+    // คอลัมน์เงินและวันหมดอายุห้ามโผล่ใน patch แม้แต่ตัวเดียว
+    for (const forbidden of [
+      "cash_received", "credit_added", "bonus_added",
+      "expiry_date", "tier", "topup_date", "customer_id",
+    ]) {
+      expect(Object.keys(patch)).not.toContain(forbidden)
+    }
+  })
+
+  it("รับ E-Wallet ได้", async () => {
+    const fake = fakeSupabaseForUpdate(TOPUP_ROW)
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+    const result = await updateTopupPaymentMethod("topup-9", "E-Wallet")
+    expect(result).toEqual({ ok: true })
+    expect(fake.patches[0].payment_method).toBe("E-Wallet")
+  })
+
+  it("ช่องทางที่ไม่รู้จักถูกปฏิเสธก่อนแตะฐานข้อมูล", async () => {
+    const fake = fakeSupabaseForUpdate(TOPUP_ROW)
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const result = await updateTopupPaymentMethod("topup-9", "Gowabi")
+
+    expect(result.ok).toBe(false)
+    expect(fake.patches).toHaveLength(0)
+    expect(fake.client.from).not.toHaveBeenCalled()
+  })
+
+  it("ไม่พบใบเติมเงิน — คืน error ไม่เขียนอะไร", async () => {
+    const fake = fakeSupabaseForUpdate(null)
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const result = await updateTopupPaymentMethod("ไม่มีจริง", "เงินสด")
+
+    expect(result).toEqual({ ok: false, error: "ไม่พบใบเติมเงินนี้" })
+    expect(fake.patches).toHaveLength(0)
+  })
+
+  it("แก้ใบของเดือนก่อนได้ — ไม่ล็อกเดือนแบบการลบ", async () => {
+    // todayInShopTz ถูก mock เป็น 2026-08-11 ใบนี้เป็นของเดือนกรกฎาคม
+    const fake = fakeSupabaseForUpdate({ id: "topup-old", customer_id: CUST })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const result = await updateTopupPaymentMethod("topup-old", "บัตรเครดิต")
+
+    expect(result).toEqual({ ok: true })
+    expect(fake.patches).toHaveLength(1)
   })
 })
