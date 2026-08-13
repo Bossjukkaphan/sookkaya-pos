@@ -8,6 +8,7 @@ import { formatBaht } from "@/lib/constants"
 import { billTotal, groupSalesByBill } from "@/lib/bill"
 import { TIER_COLOR, TIER_COLOR_DEFAULT, tierLabel } from "@/lib/tier-colors"
 import { MONEY_INFO } from "@/lib/money-info"
+import { revenueWaterfall } from "@/lib/revenue-waterfall"
 import { Button } from "@/components/ui/button"
 import { SaleRowActions } from "./sale-row-actions"
 import type {
@@ -83,7 +84,7 @@ export default async function TodayPage({
     getTherapistsCached(),
     supabase
       .from("v_daily_summary")
-      .select("sale_date, sessions, volume, net_revenue, cash_in, discount_total")
+      .select("sale_date, sessions, volume, net_revenue, cash_in, discount_total, room_fee_total")
       .gte("sale_date", from)
       .lte("sale_date", to),
     // เงินจริงตามบรรทัดชำระ (บิลเก่า/Gowabi/KOL ถูก view สังเคราะห์ให้เป็นบรรทัดเดียวเท่าสูตรเดิม) —
@@ -285,12 +286,21 @@ export default async function TodayPage({
   // ไม่มีเครดิตเกี่ยวข้องเลย) ใช้ยอดรวมจากแถวขาย (credit_used) ตรงๆ แทน — ตัวเดียวกับที่ byPayment ด้านล่าง
   // ใช้โชว์ "Member Credit" (มี ROW_CAP caveat เดียวกัน: โหมดช่วงวันที่รายการเกิน ROW_CAP จะถูกตัด)
   const creditTotal = rows.reduce((s, r) => s + Number(r.credit_used ?? 0), 0)
-  // ต่อยอด waterfall ขึ้นไปถึงมูลค่าเต็มตามเมนู: gross = volume + ส่วนลด
   const totalDiscount = summaryRows.reduce(
     (sum, d) => sum + Number(d.discount_total ?? 0),
     0
   )
-  const totalGross = totalVolume + totalDiscount
+  const totalRoomFee = summaryRows.reduce(
+    (sum, d) => sum + Number(d.room_fee_total ?? 0),
+    0
+  )
+  // ต่อยอด waterfall ขึ้นไปถึงมูลค่าเต็มตามเมนู — สูตรเดียวกับหน้ารายงาน
+  // ค่าห้องสปาอยู่ใน net_amount อยู่แล้ว ต้องถอดออกไม่งั้นบรรทัดมูลค่าเมนูจะกลืนไว้เงียบ ๆ
+  const waterfall = revenueWaterfall({
+    volume: totalVolume,
+    discount: totalDiscount,
+    roomFee: totalRoomFee,
+  })
 
   // ช่องทางชำระเงินไม่มี view รายวัน จึงต้องบวกจากรายการที่แสดง
   // ถ้าโดนตัดที่เพดานก็ซ่อนการ์ดไปเลย ดีกว่าโชว์ยอดที่ไม่ครบ
@@ -374,14 +384,21 @@ export default async function TodayPage({
             </span>
           </div>
           <div className="space-y-1.5 px-4 py-3 text-sm">
-            {/* waterfall เต็ม: มูลค่าเมนู − ส่วนลด = Volume − เครดิตแถม = รายรับที่รับรู้ */}
+            {/* waterfall เต็ม: มูลค่าเมนู + ค่าห้องสปา − ส่วนลด = Volume − เครดิตแถม = รายรับที่รับรู้ */}
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">
-                มูลค่าเต็มตามเมนู{" "}
-                <InfoDot text="ยอดถ้าทุกบิลจ่ายราคาเต็มตามเมนู ไม่หักส่วนลดใดๆ — ใช้ดูว่าร้านให้ส่วนลดไปกี่ % ของมูลค่างาน" />
+                มูลค่าเต็มตามเมนู <InfoDot text={MONEY_INFO.gross} />
               </span>
-              <span className="font-medium">{formatBaht(totalGross)}</span>
+              <span className="font-medium">{formatBaht(waterfall.gross)}</span>
             </div>
+            {waterfall.roomFee > 0 && (
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1 text-slate-600">
+                  + ค่าห้องสปา <InfoDot text={MONEY_INFO.roomFee} />
+                </span>
+                <span className="font-medium">{formatBaht(waterfall.roomFee)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">
                 − ส่วนลดที่ให้{" "}

@@ -12,6 +12,7 @@ import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { InsightsAccessDenied, canSeeInsights } from "@/app/(app)/insights/shared"
 import { getMyProfile } from "@/lib/auth"
 import { MONEY_INFO } from "@/lib/money-info"
+import { revenueWaterfall } from "@/lib/revenue-waterfall"
 import { PAY_DOT, PAY_DOT_DEFAULT } from "@/lib/payment-colors"
 import { promoKey } from "@/lib/promo"
 import { BarChart } from "@/components/charts/bar-chart"
@@ -119,7 +120,7 @@ export default async function ReportsPage({
   ] = await Promise.all([
       supabase
         .from("v_daily_summary")
-        .select("sale_date, sessions, volume, net_revenue, discount_total, cash_in")
+        .select("sale_date, sessions, volume, net_revenue, discount_total, cash_in, room_fee_total")
         .gte("sale_date", from)
         .lte("sale_date", to),
       supabase
@@ -188,8 +189,17 @@ export default async function ReportsPage({
   const bonusUsedTotal = volumeTotal - revenue
   // ไม่มีคอลัมน์นี้ใน view — ตัวเดียวในการ์ดที่ยังบวกจาก rows จึงไม่ครบเมื่อโดนตัด (มีป้ายเตือนบอก)
   const creditUsedTotal = rows.reduce((sum, s) => sum + Number(s.credit_used ?? 0), 0)
+  const roomFeeTotal = summaryRows.reduce(
+    (sum, d) => sum + Number(d.room_fee_total ?? 0),
+    0
+  )
   // มูลค่าเต็มตามเมนูก่อนหักส่วนลด — จุดตั้งต้นของ waterfall รายรับ
-  const grossTotal = volumeTotal + discountTotal
+  // ค่าห้องสปาแยกบรรทัดของตัวเอง สูตรอยู่ที่ revenue-waterfall.ts ที่เดียวกับหน้ายอดวันนี้
+  const waterfall = revenueWaterfall({
+    volume: volumeTotal,
+    discount: discountTotal,
+    roomFee: roomFeeTotal,
+  })
   const topupTotal = (topups ?? []).reduce(
     (sum, t) => sum + Number(t.cash_received ?? 0),
     0
@@ -452,14 +462,21 @@ export default async function ReportsPage({
           </div>
           <div className="space-y-1.5 px-4 py-3 text-sm">
             <p className="text-xs text-slate-500">อิงตามวันที่ลูกค้าเข้าใช้บริการ</p>
-            {/* waterfall เต็ม: มูลค่าเมนู − ส่วนลด = Volume − เครดิตแถม = รายรับที่รับรู้ */}
+            {/* waterfall เต็ม: มูลค่าเมนู + ค่าห้องสปา − ส่วนลด = Volume − เครดิตแถม = รายรับที่รับรู้ */}
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">
-                มูลค่าเต็มตามเมนู{" "}
-                <InfoDot text="ยอดถ้าทุกบิลจ่ายราคาเต็มตามเมนู ไม่หักส่วนลดใดๆ — ใช้ดูว่าร้านให้ส่วนลดไปกี่ % ของมูลค่างาน" />
+                มูลค่าเต็มตามเมนู <InfoDot text={MONEY_INFO.gross} />
               </span>
-              <span className="font-medium">{formatBaht(grossTotal)}</span>
+              <span className="font-medium">{formatBaht(waterfall.gross)}</span>
             </div>
+            {waterfall.roomFee > 0 && (
+              <div className="flex justify-between">
+                <span className="flex items-center gap-1 text-slate-600">
+                  + ค่าห้องสปา <InfoDot text={MONEY_INFO.roomFee} />
+                </span>
+                <span className="font-medium">{formatBaht(waterfall.roomFee)}</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="flex items-center gap-1 text-slate-600">
                 − ส่วนลดที่ให้{" "}
