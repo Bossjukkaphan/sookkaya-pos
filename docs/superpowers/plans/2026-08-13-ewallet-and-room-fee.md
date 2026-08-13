@@ -407,13 +407,17 @@ git commit -m "feat(db): รับช่องทาง E-Wallet ใน sales, b
 - Modify: `src/app/(app)/members/member-actions.ts:24-26`
 - Modify: `src/app/(app)/payment-actions.ts:13-14`
 - Modify: `src/app/book/points-actions.ts:278-284`
+- Modify: `src/app/(app)/collect-due-dialog.tsx:83`
+- Modify: `src/app/(app)/pos/group-pos-form.tsx:657`
 - Test: `src/app/(app)/members/member-actions.test.ts`
 
 **Interfaces:**
 - Consumes: `REAL_MONEY_METHODS` จาก `@/lib/constants` (Task 1) · constraint ที่ปลดแล้ว (Task 2)
 - Produces: `createTopup` รับ `payment_method` เป็น `E-Wallet` ได้
 
-**บริบท:** หน้าจออื่นทั้งหมด (ฟอร์ม POS, ฟอร์มกลุ่ม, กล่องแก้บิล, ตัวกรองหน้าประวัติบิล, กล่องเก็บเงินค้าง) เรนเดอร์ปุ่มจาก `PAYMENT_METHODS`/`PAYMENT_LINE_METHODS` อยู่แล้ว จึงได้ E-Wallet มาฟรีจาก Task 1 — ไม่ต้องแก้
+**บริบท:** หน้าจออื่นทั้งหมด (ฟอร์ม POS, ฟอร์มกลุ่ม, กล่องแก้บิล, ตัวกรองหน้าประวัติบิล, กล่องเก็บเงินค้าง) เรนเดอร์**ตัวปุ่ม**จาก `PAYMENT_METHODS`/`PAYMENT_LINE_METHODS` อยู่แล้ว จึงได้ E-Wallet มาฟรีจาก Task 1
+
+แต่ **จำนวนคอลัมน์ของ grid เป็นค่าตายตัวในแต่ละหน้า** พอมีช่องทางที่ 4 บางหน้าจะเหลือปุ่มโดดอยู่แถวสุดท้าย ต้องแก้ 3 หน้า (topup-form ใน Step 4 · อีกสองหน้าใน Step 4b) ส่วน `pos-form.tsx:715` และ `edit-sale-dialog.tsx:414` ที่ไล่จาก `PAYMENT_METHODS` 7 ตัวใน `grid-cols-3` **ไม่ต้องแก้** เพราะได้ 3/3/1 โดยแถวสุดท้ายคือ `Member Credit` ซึ่งเป็นปุ่มสลับใช้เครดิตแบบพิเศษอยู่แล้ว การอยู่เดี่ยวจึงอ่านได้ดี
 
 - [ ] **Step 1: เขียนเทสต์ที่ยังไม่ผ่าน — ต่อท้าย `src/app/(app)/members/member-actions.test.ts`**
 
@@ -540,6 +544,22 @@ import { MEMBER_TIERS, REAL_MONEY_METHODS, formatBaht } from "@/lib/constants"
           ))}
         </div>
 ```
+
+- [ ] **Step 4b: แก้จำนวนคอลัมน์ของ grid อีกสองหน้า**
+
+`src/app/(app)/collect-due-dialog.tsx` บรรทัด 83 — ไล่จาก `PAYMENT_LINE_METHODS` ซึ่งเดิม 3 ปุ่มพอดี 3 คอลัมน์ ตอนนี้ 4 ปุ่มจะเหลือปุ่มโดดแถวสุดท้าย:
+
+```tsx
+              <div className="grid grid-cols-2 gap-2">
+```
+
+`src/app/(app)/pos/group-pos-form.tsx` บรรทัด 657 — ไล่จาก `PAYMENT_LINE_METHODS` (4 ปุ่ม) แล้วต่อท้ายด้วยปุ่มเครดิตอีก 1 ปุ่มเมื่อ `canUseCredit` เป็นจริง รวมเป็น 5 หรือ 4 ปุ่ม:
+
+```tsx
+        <div className={canUseCredit ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
+```
+
+(ได้ 3+2 เมื่อใช้เครดิตได้ และ 2+2 เมื่อใช้ไม่ได้ — ไม่มีปุ่มโดดทั้งสองกรณี)
 
 - [ ] **Step 5: แก้ `src/app/(app)/payment-actions.ts` บรรทัด 13-14**
 
