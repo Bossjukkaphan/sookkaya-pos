@@ -393,7 +393,14 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
           bill_key: billKey,
           method: l.method,
           amount: l.amount,
-          received_date: todayInShopTz(),
+          // วันเงินเข้า = วันที่ให้บริการ ไม่ใช่วันที่กดคีย์ — ปิดบิลตรงนี้แปลว่าลูกค้าจ่ายตอนใช้บริการ
+          // และบิลจะลงวันย้อนหลังได้ทางเดียวคือผูกกับการ์ดคิวของวันนั้น (saleDate มาจาก queue_date)
+          // เคยใช้ todayInShopTz() แล้วบิลที่คีย์ย้อนหลังทำให้เงินไปโผล่ผิดวัน (2026-08-13: บิลนิกกี้
+          // ของวันที่ 2 ส.ค. 550 บาท ไปเพิ่มในยอดเงินเข้าวันที่ 13 จนไม่ตรงกับ ThaiHand)
+          //
+          // ห้ามแก้ addBillPayment ใน payment-actions.ts ให้เหมือนกัน — ที่นั่นคนละสถานการณ์
+          // (ลูกค้าค้างเงินไว้แล้วกลับมาจ่ายทีหลัง) วันที่กดคือวันเงินเข้าจริง ๆ ของมัน
+          received_date: saleDate,
           created_by: profile?.full_name ?? user.email ?? null,
         }))
       )

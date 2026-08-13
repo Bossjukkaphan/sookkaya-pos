@@ -294,3 +294,65 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
     }
   })
 })
+
+describe("createSale — วันเงินเข้าของบรรทัดชำระ", () => {
+  // "วันนี้" ถูกตรึงไว้ที่ 2026-08-11 ในไฟล์นี้ (ดู vi.mock ด้านบนสุด) เทสต์กลุ่มนี้จึงพิสูจน์ได้ว่า
+  // โค้ดใช้วันของบิล ไม่ใช่วันที่กดคีย์ โดยไม่ต้องพึ่งวันจริงของเครื่องที่รันเทสต์
+  function tablesFor(queueDate: string | null, capture: { insert: unknown[] }) {
+    return {
+      services: seqTable([{ data: { name: "นวดแผนไทย", price: 550, commission: 225, duration_min: 90 } }]),
+      queue_entries: seqTable([
+        { data: queueDate ? { queue_date: queueDate } : null },
+        { data: null }, // update ปิดคิวเป็น paid ท้ายฟังก์ชัน
+      ]),
+      profiles: seqTable([{ data: { full_name: "Boss" } }]),
+      sales: seqTable([{ data: { id: SALE, receipt_no: "R0100" } }]),
+      bill_payments: seqTable([{ data: null }], capture),
+      point_transactions: seqTable([{ data: null }]),
+    }
+  }
+
+  function saleForm(extra: Record<string, string>): FormData {
+    return baseFormData({
+      therapist_id: "th1",
+      service_id: "svc1",
+      payment_method: "QR Code",
+      discount: "0",
+      payments: JSON.stringify([{ method: "QR Code", amount: 550 }]),
+      ...extra,
+    })
+  }
+
+  /** บรรทัดชำระถูก insert เป็นอาร์เรย์ก้อนเดียว — คืนแถวแรกออกมาตรวจ */
+  function firstLine(capture: { insert: unknown[] }) {
+    expect(capture.insert).toHaveLength(1)
+    const rows = capture.insert[0] as { received_date: string; amount: number }[]
+    expect(rows).toHaveLength(1)
+    return rows[0]
+  }
+
+  it("บิลที่ผูกคิวย้อนหลัง วันเงินเข้าต้องเป็นวันที่ให้บริการ ไม่ใช่วันที่กดคีย์", async () => {
+    // เคสจริง 2026-08-13: บิลนิกกี้เป็นงานของวันที่ 2 ส.ค. แต่พนักงานเพิ่งมาคีย์วันที่ 13
+    // เดิมระบบประทับวันที่กด เงิน 550 บาทเลยไปโผล่ในยอดเงินเข้าของวันที่ 13 จนไม่ตรงกับ ThaiHand
+    const lines = { insert: [] as unknown[] }
+    vi.mocked(createClient).mockResolvedValue(
+      fakeSupabase(tablesFor("2026-08-02", lines)) as never
+    )
+
+    const r = await createSale(saleForm({ queue_entry_id: QUEUE }))
+
+    expect(r.ok).toBe(true)
+    expect(firstLine(lines).received_date).toBe("2026-08-02")
+  })
+
+  it("บิลของวันนี้ วันเงินเข้ายังเป็นวันนี้เหมือนเดิม", async () => {
+    // กันการแก้เกินขอบเขต: บิลปกติ (ไม่ผูกคิวย้อนหลัง) พฤติกรรมต้องไม่เปลี่ยนเลย
+    const lines = { insert: [] as unknown[] }
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tablesFor(null, lines)) as never)
+
+    const r = await createSale(saleForm({}))
+
+    expect(r.ok).toBe(true)
+    expect(firstLine(lines).received_date).toBe("2026-08-11")
+  })
+})
