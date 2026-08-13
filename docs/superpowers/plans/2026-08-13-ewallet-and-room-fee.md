@@ -21,6 +21,13 @@
 - ข้อความ error ที่ไล่ชื่อช่องทางห้ามพิมพ์ชื่อด้วยมือ ต้องประกอบจาก `REAL_MONEY_METHODS.join(" / ")`
 - ห้ามแก้ข้อมูลจริงสองรายการที่ค้างอยู่ (บิลอาลี · เติมเงินโบว36) — งานนั้นรอ Boss ตัดสินใจหลังทำเสร็จ
 - migration ใช้ MCP `apply_migration` แล้ว **เก็บสำเนาไฟล์ลง `supabase/migrations/` ด้วยทุกครั้ง** ห้ามรัน `supabase db push`
+- ทุกครั้งที่ generate `src/types/database.ts` ใหม่ ต้องใส่คอมเมนต์หัวไฟล์สี่บรรทัดนี้กลับเข้าไปก่อน `export type Json =` เสมอ (ตัว generator ไม่ได้ใส่มาให้ และนี่คือที่เดียวที่บอกวิธี generate):
+  ```ts
+  /**
+   * Types สร้างจาก Supabase schema
+   * อัปเดตใหม่ด้วย: npx supabase gen types typescript --project-id jrioyrmicioqammeevgh
+   */
+  ```
 - คอมเมนต์และข้อความบนหน้าจอเป็นภาษาไทย ตามที่โค้ดเดิมทำอยู่
 - ชื่อตัวแปรเป็นภาษาอังกฤษเสมอ ห้ามตั้งชื่อตัวแปรเป็นภาษาไทย
 
