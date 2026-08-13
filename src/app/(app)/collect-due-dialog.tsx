@@ -80,7 +80,7 @@ export function CollectDueDialog({
               <DialogTitle>เก็บเงินเพิ่ม — ค้างรับ {formatBaht(due)} ฿</DialogTitle>
             </DialogHeader>
             <div className="space-y-3">
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 gap-2">
                 {PAYMENT_LINE_METHODS.map((m) => (
                   <Button
                     key={m}

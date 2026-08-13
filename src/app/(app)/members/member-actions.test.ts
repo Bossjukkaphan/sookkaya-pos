@@ -10,7 +10,7 @@ vi.mock("@/lib/datetime", () => ({
 }))
 
 import { createClient } from "@/lib/supabase/server"
-import { deleteTopup } from "./member-actions"
+import { createTopup, deleteTopup } from "./member-actions"
 
 const CUST = "22222222-2222-2222-2222-222222222222"
 const TOPUP_KEEP_FURTHEST = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa" // ถือวันหมดอายุไกลสุด
@@ -121,5 +121,71 @@ describe("deleteTopup — เตือนก่อนวันหมดอาย
 
     expect(r.ok).toBe(true)
     expect(deletedIds).toEqual([TOPUP_OTHER])
+  })
+})
+
+/**
+ * supabase ปลอมสำหรับ createTopup — ลำดับการเรียกคือ
+ *   member_topups.insert().select().single()  →  point_transactions.insert()  →  customers.update().eq()
+ * เก็บแถวที่ insert ไว้เพื่อยืนยันว่า payment_method ถูกเขียนลงไปจริง
+ */
+function fakeSupabaseForCreate() {
+  const insertedTopups: Record<string, unknown>[] = []
+
+  const from = vi.fn((table: string) => {
+    if (table === "member_topups") {
+      return {
+        insert: vi.fn((row: Record<string, unknown>) => {
+          insertedTopups.push(row)
+          return {
+            select: vi.fn(() => ({
+              single: vi.fn(async () => ({ data: { id: "topup-1" }, error: null })),
+            })),
+          }
+        }),
+      }
+    }
+    if (table === "point_transactions") {
+      return { insert: vi.fn(async () => ({ error: null })) }
+    }
+    if (table === "customers") {
+      return { update: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })) }
+    }
+    throw new Error(`ตารางที่ไม่คาดคิด: ${table}`)
+  })
+
+  return { client: { from }, insertedTopups }
+}
+
+function topupFormData(paymentMethod: string): FormData {
+  const fd = new FormData()
+  fd.set("customer_id", CUST)
+  fd.set("tier", "Silver")
+  fd.set("payment_method", paymentMethod)
+  return fd
+}
+
+describe("createTopup — ช่องทางชำระเงิน", () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it("รับ E-Wallet และเขียนลงคอลัมน์ payment_method ตามที่ส่งมา", async () => {
+    const fake = fakeSupabaseForCreate()
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const result = await createTopup(topupFormData("E-Wallet"))
+
+    expect(result).toEqual({ ok: true })
+    expect(fake.insertedTopups).toHaveLength(1)
+    expect(fake.insertedTopups[0].payment_method).toBe("E-Wallet")
+  })
+
+  it("ช่องทางที่ไม่รู้จักถูกปฏิเสธ ไม่มีอะไรถูกเขียนลงฐานข้อมูล", async () => {
+    const fake = fakeSupabaseForCreate()
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const result = await createTopup(topupFormData("โอนวอลเล็ต"))
+
+    expect(result.ok).toBe(false)
+    expect(fake.insertedTopups).toHaveLength(0)
   })
 })

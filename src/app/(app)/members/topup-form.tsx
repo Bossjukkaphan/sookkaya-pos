@@ -6,7 +6,7 @@ import { toast } from "sonner"
 
 import { createTopup } from "./member-actions"
 import { createClient } from "@/lib/supabase/client"
-import { MEMBER_TIERS, formatBaht } from "@/lib/constants"
+import { MEMBER_TIERS, REAL_MONEY_METHODS, formatBaht } from "@/lib/constants"
 import { ilikeOr } from "@/lib/search"
 import { addMonths, formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
@@ -15,8 +15,6 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 
 type Match = { id: string; name: string; nickname: string | null; phone: string | null }
-
-const TOPUP_PAYMENTS = ["QR Code", "เงินสด", "บัตรเครดิต"] as const
 
 export function TopupForm() {
   const router = useRouter()
@@ -182,8 +180,8 @@ export function TopupForm() {
       {/* ช่องทางชำระเงิน */}
       <fieldset className="space-y-2">
         <legend className="mb-2 text-sm font-medium">ช่องทางชำระเงิน</legend>
-        <div className="grid grid-cols-3 gap-2">
-          {TOPUP_PAYMENTS.map((m) => (
+        <div className="grid grid-cols-2 gap-2">
+          {REAL_MONEY_METHODS.map((m) => (
             <Button
               key={m}
               type="button"

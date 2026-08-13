@@ -279,6 +279,7 @@ const PAY_LABEL: Record<string, string> = {
   "QR Code": "โอน QR",
   เงินสด: "เงินสด",
   บัตรเครดิต: "บัตรเครดิต",
+  "E-Wallet": "E-Wallet",
   Gowabi: "Gowabi",
   KOL: "KOL",
   "Member Credit": "เครดิตสมาชิก",

@@ -11,7 +11,10 @@ export async function addBillPayment(
   billKey: string, method: string, amount: number, note?: string
 ): Promise<{ ok: true; due: number } | { ok: false; error: string }> {
   if (!(PAYMENT_LINE_METHODS as readonly string[]).includes(method))
-    return { ok: false, error: "ช่องทางต้องเป็น เงินสด / QR Code / บัตรเครดิต" }
+    return {
+      ok: false,
+      error: `ช่องทางต้องเป็น ${PAYMENT_LINE_METHODS.join(" / ")}`,
+    }
   if (!Number.isFinite(amount) || amount <= 0)
     return { ok: false, error: "ยอดต้องมากกว่า 0" }
 

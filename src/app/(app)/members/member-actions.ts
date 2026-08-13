@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache"
 
 import { createClient } from "@/lib/supabase/server"
 import { addMonths, todayInShopTz } from "@/lib/datetime"
-import { MEMBER_TIERS } from "@/lib/constants"
+import { MEMBER_TIERS, REAL_MONEY_METHODS } from "@/lib/constants"
 import { pointExpiryDate, pointsForBaht } from "@/lib/points"
 
 export type TopupResult = { ok: true } | { ok: false; error: string }
@@ -21,7 +21,7 @@ export async function createTopup(formData: FormData): Promise<TopupResult> {
   const tier = MEMBER_TIERS.find((t) => t.tier === tierName)
   if (!tier) return { ok: false, error: "กรุณาเลือกแพ็กเกจสมาชิก" }
 
-  if (!["QR Code", "เงินสด", "บัตรเครดิต"].includes(paymentMethod)) {
+  if (!(REAL_MONEY_METHODS as readonly string[]).includes(paymentMethod)) {
     return { ok: false, error: "กรุณาเลือกช่องทางชำระเงิน" }
   }
 

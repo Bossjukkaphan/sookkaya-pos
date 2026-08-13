@@ -654,7 +654,7 @@ export function GroupPosForm({
         <legend className="text-sm font-medium">
           ช่องทางชำระเงิน <span className="font-normal text-slate-500">(จ่ายรวมครั้งเดียวทั้งกลุ่ม)</span>
         </legend>
-        <div className={canUseCredit ? "grid grid-cols-4 gap-2" : "grid grid-cols-3 gap-2"}>
+        <div className={canUseCredit ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
           {PAYMENT_LINE_METHODS.map((m) => (
             <Button
               key={m}
