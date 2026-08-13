@@ -241,6 +241,13 @@ describe("updateTopupPaymentMethod", () => {
     expect(patch.payment_method).toBe("บัตรเครดิต")
     expect(patch.edited_by).toBe("ผู้จัดการ")
     expect(patch.edited_at).toEqual(expect.any(String))
+    // ชุดคีย์ต้องตรงเป๊ะสามตัว — ถ้าวันหนึ่งมีคนเพิ่มคอลัมน์เข้า patch เทสต์นี้ต้องแดงทันที
+    // (การไล่เช็คทีละคอลัมน์ต้องห้ามอย่างเดียวไม่พอ เพราะคอลัมน์ใหม่ที่ยังไม่มีในลิสต์จะหลุด)
+    expect(Object.keys(patch).sort()).toEqual([
+      "edited_at",
+      "edited_by",
+      "payment_method",
+    ])
     // คอลัมน์เงินและวันหมดอายุห้ามโผล่ใน patch แม้แต่ตัวเดียว
     for (const forbidden of [
       "cash_received", "credit_added", "bonus_added",
