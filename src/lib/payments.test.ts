@@ -33,6 +33,19 @@ describe("parsePaymentLines", () => {
   it("JSON เสีย → error ไม่ throw", () => {
     expect(parsePaymentLines("{บึ้ม", 500).ok).toBe(false)
   })
+  it("รับช่องทาง E-Wallet (เคสจริง: บิลอาลี 9 ส.ค. จ่าย WeChat 1,290)", () => {
+    const r = parsePaymentLines(
+      JSON.stringify([{ method: "E-Wallet", amount: 1290 }]), 1290)
+    expect(r).toEqual({ ok: true, lines: [{ method: "E-Wallet", amount: 1290 }] })
+  })
+  it("ข้อความ error ไล่ชื่อช่องทางจากชุดกลาง ไม่ได้พิมพ์ด้วยมือ", () => {
+    const r = parsePaymentLines(
+      JSON.stringify([{ method: "โอนวอลเล็ต", amount: 100 }]), 100)
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      for (const m of PAYMENT_LINE_METHODS) expect(r.error).toContain(m)
+    }
+  })
 })
 
 describe("primaryMethod", () => {

@@ -1,7 +1,9 @@
+import { REAL_MONEY_METHODS } from "@/lib/constants"
+
 /** บรรทัดชำระของบิล — เงินจริงเท่านั้น เครดิตเมมเบอร์อยู่ที่ credit_used ไม่ใช่บรรทัด (สเปก 2026-08-01) */
 export type PaymentLine = { method: string; amount: number }
 
-export const PAYMENT_LINE_METHODS = ["เงินสด", "QR Code", "บัตรเครดิต"] as const
+export const PAYMENT_LINE_METHODS = REAL_MONEY_METHODS
 export const MAX_PAYMENT_LINES = 3
 
 const round2 = (n: number) => {
@@ -28,7 +30,10 @@ export function parsePaymentLines(
     const method = String((item as PaymentLine)?.method ?? "")
     const amount = Number((item as PaymentLine)?.amount)
     if (!(PAYMENT_LINE_METHODS as readonly string[]).includes(method))
-      return { ok: false, error: "ช่องทางแบ่งจ่ายต้องเป็น เงินสด / QR Code / บัตรเครดิต" }
+      return {
+        ok: false,
+        error: `ช่องทางแบ่งจ่ายต้องเป็น ${PAYMENT_LINE_METHODS.join(" / ")}`,
+      }
     if (!Number.isFinite(amount) || amount <= 0)
       return { ok: false, error: "ยอดแต่ละบรรทัดต้องมากกว่า 0" }
     lines.push({ method, amount: round2(amount) })

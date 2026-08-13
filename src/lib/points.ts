@@ -3,6 +3,8 @@
  * ดู docs/superpowers/specs/2026-07-25-line-points-design.md
  */
 
+import { REAL_MONEY_METHODS } from "@/lib/constants"
+
 /** ทุก 100฿ ที่จ่ายจริง = 1 แต้ม (ปัดลง) */
 export function pointsForBaht(baht: number): number {
   if (!Number.isFinite(baht) || baht <= 0) return 0
@@ -13,7 +15,7 @@ export function pointsForBaht(baht: number): number {
  * วิธีจ่ายที่ได้แต้มสะสม — เงินจริงที่ลูกค้าจ่ายตรงกับร้านเท่านั้น
  * Gowabi/KOL ไม่ได้ (ไม่ใช่เงินตรงจากลูกค้า) · เครดิตสมาชิกไม่ได้ (ได้ไปแล้วตอนเติมเงิน)
  */
-export const POINT_EARNING_METHODS = ["เงินสด", "QR Code", "บัตรเครดิต"] as const
+export const POINT_EARNING_METHODS = REAL_MONEY_METHODS
 
 export function earnsPoints(paymentMethod: string): boolean {
   return (POINT_EARNING_METHODS as readonly string[]).includes(paymentMethod)

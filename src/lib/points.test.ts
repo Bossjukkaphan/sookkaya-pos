@@ -23,6 +23,10 @@ describe("earnsPoints (ได้แต้มเฉพาะเงินจริ
     expect(earnsPoints("")).toBe(false)
     expect(earnsPoints("โอนเข้าบัญชีอื่น")).toBe(false)
   })
+
+  it("E-Wallet = ได้แต้ม (เงินจริงจากลูกค้าเหมือน QR/บัตร)", () => {
+    expect(earnsPoints("E-Wallet")).toBe(true)
+  })
 })
 
 describe("pointsForBaht (ทุก 100฿ = 1 แต้ม ปัดลง)", () => {
@@ -79,5 +83,18 @@ describe("pointsForSale — แต้มจากส่วนที่จ่า�
   })
   it("Gowabi/KOL ไม่ได้แต้มแม้ไม่ใช้เครดิต", () => {
     expect(pointsForSale({ paymentMethod: "Gowabi", netAmount: 800, creditUsed: 0 })).toBe(0)
+  })
+})
+
+describe("pointsForSale — บิลที่จ่ายด้วย E-Wallet", () => {
+  it("บิล E-Wallet ได้แต้มตามยอดที่จ่ายจริง", () => {
+    expect(
+      pointsForSale({ paymentMethod: "E-Wallet", netAmount: 1290, creditUsed: 0 })
+    ).toBe(12)
+  })
+  it("ส่วนที่จ่ายด้วยเครดิตไม่นับแต้มซ้ำ", () => {
+    expect(
+      pointsForSale({ paymentMethod: "E-Wallet", netAmount: 1290, creditUsed: 290 })
+    ).toBe(10)
   })
 })

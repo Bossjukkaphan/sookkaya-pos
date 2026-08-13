@@ -7,6 +7,7 @@ export const PAY_COLOR: Record<string, string> = {
   "Member Credit": "bg-violet-100 text-violet-700",
   "บัตรเครดิต": "bg-amber-100 text-amber-700",
   "เงินสด": "bg-emerald-100 text-emerald-700",
+  "E-Wallet": "bg-fuchsia-100 text-fuchsia-700",
 }
 export const PAY_COLOR_DEFAULT = "bg-slate-100 text-slate-600"
 
@@ -16,6 +17,7 @@ export const PAY_DOT: Record<string, string> = {
   "Member Credit": "bg-violet-500",
   "บัตรเครดิต": "bg-amber-400",
   "เงินสด": "bg-emerald-500",
+  "E-Wallet": "bg-fuchsia-500",
 }
 export const PAY_DOT_DEFAULT = "bg-slate-400"
 
@@ -25,6 +27,7 @@ export const PAY_SELECTED: Record<string, string> = {
   "Member Credit": "border-violet-600 bg-violet-600 text-white hover:bg-violet-600",
   "บัตรเครดิต": "border-amber-500 bg-amber-500 text-white hover:bg-amber-500",
   "เงินสด": "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-600",
+  "E-Wallet": "border-fuchsia-600 bg-fuchsia-600 text-white hover:bg-fuchsia-600",
 }
 export const PAY_SELECTED_DEFAULT =
   "border-slate-700 bg-slate-700 text-white hover:bg-slate-700"

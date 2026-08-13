@@ -2,12 +2,32 @@ export const PAYMENT_METHODS = [
   "QR Code",
   "เงินสด",
   "บัตรเครดิต",
+  "E-Wallet",
   "Gowabi",
   "KOL",
   "Member Credit",
 ] as const
 
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number]
+
+/**
+ * ช่องทางเงินจริงที่ลูกค้าจ่ายตรงกับร้าน — ได้แต้ม · แบ่งจ่ายได้ · เติมเงินสมาชิกได้
+ * ต่างจาก Gowabi/KOL (เงินผ่านคนกลาง) และ Member Credit (จ่ายไปแล้วตอนเติมเงิน)
+ *
+ * เคยก๊อปรายชื่อนี้ไว้ 3 ที่ (บรรทัดแบ่งจ่าย · แต้มสะสม · ฟอร์มเติมเงิน) แล้วเพิ่ม
+ * ช่องทางใหม่ทีไรก็ลืมบางจุด — รวมมาไว้ที่เดียวแล้ว ห้ามก๊อปกลับไปอีก
+ *
+ * ลำดับนี้คือลำดับปุ่มบนหน้าจอ และตัวแรกเป็นค่าตั้งต้นของกล่องเก็บเงินค้าง
+ * (collect-due-dialog.tsx) — สลับลำดับแล้วพฤติกรรมหน้าจอเปลี่ยนตาม
+ *
+ * `satisfies` บังคับตอน compile ว่าทุกตัวต้องอยู่ใน PAYMENT_METHODS ด้วย
+ */
+export const REAL_MONEY_METHODS = [
+  "เงินสด",
+  "QR Code",
+  "บัตรเครดิต",
+  "E-Wallet",
+] as const satisfies readonly PaymentMethod[]
 
 /** ช่องทางที่ตัดเครดิตสมาชิก — ต้องเลือกลูกค้าและเช็คยอดคงเหลือก่อนบันทึก */
 export const MEMBER_CREDIT_METHOD: PaymentMethod = "Member Credit"
