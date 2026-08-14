@@ -6,7 +6,7 @@ import { Pencil } from "lucide-react"
 import { toast } from "sonner"
 
 import { updateSale } from "../sale-actions"
-import { deleteBillPayment } from "../payment-actions"
+import { deleteBillPayment, updateBillPaymentMethod } from "../payment-actions"
 import { CollectDueDialog } from "../collect-due-dialog"
 import { CustomerPicker } from "../pos/customer-picker"
 import { computeSaleAmounts } from "@/lib/sale-math"
@@ -16,7 +16,9 @@ import {
   GOWABI_METHOD,
   MEMBER_CREDIT_METHOD,
   PAYMENT_METHODS,
-  PRIVATE_ROOM_FEE, REQUEST_FEE,
+  PRIVATE_ROOM_FEE,
+  REAL_MONEY_METHODS,
+  REQUEST_FEE,
   formatBaht,
 } from "@/lib/constants"
 import { Button } from "@/components/ui/button"
@@ -191,6 +193,8 @@ function EditSaleForm({
   // แยก transition จากปุ่มบันทึกหลัก — ลบบรรทัดชำระไม่ควรทำให้ปุ่ม "บันทึกการแก้ไข" ค้างคำว่ากำลังบันทึก
   const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
   const [paymentPending, startPaymentTransition] = useTransition()
+  // แผงเลือกช่องทางกางทีละบรรทัด — เก็บ id เดียว การกางบรรทัดใหม่จึงปิดบรรทัดเก่าเอง
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
 
   function handleDeletePayment(p: BillPaymentLine) {
     if (!window.confirm(`ลบบรรทัดชำระ ${p.method} ${formatBaht(p.amount)} ฿?`)) return
@@ -203,6 +207,25 @@ function EditSaleForm({
         router.refresh()
       } else {
         toast.error(r.error ?? "ลบไม่สำเร็จ")
+      }
+    })
+  }
+
+  function handleChangePaymentMethod(p: BillPaymentLine, method: string) {
+    // เลือกช่องทางเดิมซ้ำ = ปิดแผงเฉย ๆ ไม่ต้องยิง action ให้เปลืองรอบ
+    if (method === p.method) {
+      setEditingPaymentId(null)
+      return
+    }
+    startPaymentTransition(async () => {
+      const r = await updateBillPaymentMethod(p.id, method)
+      if (r.ok) {
+        toast.success(`เปลี่ยนช่องทางเป็น ${method} แล้ว`)
+        setEditingPaymentId(null)
+        router.refresh()
+      } else {
+        // ล้มเหลวให้เปิดแผงค้างไว้ พนักงานจะได้เห็นว่ายังไม่สำเร็จและลองใหม่ได้ทันที
+        toast.error(r.error)
       }
     })
   }
@@ -682,25 +705,58 @@ function EditSaleForm({
           {payments.length > 0 && (
             <ul className="space-y-1">
               {payments.map((p, idx) => (
-                <li key={p.id} className="flex items-center justify-between text-sm">
-                  <span className="text-slate-600">
-                    แบ่งจ่ายครั้งที่ {idx + 1} ({p.method}) · {formatBaht(p.amount)} ฿ ·{" "}
-                    {p.received_date}
-                    {p.received_at
-                      ? ` (${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(p.received_at))})`
-                      : ""}
-                  </span>
-                  {canDeletePayments && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-600"
-                      disabled={paymentPending && deletingPaymentId === p.id}
-                      onClick={() => handleDeletePayment(p)}
-                    >
-                      {paymentPending && deletingPaymentId === p.id ? "กำลังลบ..." : "ลบ"}
-                    </Button>
+                <li key={p.id} className="space-y-1.5">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-slate-600">
+                      แบ่งจ่ายครั้งที่ {idx + 1} ({p.method}) · {formatBaht(p.amount)} ฿ ·{" "}
+                      {p.received_date}
+                      {p.received_at
+                        ? ` (${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(p.received_at))})`
+                        : ""}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-slate-500"
+                        disabled={paymentPending}
+                        onClick={() =>
+                          setEditingPaymentId(editingPaymentId === p.id ? null : p.id)
+                        }
+                      >
+                        {editingPaymentId === p.id ? "ปิด" : "แก้ช่องทาง"}
+                      </Button>
+                      {canDeletePayments && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="text-red-600"
+                          disabled={paymentPending && deletingPaymentId === p.id}
+                          onClick={() => handleDeletePayment(p)}
+                        >
+                          {paymentPending && deletingPaymentId === p.id ? "กำลังลบ..." : "ลบ"}
+                        </Button>
+                      )}
+                    </span>
+                  </div>
+                  {editingPaymentId === p.id && (
+                    <div className="flex flex-wrap gap-1.5 border-t pt-1.5">
+                      {REAL_MONEY_METHODS.map((m) => (
+                        <Button
+                          key={m}
+                          type="button"
+                          size="sm"
+                          variant={p.method === m ? "default" : "outline"}
+                          disabled={paymentPending}
+                          className="h-8 text-xs"
+                          onClick={() => handleChangePaymentMethod(p, m)}
+                        >
+                          {m}
+                        </Button>
+                      ))}
+                    </div>
                   )}
                 </li>
               ))}
@@ -711,8 +767,8 @@ function EditSaleForm({
           )}
           {payments.length > 0 && due <= 0.001 && (
             <p className="text-xs text-slate-500">
-              ชำระเงินครบแล้ว — หากต้องการเปลี่ยนช่องทางการชำระเงิน
-              กรุณาลบบรรทัดแบ่งจ่ายก่อน (เฉพาะหัวหน้า)
+              ชำระเงินครบแล้ว — คีย์ช่องทางผิดกด &quot;แก้ช่องทาง&quot; ที่บรรทัดได้เลย
+              ไม่ต้องลบ (ยอดเงินและวันที่รับเงินไม่เปลี่ยน)
             </p>
           )}
         </div>
