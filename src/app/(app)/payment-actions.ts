@@ -117,29 +117,53 @@ export async function updateBillPaymentMethod(
 
   // วิธีหลักของบิล = วิธีของบรรทัดที่ยอดสูงสุด — อ่านสดหลังแก้แล้วให้ primaryMethod ตัดสิน
   // (ห้ามเดาจากบรรทัดที่เพิ่งแก้ บิลแบ่งจ่ายอาจมีบรรทัดอื่นที่ใหญ่กว่า)
-  const { data: allLines } = await supabase
+  //
+  // จุดนี้ bill_payments เขียนสำเร็จไปแล้ว — ถ้าขั้นตอนข้างล่างพลาด สองตารางจะไม่ตรงกัน
+  // (tracked_bill_method_mismatch เฝ้าอยู่) ทุก error จากนี้จึงต้องบอกพนักงานว่าบรรทัดเปลี่ยนแล้ว
+  // แต่ป้ายช่องทางของบิลยังไม่ตาม และกดปุ่มซ้ำได้ปลอดภัย (ฟังก์ชันนี้เขียนค่าเดิมซ้ำได้ไม่เสียหาย)
+  const { data: allLines, error: linesError } = await supabase
     .from("bill_payments")
     .select("method, amount")
     .eq("bill_key", billKey)
-  const lines = (allLines ?? []).map((l) => ({
+  if (linesError)
+    return {
+      ok: false,
+      error: `เปลี่ยนช่องทางของบรรทัดแล้ว แต่อ่านบรรทัดชำระของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง (${linesError.message})`,
+    }
+  // บรรทัดที่เพิ่งแก้เป็นของบิลนี้แน่ ๆ ดังนั้น allLines ว่างเปล่าเป็นไปไม่ได้ — ถ้าว่างคือความผิดปกติ ไม่ใช่บิลไม่มีบรรทัด
+  if (!allLines || allLines.length === 0)
+    return {
+      ok: false,
+      error: "เปลี่ยนช่องทางของบรรทัดแล้ว แต่หาบรรทัดชำระของบิลนี้ไม่เจอ กรุณากดใหม่อีกครั้ง",
+    }
+  const lines = allLines.map((l) => ({
     method: String(l.method),
     amount: Number(l.amount),
   }))
   const primary = primaryMethod(lines)
+  // มีอย่างน้อยหนึ่งบรรทัดแล้ว primaryMethod ต้องตัดสินได้เสมอ — null ที่นี่คือ error ไม่ใช่กรณีข้ามได้
+  if (!primary)
+    return {
+      ok: false,
+      error: "เปลี่ยนช่องทางของบรรทัดแล้ว แต่คำนวณวิธีหลักของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง",
+    }
 
-  if (primary) {
-    const { error: saleError } = await supabase
-      .from("sales")
-      .update({ payment_method: primary, edited_by: editedBy })
-      .or(`bill_id.eq.${billKey},id.eq.${billKey}`)
-    // บรรทัดชำระเปลี่ยนไปแล้วแต่ป้ายช่องทางของบิลยังไม่ตาม — สองที่ไม่ตรงกันจนกว่าจะลองใหม่
-    // (กดซ้ำได้ปลอดภัย ฟังก์ชันนี้เขียนค่าเดิมซ้ำได้ไม่เสียหาย)
-    if (saleError)
-      return {
-        ok: false,
-        error: `เปลี่ยนช่องทางของบรรทัดแล้ว แต่อัปเดตป้ายช่องทางของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง (${saleError.message})`,
-      }
-  }
+  const { data: saleUpdated, error: saleError } = await supabase
+    .from("sales")
+    .update({ payment_method: primary, edited_by: editedBy })
+    .or(`bill_id.eq.${billKey},id.eq.${billKey}`)
+    .select("id")
+  if (saleError)
+    return {
+      ok: false,
+      error: `เปลี่ยนช่องทางของบรรทัดแล้ว แต่อัปเดตป้ายช่องทางของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง (${saleError.message})`,
+    }
+  // อัปเดต 0 แถวแต่ไม่มี error = RLS ปฏิเสธเงียบ เหมือนกับด่านที่กันไว้แล้วตอนแก้ bill_payments ข้างบน
+  if (!saleUpdated || saleUpdated.length === 0)
+    return {
+      ok: false,
+      error: "เปลี่ยนช่องทางของบรรทัดแล้ว แต่ไม่พบแถวของบิลนี้ใน sales ให้อัปเดต กรุณากดใหม่อีกครั้ง",
+    }
 
   revalidatePath("/today")
   revalidatePath("/reports")

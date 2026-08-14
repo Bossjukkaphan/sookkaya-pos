@@ -116,8 +116,12 @@ function fakeMethodSupabase(cfg: {
   saleDate: string | null
   /** บรรทัดทั้งหมดของบิล "หลังแก้แล้ว" ที่ขั้นที่ 4 จะคืนกลับมา */
   linesAfter: { method: string; amount: number }[]
+  /** ขั้นที่ 4 (bill_payments select ทั้งบิล) จะคืน error นี้แทน data ถ้าใส่มา — จำลอง re-read ล้มเหลว */
+  linesAfterError?: { message: string }
   /** ขั้นที่ 5 (sales update .or) จะคืน error นี้แทน null ถ้าใส่มา */
   saleUpdateError?: { message: string }
+  /** แถวที่ .select("id") ของขั้นที่ 5 คืนกลับมา — ค่าเริ่มต้นคือ 1 แถว (อัปเดตสำเร็จ), ใส่ [] เพื่อจำลองอัปเดตไม่โดนแถวไหนเลย */
+  saleUpdateRows?: { id: string }[]
 }) {
   const patches: Record<string, unknown>[] = []
   const salePatches: Record<string, unknown>[] = []
@@ -155,7 +159,10 @@ function fakeMethodSupabase(cfg: {
       }
       return {
         select: vi.fn(() => ({
-          eq: vi.fn(async () => ({ data: cfg.linesAfter, error: null })),
+          eq: vi.fn(async () => ({
+            data: cfg.linesAfterError ? null : cfg.linesAfter,
+            error: cfg.linesAfterError ?? null,
+          })),
         })),
       }
     }
@@ -178,9 +185,14 @@ function fakeMethodSupabase(cfg: {
         update: vi.fn((patch: Record<string, unknown>) => {
           salePatches.push(patch)
           return {
-            or: vi.fn(async (filter: string) => {
+            or: vi.fn((filter: string) => {
               saleFilters.push(filter)
-              return { error: cfg.saleUpdateError ?? null }
+              return {
+                select: vi.fn(async () => ({
+                  data: cfg.saleUpdateError ? null : (cfg.saleUpdateRows ?? [{ id: "s1" }]),
+                  error: cfg.saleUpdateError ?? null,
+                })),
+              }
             }),
           }
         }),
@@ -238,6 +250,45 @@ describe("updateBillPaymentMethod", () => {
       saleDate: "2026-08-14",
       linesAfter: [{ method: "E-Wallet", amount: 1290 }],
       saleUpdateError: { message: "network error" },
+    })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentMethod("line-1", "E-Wallet")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("กรุณากดใหม่อีกครั้ง")
+  })
+
+  it("บรรทัดชำระแก้สำเร็จ แต่อ่านบรรทัดทั้งบิลกลับมาล้มเหลว — ต้องไม่ขึ้นว่าสำเร็จ", async () => {
+    // ถ้าเผลอปล่อยผ่าน (เหมือนโค้ดเดิมที่ทิ้ง error ของขั้นนี้) allLines จะกลายเป็น []
+    // primaryMethod คืน null, if (primary) ข้ามทั้งบล็อก แล้วฟังก์ชันคืน ok:true ทั้งที่สองตารางไม่ตรงกันแล้ว
+    const fake = fakeMethodSupabase({
+      line: LINE,
+      saleDate: "2026-08-14",
+      linesAfter: [],
+      linesAfterError: { message: "connection reset" },
+    })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentMethod("line-1", "E-Wallet")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) {
+      expect(r.error).toContain("connection reset")
+      expect(r.error).toContain("กรุณากดใหม่อีกครั้ง")
+    }
+    // sales ต้องไม่ถูกแตะเลยเมื่ออ่านบรรทัดทั้งบิลไม่สำเร็จ
+    expect(fake.salePatches).toHaveLength(0)
+  })
+
+  it("อัปเดตป้ายช่องทางของบิลใน sales ไม่โดนแถวไหนเลย (0 แถว, ไม่มี error) — ต้องถือเป็น error", async () => {
+    // Supabase REST คืน 204 ไม่มี error เมื่ออัปเดตไม่โดนแถว — ถ้าไม่ .select() กลับมาเช็ค
+    // จะดูเหมือนสำเร็จทั้งที่ sales.payment_method ไม่ขยับ และสองตารางไม่ตรงกันแล้ว
+    const fake = fakeMethodSupabase({
+      line: LINE,
+      saleDate: "2026-08-14",
+      linesAfter: [{ method: "E-Wallet", amount: 1290 }],
+      saleUpdateRows: [],
     })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
