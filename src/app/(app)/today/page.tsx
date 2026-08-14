@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
+import { canEditPaymentMethodOn } from "@/lib/accounting-window"
 import { getServicesCached, getTherapistsCached } from "@/lib/cached-lookups"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
@@ -57,6 +58,12 @@ export default async function TodayPage({
   // คำนวณก่อนดึงข้อมูล เพราะยอดเครดิตสมาชิกใช้เฉพาะในกล่องแก้ไข ถ้าแก้ไม่ได้ก็ไม่ต้องดึง
   const editable =
     from.slice(0, 7) === today.slice(0, 7) && to.slice(0, 7) === today.slice(0, 7)
+
+  // แก้ช่องทางชำระเงินย้อนหลังได้ถึงเดือนก่อน — ใช้กติกาเดียวกับที่ server action บังคับ
+  // (accounting-window.ts) ห้ามเขียนเงื่อนไขเดือนซ้ำที่นี่ ไม่งั้นหน้าจอกับ action จะเพี้ยนจากกัน
+  // เช็คทั้งสองปลายของช่วง เพราะรายการที่แสดงมาจากทั้งช่วง
+  const canEditPaymentMethod =
+    canEditPaymentMethodOn(from, today) && canEditPaymentMethodOn(to, today)
 
   // ยอดสรุปดึงจาก view รายวัน ไม่ได้บวกจากรายการที่แสดง
   // เพราะรายการถูกตัดที่ ROW_CAP แถว ถ้าบวกจากตรงนั้นตัวเลขจะต่ำกว่าจริงโดยไม่มีใครรู้
@@ -352,7 +359,9 @@ export default async function TodayPage({
       {!editable && (
         <Card className="border-slate-300 bg-slate-50">
           <CardContent className="py-3 text-sm text-slate-700">
-            ข้อมูลเดือนก่อน ดูได้อย่างเดียว แก้หรือลบไม่ได้
+            {canEditPaymentMethod
+              ? "ข้อมูลเดือนก่อน — แก้ได้เฉพาะช่องทางชำระเงิน (กดดินสอแล้วดูกล่องบรรทัดชำระ) ยอดเงิน หมอ เมนู และการลบบิลแก้ไม่ได้"
+              : "ข้อมูลเดือนก่อน ดูได้อย่างเดียว แก้หรือลบไม่ได้"}
           </CardContent>
         </Card>
       )}
@@ -555,6 +564,7 @@ export default async function TodayPage({
                     sale={g.items[0]}
                     therapistName={therapistName}
                     editable={editable}
+                    canEditPaymentMethod={canEditPaymentMethod}
                     editOptions={editOptions}
                   />
                 ) : (
@@ -574,6 +584,7 @@ export default async function TodayPage({
                           sale={s}
                           therapistName={therapistName}
                           editable={editable}
+                          canEditPaymentMethod={canEditPaymentMethod}
                           editOptions={editOptions}
                         />
                       ))}
@@ -597,6 +608,7 @@ export default async function TodayPage({
                         sale={g.items[0]}
                         therapistName={therapistName}
                         editable={editable}
+                        canEditPaymentMethod={canEditPaymentMethod}
                         editOptions={editOptions}
                       />
                     ) : (
@@ -615,6 +627,7 @@ export default async function TodayPage({
                               sale={s}
                               therapistName={therapistName}
                               editable={editable}
+                              canEditPaymentMethod={canEditPaymentMethod}
                               editOptions={editOptions}
                             />
                           ))}
@@ -780,11 +793,13 @@ function SaleRow({
   sale: s,
   therapistName,
   editable,
+  canEditPaymentMethod,
   editOptions,
 }: {
   sale: SaleRecord
   therapistName: Map<string, string>
   editable: boolean
+  canEditPaymentMethod: boolean
   editOptions: EditOptions
 }) {
   const discount = Number(s.discount ?? 0)
@@ -874,7 +889,7 @@ function SaleRow({
         <span className="mt-0.5 text-lg font-bold whitespace-nowrap text-emerald-800">
           {formatBaht(netAmount)} ฿
         </span>
-        {editable && (
+        {(editable || canEditPaymentMethod) && (
           <SaleRowActions
             sale={editableSale}
             therapists={editOptions.therapists}
@@ -890,6 +905,7 @@ function SaleRow({
             payments={editOptions.paymentsByBillKey.get(billKey) ?? []}
             due={due}
             canDeletePayments={editOptions.canDeletePayments}
+            saleEditable={editable}
           />
         )}
       </div>

@@ -42,6 +42,7 @@ export function SaleRowActions({
   due,
   canDeletePayments,
   label,
+  saleEditable,
 }: {
   sale: EditableSale
   therapists: Therapist[]
@@ -53,6 +54,8 @@ export function SaleRowActions({
   due: number
   canDeletePayments: boolean
   label: string
+  /** แก้ตัวบิลได้ไหม — false = เดือนก่อน เปิดกล่องได้แต่แก้ได้แค่ช่องทางชำระเงิน */
+  saleEditable: boolean
 }) {
   return (
     <div className="flex items-center">
@@ -66,8 +69,9 @@ export function SaleRowActions({
         payments={payments}
         due={due}
         canDeletePayments={canDeletePayments}
+        saleEditable={saleEditable}
       />
-      <DeleteSaleButton id={sale.id} label={label} />
+      {saleEditable && <DeleteSaleButton id={sale.id} label={label} />}
     </div>
   )
 }

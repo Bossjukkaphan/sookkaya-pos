@@ -102,6 +102,7 @@ export function EditSaleButton({
   payments,
   due,
   canDeletePayments,
+  saleEditable,
 }: {
   sale: EditableSale
   therapists: Therapist[]
@@ -117,6 +118,8 @@ export function EditSaleButton({
   due: number
   /** ลบบรรทัดชำระได้เฉพาะ role หัวหน้า (admin/manager) — server เช็คซ้ำอยู่แล้วแต่ซ่อนปุ่มให้ */
   canDeletePayments: boolean
+  /** แก้ตัวบิลได้ไหม — false = เดือนก่อน เปิดกล่องได้แต่แก้ได้แค่ช่องทางชำระเงิน */
+  saleEditable: boolean
 }) {
   const [open, setOpen] = useState(false)
 
@@ -134,11 +137,13 @@ export function EditSaleButton({
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>แก้ไขรายการขาย</DialogTitle>
+            <DialogTitle>{saleEditable ? "แก้ไขรายการขาย" : "แก้ช่องทางชำระเงิน"}</DialogTitle>
             <DialogDescription>
               {sale.receipt_no ?? "ไม่มีเลขใบเสร็จ"}
-              {sale.sale_time && ` · ${sale.sale_time.slice(0, 5)}`} — วันที่
-              เวลา และเลขใบเสร็จแก้ไม่ได้
+              {sale.sale_time && ` · ${sale.sale_time.slice(0, 5)}`}
+              {saleEditable
+                ? " — วันที่ เวลา และเลขใบเสร็จแก้ไม่ได้"
+                : " — บิลเดือนก่อน แก้ได้เฉพาะช่องทางชำระเงิน"}
             </DialogDescription>
           </DialogHeader>
           {/* key = ปิดแล้วเปิดใหม่ให้ค่าในฟอร์มกลับไปตรงกับข้อมูลที่แสดงอยู่เสมอ */}
@@ -154,6 +159,7 @@ export function EditSaleButton({
               payments={payments}
               due={due}
               canDeletePayments={canDeletePayments}
+              saleEditable={saleEditable}
               onDone={() => setOpen(false)}
             />
           )}
@@ -173,6 +179,7 @@ function EditSaleForm({
   payments,
   due,
   canDeletePayments,
+  saleEditable,
   onDone,
 }: {
   sale: EditableSale
@@ -184,51 +191,14 @@ function EditSaleForm({
   payments: BillPaymentLine[]
   due: number
   canDeletePayments: boolean
+  /** แก้ตัวบิลได้ไหม — false = เดือนก่อน เปิดกล่องได้แต่แก้ได้แค่ช่องทางชำระเงิน */
+  saleEditable: boolean
   onDone: () => void
 }) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
   // กุญแจบิลของบรรทัดชำระ (ดู migration 20260801100000_bill_payments.sql): บิลชุดใช้ bill_id · บิลเดี่ยวใช้ id ตัวเอง
   const billKey = sale.bill_id ?? sale.id
-  // แยก transition จากปุ่มบันทึกหลัก — ลบบรรทัดชำระไม่ควรทำให้ปุ่ม "บันทึกการแก้ไข" ค้างคำว่ากำลังบันทึก
-  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
-  const [paymentPending, startPaymentTransition] = useTransition()
-  // แผงเลือกช่องทางกางทีละบรรทัด — เก็บ id เดียว การกางบรรทัดใหม่จึงปิดบรรทัดเก่าเอง
-  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
-
-  function handleDeletePayment(p: BillPaymentLine) {
-    if (!window.confirm(`ลบบรรทัดชำระ ${p.method} ${formatBaht(p.amount)} ฿?`)) return
-    setDeletingPaymentId(p.id)
-    startPaymentTransition(async () => {
-      const r = await deleteBillPayment(p.id)
-      setDeletingPaymentId(null)
-      if (r.ok) {
-        toast.success("ลบบรรทัดชำระแล้ว")
-        router.refresh()
-      } else {
-        toast.error(r.error ?? "ลบไม่สำเร็จ")
-      }
-    })
-  }
-
-  function handleChangePaymentMethod(p: BillPaymentLine, method: string) {
-    // เลือกช่องทางเดิมซ้ำ = ปิดแผงเฉย ๆ ไม่ต้องยิง action ให้เปลืองรอบ
-    if (method === p.method) {
-      setEditingPaymentId(null)
-      return
-    }
-    startPaymentTransition(async () => {
-      const r = await updateBillPaymentMethod(p.id, method)
-      if (r.ok) {
-        toast.success(`เปลี่ยนช่องทางเป็น ${method} แล้ว`)
-        setEditingPaymentId(null)
-        router.refresh()
-      } else {
-        // ล้มเหลวให้เปิดแผงค้างไว้ พนักงานจะได้เห็นว่ายังไม่สำเร็จและลองใหม่ได้ทันที
-        toast.error(r.error)
-      }
-    })
-  }
 
   const [therapistId, setTherapistId] = useState(sale.therapist_id ?? "")
   const [serviceId, setServiceId] = useState(sale.service_id ?? "")
@@ -366,6 +336,24 @@ function EditSaleForm({
   }
 
   const uid = (name: string) => `${name}-${sale.id}`
+
+  // โหมดจำกัดสิทธิ์ (บิลเดือนก่อน): ไม่เรนเดอร์ฟอร์มเลย ตัดโอกาสส่งค่าที่ server จะปฏิเสธอยู่แล้ว
+  // การซ่อนทีละช่องเสี่ยงหลุด — ไม่เรนเดอร์ทั้งฟอร์มคือวิธีเดียวที่พิสูจน์ได้ว่าไม่มีทางส่ง
+  if (!saleEditable) {
+    return (
+      <div className="space-y-3">
+        <BillPaymentLinesBox
+          billKey={billKey}
+          payments={payments}
+          due={due}
+          canDeletePayments={canDeletePayments}
+        />
+        <p className="text-xs text-slate-500">
+          บิลของเดือนก่อนแก้ยอดเงิน หมอ หรือเมนูไม่ได้ — แก้ได้เฉพาะช่องทางชำระเงินเท่านั้น
+        </p>
+      </div>
+    )
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -685,97 +673,12 @@ function EditSaleForm({
       </Card>
 
       {/* บรรทัดชำระของบิล (bill_payments) — เฉพาะบิลที่ track (บิลเก่า/Gowabi/KOL/เครดิตเต็มบิล ไม่มีบรรทัดให้แสดง) */}
-      {(payments.length > 0 || due !== 0) && (
-        <div className="space-y-2 rounded-lg border p-3">
-          <div className="flex items-center justify-between gap-2">
-            <p className="text-sm font-medium">บรรทัดชำระของบิล</p>
-            {due > 0.001 ? (
-              <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                ค้างรับ {formatBaht(due)} ฿
-              </span>
-            ) : due < -0.001 ? (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                เกินรับ {formatBaht(Math.abs(due))} ฿
-              </span>
-            ) : (
-              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
-                รับครบแล้ว
-              </span>
-            )}
-          </div>
-          {payments.length > 0 && (
-            <ul className="space-y-1">
-              {payments.map((p, idx) => (
-                <li key={p.id} className="space-y-1.5">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-600">
-                      แบ่งจ่ายครั้งที่ {idx + 1} ({p.method}) · {formatBaht(p.amount)} ฿ ·{" "}
-                      {p.received_date}
-                      {p.received_at
-                        ? ` (${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(p.received_at))})`
-                        : ""}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs text-slate-500"
-                        disabled={paymentPending}
-                        onClick={() =>
-                          setEditingPaymentId(editingPaymentId === p.id ? null : p.id)
-                        }
-                      >
-                        {editingPaymentId === p.id ? "ปิด" : "แก้ช่องทาง"}
-                      </Button>
-                      {canDeletePayments && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-red-600"
-                          // บรรทัดนี้มีสองปุ่มใช้ transition เดียวกัน — ปุ่มไหนกำลังทำงานอยู่ต้องล็อกทั้งคู่
-                          // กันกดลบซ้อนตอนกำลังเปลี่ยนช่องทาง (หรือกลับกัน) จนยิง action ชนกัน
-                          disabled={paymentPending}
-                          onClick={() => handleDeletePayment(p)}
-                        >
-                          {paymentPending && deletingPaymentId === p.id ? "กำลังลบ..." : "ลบ"}
-                        </Button>
-                      )}
-                    </span>
-                  </div>
-                  {editingPaymentId === p.id && (
-                    <div className="flex flex-wrap gap-1.5 border-t pt-1.5">
-                      {REAL_MONEY_METHODS.map((m) => (
-                        <Button
-                          key={m}
-                          type="button"
-                          size="sm"
-                          variant={p.method === m ? "default" : "outline"}
-                          disabled={paymentPending}
-                          className="h-8 text-xs"
-                          onClick={() => handleChangePaymentMethod(p, m)}
-                        >
-                          {m}
-                        </Button>
-                      ))}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {due > 0.001 && (
-            <CollectDueDialog billKey={billKey} due={due} onDone={() => router.refresh()} />
-          )}
-          {payments.length > 0 && due <= 0.001 && (
-            <p className="text-xs text-slate-500">
-              ชำระเงินครบแล้ว — คีย์ช่องทางผิดกด &quot;แก้ช่องทาง&quot; ที่บรรทัดได้เลย
-              ไม่ต้องลบ (ยอดเงินและวันที่รับเงินไม่เปลี่ยน)
-            </p>
-          )}
-        </div>
-      )}
+      <BillPaymentLinesBox
+        billKey={billKey}
+        payments={payments}
+        due={due}
+        canDeletePayments={canDeletePayments}
+      />
 
       <DialogFooter>
         <Button type="button" variant="outline" onClick={onDone}>
@@ -789,5 +692,153 @@ function EditSaleForm({
         </Button>
       </DialogFooter>
     </form>
+  )
+}
+
+/** กล่องบรรทัดชำระของบิล — แยกออกมาใช้ซ้ำได้ทั้งฟอร์มปกติและโหมดจำกัดสิทธิ์ (แก้เฉพาะช่องทาง) */
+function BillPaymentLinesBox({
+  billKey,
+  payments,
+  due,
+  canDeletePayments,
+}: {
+  billKey: string
+  payments: BillPaymentLine[]
+  due: number
+  canDeletePayments: boolean
+}) {
+  const router = useRouter()
+  // แยก transition จากปุ่มบันทึกหลัก — ลบบรรทัดชำระไม่ควรทำให้ปุ่ม "บันทึกการแก้ไข" ค้างคำว่ากำลังบันทึก
+  const [deletingPaymentId, setDeletingPaymentId] = useState<string | null>(null)
+  const [paymentPending, startPaymentTransition] = useTransition()
+  // แผงเลือกช่องทางกางทีละบรรทัด — เก็บ id เดียว การกางบรรทัดใหม่จึงปิดบรรทัดเก่าเอง
+  const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
+
+  function handleDeletePayment(p: BillPaymentLine) {
+    if (!window.confirm(`ลบบรรทัดชำระ ${p.method} ${formatBaht(p.amount)} ฿?`)) return
+    setDeletingPaymentId(p.id)
+    startPaymentTransition(async () => {
+      const r = await deleteBillPayment(p.id)
+      setDeletingPaymentId(null)
+      if (r.ok) {
+        toast.success("ลบบรรทัดชำระแล้ว")
+        router.refresh()
+      } else {
+        toast.error(r.error ?? "ลบไม่สำเร็จ")
+      }
+    })
+  }
+
+  function handleChangePaymentMethod(p: BillPaymentLine, method: string) {
+    // เลือกช่องทางเดิมซ้ำ = ปิดแผงเฉย ๆ ไม่ต้องยิง action ให้เปลืองรอบ
+    if (method === p.method) {
+      setEditingPaymentId(null)
+      return
+    }
+    startPaymentTransition(async () => {
+      const r = await updateBillPaymentMethod(p.id, method)
+      if (r.ok) {
+        toast.success(`เปลี่ยนช่องทางเป็น ${method} แล้ว`)
+        setEditingPaymentId(null)
+        router.refresh()
+      } else {
+        // ล้มเหลวให้เปิดแผงค้างไว้ พนักงานจะได้เห็นว่ายังไม่สำเร็จและลองใหม่ได้ทันที
+        toast.error(r.error)
+      }
+    })
+  }
+
+  if (payments.length === 0 && due === 0) return null
+
+  return (
+    <div className="space-y-2 rounded-lg border p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium">บรรทัดชำระของบิล</p>
+        {due > 0.001 ? (
+          <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
+            ค้างรับ {formatBaht(due)} ฿
+          </span>
+        ) : due < -0.001 ? (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+            เกินรับ {formatBaht(Math.abs(due))} ฿
+          </span>
+        ) : (
+          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">
+            รับครบแล้ว
+          </span>
+        )}
+      </div>
+      {payments.length > 0 && (
+        <ul className="space-y-1">
+          {payments.map((p, idx) => (
+            <li key={p.id} className="space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-slate-600">
+                  แบ่งจ่ายครั้งที่ {idx + 1} ({p.method}) · {formatBaht(p.amount)} ฿ ·{" "}
+                  {p.received_date}
+                  {p.received_at
+                    ? ` (${new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(p.received_at))})`
+                    : ""}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs text-slate-500"
+                    disabled={paymentPending}
+                    onClick={() =>
+                      setEditingPaymentId(editingPaymentId === p.id ? null : p.id)
+                    }
+                  >
+                    {editingPaymentId === p.id ? "ปิด" : "แก้ช่องทาง"}
+                  </Button>
+                  {canDeletePayments && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-red-600"
+                      // บรรทัดนี้มีสองปุ่มใช้ transition เดียวกัน — ปุ่มไหนกำลังทำงานอยู่ต้องล็อกทั้งคู่
+                      // กันกดลบซ้อนตอนกำลังเปลี่ยนช่องทาง (หรือกลับกัน) จนยิง action ชนกัน
+                      disabled={paymentPending}
+                      onClick={() => handleDeletePayment(p)}
+                    >
+                      {paymentPending && deletingPaymentId === p.id ? "กำลังลบ..." : "ลบ"}
+                    </Button>
+                  )}
+                </span>
+              </div>
+              {editingPaymentId === p.id && (
+                <div className="flex flex-wrap gap-1.5 border-t pt-1.5">
+                  {REAL_MONEY_METHODS.map((m) => (
+                    <Button
+                      key={m}
+                      type="button"
+                      size="sm"
+                      variant={p.method === m ? "default" : "outline"}
+                      disabled={paymentPending}
+                      className="h-8 text-xs"
+                      onClick={() => handleChangePaymentMethod(p, m)}
+                    >
+                      {m}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {due > 0.001 && (
+        <CollectDueDialog billKey={billKey} due={due} onDone={() => router.refresh()} />
+      )}
+      {payments.length > 0 && due <= 0.001 && (
+        <p className="text-xs text-slate-500">
+          ชำระเงินครบแล้ว — คีย์ช่องทางผิดกด &quot;แก้ช่องทาง&quot; ที่บรรทัดได้เลย
+          ไม่ต้องลบ (ยอดเงินและวันที่รับเงินไม่เปลี่ยน)
+        </p>
+      )}
+    </div>
   )
 }
