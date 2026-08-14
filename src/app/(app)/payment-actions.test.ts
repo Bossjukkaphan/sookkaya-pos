@@ -116,6 +116,8 @@ function fakeMethodSupabase(cfg: {
   saleDate: string | null
   /** บรรทัดทั้งหมดของบิล "หลังแก้แล้ว" ที่ขั้นที่ 4 จะคืนกลับมา */
   linesAfter: { method: string; amount: number }[]
+  /** ขั้นที่ 5 (sales update .or) จะคืน error นี้แทน null ถ้าใส่มา */
+  saleUpdateError?: { message: string }
 }) {
   const patches: Record<string, unknown>[] = []
   const salePatches: Record<string, unknown>[] = []
@@ -178,7 +180,7 @@ function fakeMethodSupabase(cfg: {
           return {
             or: vi.fn(async (filter: string) => {
               saleFilters.push(filter)
-              return { error: null }
+              return { error: cfg.saleUpdateError ?? null }
             }),
           }
         }),
@@ -226,6 +228,23 @@ describe("updateBillPaymentMethod", () => {
       "edited_by",
       "method",
     ])
+  })
+
+  it("อัปเดตบรรทัดชำระสำเร็จ แต่อัปเดตป้ายช่องทางของบิลไม่สำเร็จ — ต้องคืน error ให้ลองใหม่", async () => {
+    // บรรทัดชำระเปลี่ยนไปแล้วแต่ sales.payment_method ยังไม่ตาม จนกว่าจะกดซ้ำ
+    // ต้องไม่คืน ok: true ทั้งที่สองตารางไม่ตรงกัน ไม่งั้น tracked_bill_method_mismatch จะ FAIL แบบไม่มีใครรู้
+    const fake = fakeMethodSupabase({
+      line: LINE,
+      saleDate: "2026-08-14",
+      linesAfter: [{ method: "E-Wallet", amount: 1290 }],
+      saleUpdateError: { message: "network error" },
+    })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentMethod("line-1", "E-Wallet")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("กรุณากดใหม่อีกครั้ง")
   })
 
   it("บิลชุดหลายแถว — ต้องอัปเดต payment_method ครบทุกแถวของบิล ไม่ใช่แถวเดียว", async () => {

@@ -128,10 +128,17 @@ export async function updateBillPaymentMethod(
   const primary = primaryMethod(lines)
 
   if (primary) {
-    await supabase
+    const { error: saleError } = await supabase
       .from("sales")
       .update({ payment_method: primary, edited_by: editedBy })
       .or(`bill_id.eq.${billKey},id.eq.${billKey}`)
+    // บรรทัดชำระเปลี่ยนไปแล้วแต่ป้ายช่องทางของบิลยังไม่ตาม — สองที่ไม่ตรงกันจนกว่าจะลองใหม่
+    // (กดซ้ำได้ปลอดภัย ฟังก์ชันนี้เขียนค่าเดิมซ้ำได้ไม่เสียหาย)
+    if (saleError)
+      return {
+        ok: false,
+        error: `เปลี่ยนช่องทางของบรรทัดแล้ว แต่อัปเดตป้ายช่องทางของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง (${saleError.message})`,
+      }
   }
 
   revalidatePath("/today")
