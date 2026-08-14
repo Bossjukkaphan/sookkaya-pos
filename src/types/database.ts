@@ -228,6 +228,8 @@ export type Database = {
           bill_key: string
           created_at: string
           created_by: string | null
+          edited_at: string | null
+          edited_by: string | null
           id: string
           method: string
           note: string | null
@@ -239,6 +241,8 @@ export type Database = {
           bill_key: string
           created_at?: string
           created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           method: string
           note?: string | null
@@ -250,6 +254,8 @@ export type Database = {
           bill_key?: string
           created_at?: string
           created_by?: string | null
+          edited_at?: string | null
+          edited_by?: string | null
           id?: string
           method?: string
           note?: string | null
