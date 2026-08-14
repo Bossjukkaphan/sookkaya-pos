@@ -733,7 +733,9 @@ function EditSaleForm({
                           variant="ghost"
                           size="sm"
                           className="text-red-600"
-                          disabled={paymentPending && deletingPaymentId === p.id}
+                          // บรรทัดนี้มีสองปุ่มใช้ transition เดียวกัน — ปุ่มไหนกำลังทำงานอยู่ต้องล็อกทั้งคู่
+                          // กันกดลบซ้อนตอนกำลังเปลี่ยนช่องทาง (หรือกลับกัน) จนยิง action ชนกัน
+                          disabled={paymentPending}
                           onClick={() => handleDeletePayment(p)}
                         >
                           {paymentPending && deletingPaymentId === p.id ? "กำลังลบ..." : "ลบ"}
