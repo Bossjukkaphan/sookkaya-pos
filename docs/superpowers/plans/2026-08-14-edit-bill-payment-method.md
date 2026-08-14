@@ -884,3 +884,156 @@ Expected: `200`
 - [ ] **Step 7: อัปเดตความจำโปรเจกต์**
 
 เพิ่มลง `sookkaya-money-formula-one-place.md` ว่าช่องทางชำระเงินของบิลขายแก้ได้จากบรรทัดชำระผ่าน `updateBillPaymentMethod` ซึ่ง sync `sales.payment_method` ให้ด้วย และหน้าต่างเวลาของแต่ละอย่างต่างกัน: รายจ่ายถึงวันที่ 3 · ช่องทางบิลขายเดือนก่อนตลอดเดือน · ใบเติมเงินไม่จำกัด
+
+---
+
+## Task 6: เปิดกล่องแก้บิลของเดือนก่อนแบบจำกัดสิทธิ์
+
+**Files:**
+- Modify: `src/app/(app)/today/page.tsx`
+- Modify: `src/app/(app)/today/sale-row-actions.tsx`
+- Modify: `src/app/(app)/today/edit-sale-dialog.tsx`
+
+**Interfaces:**
+- Consumes: `canEditPaymentMethodOn(recordDate, today)` จาก `@/lib/accounting-window` (Task 1)
+- Produces: prop ใหม่ `saleEditable: boolean` บน `SaleRowActions` · `EditSaleButton` · `EditSaleForm`
+
+**บริบท — ทำไมต้องมี task นี้:** final review พบว่างานที่ทำมาทั้งหมดเข้าไม่ถึงเคสที่ตั้งใจแก้
+`today/page.tsx:58` คำนวณ `editable` จากเงื่อนไข "ช่วงวันต้องอยู่ในเดือนปัจจุบันทั้งสองปลาย"
+แล้วบรรทัด 877 ใช้ค่านั้นซ่อน `SaleRowActions` ทั้งก้อน ปุ่มแก้ช่องทางจึงไม่ถูกเรนเดอร์เลย
+สำหรับบิลเดือนก่อน — ซึ่งเป็นเคสที่คนเจอตอนกระทบยอดข้ามเดือน คือเหตุผลทั้งหมดที่ทำฟีเจอร์นี้
+
+Boss ตัดสิน 14 ส.ค. 2026: **เปิดกล่องแก้บิลของเดือนก่อนได้ แต่แก้ได้แค่ช่องทางชำระเงิน**
+ช่องกรอกยอด/หมอ/เมนู/เครดิต และปุ่มลบบิล ต้องไม่มีให้กดในโหมดนี้
+
+- [ ] **Step 1: `today/page.tsx` — คำนวณสิทธิ์ตัวที่สอง**
+
+เพิ่ม import:
+
+```ts
+import { canEditPaymentMethodOn } from "@/lib/accounting-window"
+```
+
+ต่อจากบล็อก `const editable = ...` (บรรทัด 57-59) เพิ่ม:
+
+```ts
+  // แก้ช่องทางชำระเงินย้อนหลังได้ถึงเดือนก่อน — ใช้กติกาเดียวกับที่ server action บังคับ
+  // (accounting-window.ts) ห้ามเขียนเงื่อนไขเดือนซ้ำที่นี่ ไม่งั้นหน้าจอกับ action จะเพี้ยนจากกัน
+  // เช็คทั้งสองปลายของช่วง เพราะรายการที่แสดงมาจากทั้งช่วง
+  const canEditPaymentMethod =
+    canEditPaymentMethodOn(from, today) && canEditPaymentMethodOn(to, today)
+```
+
+- [ ] **Step 2: `today/page.tsx` — แก้แบนเนอร์ให้บอกความจริง**
+
+แทนที่บล็อก `{!editable && (...)}` (บรรทัด 352-358) ด้วย:
+
+```tsx
+      {!editable && (
+        <Card className="border-slate-300 bg-slate-50">
+          <CardContent className="py-3 text-sm text-slate-700">
+            {canEditPaymentMethod
+              ? "ข้อมูลเดือนก่อน — แก้ได้เฉพาะช่องทางชำระเงิน (กดดินสอแล้วดูกล่องบรรทัดชำระ) ยอดเงิน หมอ เมนู และการลบบิลแก้ไม่ได้"
+              : "ข้อมูลเดือนก่อน ดูได้อย่างเดียว แก้หรือลบไม่ได้"}
+          </CardContent>
+        </Card>
+      )}
+```
+
+- [ ] **Step 3: `today/page.tsx` — ส่งสิทธิ์ลงไปถึงแถว**
+
+`SaleRow` รับ prop `editable` อยู่แล้ว (บรรทัด 782, 787) เพิ่ม `canEditPaymentMethod: boolean`
+เข้าไปในทั้ง destructure และ type แล้วส่งค่าจากจุดที่เรนเดอร์ `SaleRow` ทุกจุด
+(ค้นด้วย `grep -n "editable={editable}" src/app/\(app\)/today/page.tsx` ให้ครบ — มีหลายจุด
+เพราะหน้ามีทั้งรายการเดี่ยวและรายการแบบกลุ่ม ทุกจุดต้องส่งทั้งสองค่า)
+
+จากนั้นแทนที่บล็อกบรรทัด 877 `{editable && (<SaleRowActions ... />)}` — เปลี่ยนเงื่อนไขเป็น
+`{(editable || canEditPaymentMethod) && (` และเพิ่ม prop `saleEditable={editable}`
+เข้าไปในรายการ prop ของ `SaleRowActions` (prop อื่นคงเดิมทั้งหมด)
+
+- [ ] **Step 4: `sale-row-actions.tsx` — ซ่อนปุ่มลบบิลในโหมดจำกัด**
+
+เพิ่ม `saleEditable` เข้า destructure และ type ของ `SaleRowActions`:
+
+```ts
+  /** แก้ตัวบิลได้ไหม — false = เดือนก่อน เปิดกล่องได้แต่แก้ได้แค่ช่องทางชำระเงิน */
+  saleEditable: boolean
+```
+
+ส่งต่อให้ `EditSaleButton` และเปลี่ยนการเรนเดอร์ปุ่มลบเป็น:
+
+```tsx
+      {saleEditable && <DeleteSaleButton id={sale.id} label={label} />}
+```
+
+- [ ] **Step 5: `edit-sale-dialog.tsx` — แยกกล่องบรรทัดชำระออกมาใช้ซ้ำ**
+
+ในไฟล์นี้ ย้าย JSX ของกล่อง "บรรทัดชำระของบิล" (บล็อก `{(payments.length > 0 || due !== 0) && (...)}`)
+ออกมาเป็นคอมโพเนนต์ในไฟล์เดียวกันชื่อ `BillPaymentLinesBox` พร้อม state และ handler ที่มันใช้
+(`editingPaymentId` · `deletingPaymentId` · `paymentPending` · `handleDeletePayment` ·
+`handleChangePaymentMethod`) ย้ายเข้าไปอยู่ในคอมโพเนนต์นั้นด้วย
+
+props ของมันคือ: `billKey: string` · `payments: BillPaymentLine[]` · `due: number` ·
+`canDeletePayments: boolean`
+
+`EditSaleForm` เรียกใช้แทน JSX เดิมตรงตำแหน่งเดิม พฤติกรรมต้องเหมือนเดิมทุกประการ
+
+- [ ] **Step 6: `edit-sale-dialog.tsx` — โหมดจำกัดสิทธิ์**
+
+เพิ่ม prop `saleEditable: boolean` ให้ทั้ง `EditSaleButton` และ `EditSaleForm`
+
+ใน `EditSaleButton` แก้ `DialogTitle` และ `DialogDescription` ให้บอกโหมด:
+
+```tsx
+            <DialogTitle>{saleEditable ? "แก้ไขรายการขาย" : "แก้ช่องทางชำระเงิน"}</DialogTitle>
+            <DialogDescription>
+              {sale.receipt_no ?? "ไม่มีเลขใบเสร็จ"}
+              {sale.sale_time && ` · ${sale.sale_time.slice(0, 5)}`}
+              {saleEditable
+                ? " — วันที่ เวลา และเลขใบเสร็จแก้ไม่ได้"
+                : " — บิลเดือนก่อน แก้ได้เฉพาะช่องทางชำระเงิน"}
+            </DialogDescription>
+```
+
+ใน `EditSaleForm` เมื่อ `saleEditable` เป็น `false` ให้ **return เฉพาะกล่องบรรทัดชำระ** ไม่ต้อง
+เรนเดอร์ฟอร์มเลย (คืนก่อนถึง `<form>`):
+
+```tsx
+  // โหมดจำกัดสิทธิ์ (บิลเดือนก่อน): ไม่เรนเดอร์ฟอร์มเลย ตัดโอกาสส่งค่าที่ server จะปฏิเสธอยู่แล้ว
+  // การซ่อนทีละช่องเสี่ยงหลุด — ไม่เรนเดอร์ทั้งฟอร์มคือวิธีเดียวที่พิสูจน์ได้ว่าไม่มีทางส่ง
+  if (!saleEditable) {
+    return (
+      <div className="space-y-3">
+        <BillPaymentLinesBox
+          billKey={billKey}
+          payments={payments}
+          due={due}
+          canDeletePayments={canDeletePayments}
+        />
+        <p className="text-xs text-slate-500">
+          บิลของเดือนก่อนแก้ยอดเงิน หมอ หรือเมนูไม่ได้ — แก้ได้เฉพาะช่องทางชำระเงินเท่านั้น
+        </p>
+      </div>
+    )
+  }
+```
+
+ตัวแปร `billKey` คำนวณจาก `sale.bill_id ?? sale.id` แบบเดียวกับที่ฟอร์มเดิมทำ — ถ้าเดิมคำนวณ
+อยู่หลังจุดนี้ ให้ย้ายขึ้นมาก่อน early return
+
+- [ ] **Step 7: type check และ build**
+
+Run: `npx tsc --noEmit && npm run build`
+Expected: PASS ทั้งคู่ — ถ้า type error เรื่อง prop ที่ขาด แปลว่ายังส่ง `saleEditable` ไม่ครบทุกจุด
+
+- [ ] **Step 8: เทสต์ทั้งชุด**
+
+Run: `npm test`
+Expected: PASS ทั้งหมด (ไม่มีเทสต์ของไฟล์เหล่านี้โดยตรง แต่ต้องไม่ทำของเดิมพัง)
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add "src/app/(app)/today/page.tsx" "src/app/(app)/today/sale-row-actions.tsx" "src/app/(app)/today/edit-sale-dialog.tsx"
+git commit -m "feat: เปิดกล่องแก้บิลเดือนก่อนแบบแก้ได้เฉพาะช่องทางชำระเงิน"
+```
