@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CLOSE_GRACE_DAYS, canEditExpenseOn } from "./accounting-window"
+import { CLOSE_GRACE_DAYS, canEditExpenseOn, canEditPaymentMethodOn } from "./accounting-window"
 
 describe("canEditExpenseOn", () => {
   it("เดือนปัจจุบันแก้ได้ทุกวัน", () => {
@@ -34,5 +34,34 @@ describe("canEditExpenseOn", () => {
 
   it("ช่วงผ่อนผันเป็นค่าคงที่ที่อ่านได้ ไม่ใช่เลขลอยในโค้ด", () => {
     expect(CLOSE_GRACE_DAYS).toBe(3)
+  })
+})
+
+describe("canEditPaymentMethodOn (ผ่อนกว่ารายจ่าย — ไม่มีวันตัด)", () => {
+  it("เดือนปัจจุบันแก้ได้ทุกวัน", () => {
+    expect(canEditPaymentMethodOn("2026-08-01", "2026-08-14")).toBe(true)
+    expect(canEditPaymentMethodOn("2026-08-31", "2026-08-31")).toBe(true)
+  })
+
+  // จุดที่ต่างจากรายจ่ายชัดที่สุด — วันเดียวกันนี้ canEditExpenseOn ตอบ false ไปแล้ว
+  it("เดือนก่อนหน้าแก้ได้ตลอด แม้พ้นวันที่ 3 ไปแล้ว", () => {
+    expect(canEditPaymentMethodOn("2026-07-31", "2026-08-04")).toBe(true)
+    expect(canEditPaymentMethodOn("2026-07-01", "2026-08-31")).toBe(true)
+    expect(canEditExpenseOn("2026-07-01", "2026-08-31")).toBe(false)
+  })
+
+  it("สองเดือนก่อนขึ้นไปปิดถาวร", () => {
+    expect(canEditPaymentMethodOn("2026-06-30", "2026-08-01")).toBe(false)
+    expect(canEditPaymentMethodOn("2026-01-15", "2026-08-14")).toBe(false)
+  })
+
+  // ข้ามปีเป็นจุดที่สูตรลบเดือนแบบง่ายๆ พังบ่อย
+  it("ข้ามปีต้องนับถูก — ธ.ค. ยังแก้ได้ตลอดเดือน ม.ค.", () => {
+    expect(canEditPaymentMethodOn("2026-12-31", "2027-01-31")).toBe(true)
+    expect(canEditPaymentMethodOn("2026-11-30", "2027-01-01")).toBe(false)
+  })
+
+  it("เดือนอนาคตแก้ไม่ได้ กันคีย์ปีผิดแล้วไปโผล่งบเดือนหน้า", () => {
+    expect(canEditPaymentMethodOn("2026-09-01", "2026-08-31")).toBe(false)
   })
 })
