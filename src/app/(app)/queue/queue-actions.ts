@@ -9,6 +9,7 @@ import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
 import {
   BOARD_END_MIN,
   BOARD_START_MIN,
+  bedSegments,
   bedStartMin,
   canMoveCardWindow,
   minToTime,
@@ -19,6 +20,7 @@ import {
   CLASH_COLUMNS,
   CLASH_STATUS_FILTER,
   clashLabel,
+  firstBedClash,
   firstClash,
 } from "@/lib/bed-clash"
 import { computeSaleAmounts } from "@/lib/sale-math"
@@ -72,11 +74,10 @@ async function linkOrCreateCustomer(
  * เวลาอิงการใช้จริง: ใบที่เริ่มนวดแล้วยึดเวลาเริ่มจริง (มาสายเตียงติดนานขึ้น)
  * ใบที่ยังไม่เริ่มยึดเวลาจอง — คืน null ถ้าว่าง หรือข้อความบอกว่าใครใช้ช่วงไหนอยู่
  */
-/** หาคิวใบแรกที่ใช้ทรัพยากร (เตียง/หมอ) เดียวกันคร่อมช่วงเวลานี้ในวันเดียวกัน */
-async function findResourceClash(
+/** หาคิวใบแรกที่ใช้ **หมอ** คนเดียวกันคร่อมช่วงเวลานี้ในวันเดียวกัน */
+async function findTherapistClash(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  column: "bed_id" | "therapist_id",
-  value: string,
+  therapistId: string,
   queueDate: string,
   startMin: number,
   durationMin: number,
@@ -86,32 +87,67 @@ async function findResourceClash(
     .from("queue_entries")
     .select(CLASH_COLUMNS)
     .eq("queue_date", queueDate)
-    .eq(column, value)
+    .eq("therapist_id", therapistId)
     .not("status", "in", CLASH_STATUS_FILTER)
   return firstClash(data ?? [], startMin, durationMin, excludeIds)
 }
 
+/**
+ * หาคิวใบแรกที่ครอง **ห้องนี้** คร่อมช่วงเวลานี้ในวันเดียวกัน
+ *
+ * กรองด้วย .or เพราะการ์ดที่ใช้ห้องนี้เป็นห้องที่สอง (ย้ายห้องกลางคัน) จะหลุด
+ * ตัวกรอง .eq("bed_id", ...) แบบเดิมไปทั้งที่ครองห้องอยู่จริง
+ */
+async function findBedClash(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  bedId: string,
+  queueDate: string,
+  startMin: number,
+  durationMin: number,
+  excludeIds: string[]
+) {
+  const { data } = await supabase
+    .from("queue_entries")
+    .select(CLASH_COLUMNS)
+    .eq("queue_date", queueDate)
+    .or(`bed_id.eq.${bedId},bed_id_2.eq.${bedId}`)
+    .not("status", "in", CLASH_STATUS_FILTER)
+  return firstBedClash(data ?? [], bedId, startMin, durationMin, excludeIds)
+}
+
+/** เตียงที่พนักงานเลือก (ทั้งสองห้องถ้ามี) ชนกับคิวใบอื่นไหม — ตรวจทีละช่วงตาม
+ *  bedSegments เดียวกับที่บอร์ดใช้ตัดสินว่าห้องว่างไหม (ไม่หารครึ่งเวลาเองอีกที่) */
 async function bedConflictError(
   supabase: Awaited<ReturnType<typeof createClient>>,
   bedId: string | null,
+  bedId2: string | null,
   queueDate: string,
   startMin: number,
   durationMin: number,
   excludeIds: string[] = []
 ): Promise<string | null> {
   if (!bedId) return null
-  const clash = await findResourceClash(
-    supabase,
-    "bed_id",
-    bedId,
-    queueDate,
-    startMin,
-    durationMin,
-    excludeIds
-  )
-  return clash
-    ? `เตียงนี้ไม่ว่าง — ถูกใช้ ${clashLabel(clash)} · เลือกเตียงอื่นหรือเปลี่ยนเวลา`
-    : null
+  const segments = bedSegments({
+    bed_id: bedId,
+    bed_id_2: bedId2,
+    start_time: minToTime(startMin),
+    duration_min: durationMin,
+    started_at: null,
+  })
+  for (const seg of segments) {
+    const clash = await findBedClash(
+      supabase,
+      seg.bedId,
+      queueDate,
+      seg.startMin,
+      seg.durationMin,
+      excludeIds
+    )
+    if (clash) {
+      return `เตียงนี้ไม่ว่าง — ถูกใช้ ${clashLabel(clash)} · เลือกเตียงอื่นหรือเปลี่ยนเวลา`
+    }
+  }
+  return null
 }
 
 /**
@@ -127,9 +163,8 @@ async function therapistConflictError(
   excludeIds: string[] = []
 ): Promise<string | null> {
   if (!therapistId) return null
-  const clash = await findResourceClash(
+  const clash = await findTherapistClash(
     supabase,
-    "therapist_id",
     therapistId,
     queueDate,
     startMin,
@@ -190,6 +225,7 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     : todayInShopTz()
   const source = String(form.get("source") ?? "walk_in")
   const bedId = String(form.get("bed_id") ?? "") || null
+  const bedId2 = String(form.get("bed_id_2") ?? "") || null
   const notes = String(form.get("notes") ?? "").trim() || null
   // ช่องทางย่อยมีความหมายเฉพาะประเภท "จองล่วงหน้า" — ค่าอื่น/เพี้ยนเก็บเป็น null
   const channelInput = String(form.get("booking_channel") ?? "")
@@ -235,6 +271,7 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
   const bedError = await bedConflictError(
     supabase,
     bedId,
+    bedId2,
     queueDate,
     timeToMin(startTime),
     durationMin
@@ -271,6 +308,7 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     start_time: startTime,
     source,
     bed_id: bedId,
+    bed_id_2: bedId2,
     booking_channel: bookingChannel,
     notes,
   })
@@ -284,6 +322,8 @@ export type GroupPerson = {
   therapistId: string | null
   serviceId: string
   bedId: string | null
+  /** ห้องที่สอง (เมนูย้ายห้องกลางคัน) — ไม่มี = อยู่ห้องเดียวตลอด */
+  bedId2?: string | null
   isRequest?: boolean
   /** ห้องสปาส่วนตัว +100฿ (ลูกค้าจ่าย คิดตอนเก็บเงิน) */
   privateRoom?: boolean
@@ -386,6 +426,7 @@ export async function createQueueGroup(
       start_time: minToTime(startMin),
       source,
       bed_id: p.bedId || null,
+      bed_id_2: p.bedId2 || null,
       booking_channel: bookingChannel,
       notes,
       group_id: groupId,
@@ -403,6 +444,7 @@ export async function createQueueGroup(
       const bedError = await bedConflictError(
         supabase,
         row.bed_id,
+        row.bed_id_2,
         queueDate,
         startMin,
         row.duration_min
@@ -486,6 +528,7 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
   const isRequest = form.get("is_request") === "on"
   const privateRoom = form.get("private_room") === "on"
   const bedId = String(form.get("bed_id") ?? "") || null
+  const bedId2 = String(form.get("bed_id_2") ?? "") || null
   const notes = String(form.get("notes") ?? "").trim() || null
   const source = String(form.get("source") ?? "walk_in")
   const channelInput = String(form.get("booking_channel") ?? "")
@@ -521,6 +564,7 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
   const bedError = await bedConflictError(
     supabase,
     bedId,
+    bedId2,
     current.queue_date,
     timeToMin(startTime),
     durationMin,
@@ -552,6 +596,7 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
       start_time: startTime,
       source,
       bed_id: bedId,
+      bed_id_2: bedId2,
       booking_channel: bookingChannel,
       notes,
       updated_at: new Date().toISOString(),
@@ -580,13 +625,14 @@ export async function moveQueueEntry(
   // ลากเลื่อนเวลา/ย้ายช่องหมอ — เตียงเดิมและหมอปลายทางต้องไม่ชนคิวใบอื่น
   const { data: moving } = await supabase
     .from("queue_entries")
-    .select("bed_id, queue_date, duration_min")
+    .select("bed_id, bed_id_2, queue_date, duration_min")
     .eq("id", id)
     .maybeSingle()
   if (moving) {
     const bedError = await bedConflictError(
       supabase,
       moving.bed_id,
+      moving.bed_id_2,
       moving.queue_date,
       timeToMin(startTime),
       moving.duration_min,
@@ -743,7 +789,7 @@ async function loadPendingSet(id: string) {
   const { data: one } = await supabase
     .from("queue_entries")
     .select(
-      "id, group_id, queue_date, start_time, duration_min, therapist_id, bed_id, service_name, customer_name, line_user_id, status, notes"
+      "id, group_id, queue_date, start_time, duration_min, therapist_id, bed_id, bed_id_2, service_name, customer_name, line_user_id, status, notes"
     )
     .eq("id", id)
     .maybeSingle()
@@ -752,7 +798,7 @@ async function loadPendingSet(id: string) {
   const { data: all } = await supabase
     .from("queue_entries")
     .select(
-      "id, group_id, queue_date, start_time, duration_min, therapist_id, bed_id, service_name, customer_name, line_user_id, status, notes"
+      "id, group_id, queue_date, start_time, duration_min, therapist_id, bed_id, bed_id_2, service_name, customer_name, line_user_id, status, notes"
     )
     .eq("group_id", one.group_id)
     .eq("status", "pending")
@@ -844,6 +890,7 @@ export async function approveBooking(id: string): Promise<Result> {
       await bedConflictError(
         supabase,
         e.bed_id,
+        e.bed_id_2,
         e.queue_date,
         startMin,
         e.duration_min,
@@ -954,8 +1001,9 @@ export async function movePaidCard(
   const nowM = nh * 60 + nm
   const checkStart = Math.max(startMin, nowM)
   const remainMin = startMin + entry.duration_min - checkStart
+  // movePaidCard ยังไม่รองรับย้ายห้องที่สอง (ไม่มีช่องนี้ในฟอร์มย้ายบิลจ่ายแล้ว) — ส่ง null ไว้ก่อน
   const bedErr = await bedConflictError(
-    supabase, input.bedId, entry.queue_date, checkStart, remainMin, [entry.id])
+    supabase, input.bedId, null, entry.queue_date, checkStart, remainMin, [entry.id])
   if (bedErr) return { ok: false, error: bedErr }
   const thErr = await therapistConflictError(
     supabase, input.therapistId, entry.queue_date, checkStart, remainMin, [entry.id])

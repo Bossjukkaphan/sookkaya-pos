@@ -20,7 +20,7 @@ import {
   CLASH_COLUMNS,
   CLASH_STATUS_FILTER,
   clashLabel,
-  firstClash,
+  firstBedClash,
 } from "@/lib/bed-clash"
 
 export type SaleResult =
@@ -41,8 +41,12 @@ export type SaleResult =
  * ที่ไม่เกี่ยวกับเงิน (แนวเดียวกับ approveBooking ที่เตือนแต่ไม่บล็อกการรับจอง)
  * การกันจริงอยู่ที่หน้าจอ — ปุ่มเตียงที่ไม่ว่างกดไม่ได้ ตรงนี้คือตาข่ายชั้นสุดท้าย
  *
- * เจอจริง 9/8/2569: เก้าอี้ 3 ถูกจองซ้อน 55 นาที (เอ็ม เมธี 13:55–15:55 กับ
- * กอล์ฟฟี่ 15:00–16:30) เพราะเตียงทั้งคู่ถูกกำหนดตอนกดเก็บเงิน ซึ่งไม่เคยมีด่านตรวจเลย
+ * กรองด้วย .or (เหมือน findBedClash ใน queue-actions.ts) เพราะการ์ดที่ใช้ห้องนี้เป็น
+ * ห้องที่สองจะหลุดตัวกรอง .eq("bed_id", ...) แบบเดิมไปทั้งที่ครองห้องอยู่จริง
+ *
+ * เจอจริง 9/8/2569: เก้าอี้ 3 ดูเหมือนถูกจองซ้อน 55 นาที (เอ็ม เมธี 13:55–15:55 กับ
+ * กอล์ฟฟี่ 15:00–16:30) — ตรวจย้อนหลังพบว่าไม่ใช่การจองซ้อนจริง แต่เป็นการ์ดที่ย้ายห้อง
+ * กลางคัน (เก้าอี้ 3 เป็นห้องที่สอง) ซึ่งระบบเดิมเก็บได้ห้องเดียวจึงมองไม่เห็นเลย
  */
 async function bedClashWarning(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -57,9 +61,9 @@ async function bedClashWarning(
     .from("queue_entries")
     .select(CLASH_COLUMNS)
     .eq("queue_date", saleDate)
-    .eq("bed_id", bedId)
+    .or(`bed_id.eq.${bedId},bed_id_2.eq.${bedId}`)
     .not("status", "in", CLASH_STATUS_FILTER)
-  const clash = firstClash(data ?? [], timeToMin(startTime), durationMin, excludeIds)
+  const clash = firstBedClash(data ?? [], bedId, timeToMin(startTime), durationMin, excludeIds)
   return clash
     ? `บันทึกบิลแล้ว แต่เตียงนี้ชนกับ ${clashLabel(clash)} — เปิดการ์ดย้ายเตียงให้ถูกด้วย`
     : null

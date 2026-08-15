@@ -250,6 +250,8 @@ export function queueMirrorFromSale(
   // ไม่ใช่เขียน null ทับ (จะลบเตียงที่พนักงานเลือกไว้ตอนกดชำระทิ้ง)
   // มีคีย์แต่ค่าว่าง = พนักงานตั้งใจเอาออก อันนั้นเขียน null ถูกแล้ว
   const bed = formData.get("bed_id")
+  // ห้องที่สองก็เป็นช่องที่ฟอร์มแก้บิลไม่มีเหมือนกัน — ปฏิบัติแบบเดียวกับเตียงเป๊ะ
+  const bed2 = formData.get("bed_id_2")
 
   return {
     service_id: serviceId,
@@ -261,6 +263,7 @@ export function queueMirrorFromSale(
     is_request: formData.get("is_request") === "on",
     private_room: formData.get("private_room") === "on",
     ...(bed === null ? {} : { bed_id: String(bed) || null }),
+    ...(bed2 === null ? {} : { bed_id_2: String(bed2) || null }),
     updated_at: new Date().toISOString(),
   }
 }

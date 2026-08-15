@@ -197,6 +197,21 @@ describe("queueMirrorFromSale", () => {
     const out = queueMirrorFromSale(fd({}), "s", { name: "x", duration_min: null }, "t")
     expect(out.duration_min).toBe(60)
   })
+
+  it("ฟอร์มไม่ส่ง bed_id_2 มา — ต้องไม่แตะห้องที่สองของการ์ด", () => {
+    // ฟอร์มแก้บิลไม่มีช่องห้องที่สอง ถ้าเขียน null ทับจะลบห้องที่พนักงานเลือกไว้ทิ้ง
+    const fd = new FormData()
+    fd.set("customer_name", "ทดสอบ")
+    const patch = queueMirrorFromSale(fd, "svc1", { name: "นวดไทย", duration_min: 60 }, "th1")
+    expect(Object.keys(patch)).not.toContain("bed_id_2")
+  })
+
+  it("ฟอร์มส่ง bed_id_2 ค่าว่างมา — ตั้งใจเอาห้องที่สองออก เขียน null ถูกแล้ว", () => {
+    const fd = new FormData()
+    fd.set("bed_id_2", "")
+    const patch = queueMirrorFromSale(fd, "svc1", { name: "นวดไทย", duration_min: 60 }, "th1")
+    expect(patch).toMatchObject({ bed_id_2: null })
+  })
 })
 
 describe("canMoveCardWindow — ย้ายเตียง/เปลี่ยนหมอได้ภายใน 15 นาทีแรกของการนวดจริง", () => {
