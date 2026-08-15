@@ -11,6 +11,7 @@ import {
   busyTherapistIds,
   clampStart,
   countFreeTherapists,
+  groupBedClash,
   groupSlotTimes,
   minToTime,
   minToX,
@@ -359,6 +360,23 @@ describe("bedHolderInGroup", () => {
     // คนแรก 10:00 ยาว 120 นาที · คนที่สอง 11:00 → ทับ
     const rows = [row("b1", 600, 120), row("b1", 660, 60)]
     expect(bedHolderInGroup(rows, 1, "b1")).toBe(0)
+  })
+})
+
+describe("groupBedClash — ห้องซ้ำในกลุ่มเดียวกันก่อนแถวไหนถูก insert จริง (createQueueGroup)", () => {
+  // คนแรกอยู่ room1 ตลอด 10:00–11:00 (ไม่มีห้องที่สอง)
+  const personA = { bed_id: "room1", bed_id_2: null, start_time: "10:00", duration_min: 60 }
+
+  it("คนที่สองถือ room1 เป็น 'ห้องที่สอง' ทับช่วงเวลาของคนแรก — เทียบ bed_id ตรงตัวจะพลาดเคสนี้", () => {
+    // ครึ่งหลังของคนที่สอง (room1) คือ 10:45–11:15 ซึ่งทับกับคนแรก 10:00–11:00
+    const personB = { bed_id: "roomX", bed_id_2: "room1", start_time: "10:15", duration_min: 60 }
+    expect(groupBedClash([personA, personB], 1)).toBe(true)
+  })
+
+  it("คนที่สองถือ room1 เป็นห้องที่สอง แต่ช่วงเวลาไม่ทับกับคนแรก — ต้องผ่าน ไม่ใช่กันไปหมด", () => {
+    // ครึ่งหลังของคนที่สอง (room1) เริ่ม 12:00 พ้นช่วงคนแรก (จบ 11:00) ไปแล้ว
+    const personB = { bed_id: "roomX", bed_id_2: "room1", start_time: "11:30", duration_min: 60 }
+    expect(groupBedClash([personA, personB], 1)).toBe(false)
   })
 })
 

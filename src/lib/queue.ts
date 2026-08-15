@@ -209,6 +209,37 @@ export function bedHolderInGroup(
   })
 }
 
+/** ใครในกลุ่ม (ก่อนแถวที่ i) ครองห้องเดียวกับรายการที่ i ทับช่วงเวลากันไหม — ใช้ตอนสร้างคิวกลุ่ม
+ *
+ * แถวในกลุ่มยังไม่ถูก insert ตอนเช็ค (insert รวมทีเดียวท้ายฟังก์ชัน) — bedConflictError ที่คุย
+ * กับฐานข้อมูลจึงมองไม่เห็นกัน ต้องเทียบกันเองในหน่วยความจำตรงนี้
+ *
+ * เทียบผ่าน bedSegments เหมือนทุกจุดที่ถามว่า "ห้องนี้ว่างไหม" — เทียบแค่ bed_id === bed_id
+ * เฉยๆ ไม่พอ เพราะคนหนึ่งอาจถือห้องนี้เป็น "ห้องที่สอง" (bed_id_2) ซึ่งจะหลุดการเทียบแบบตรงตัว
+ */
+export function groupBedClash(
+  rows: {
+    bed_id: string | null
+    bed_id_2?: string | null
+    start_time: string
+    duration_min: number
+  }[],
+  i: number
+): boolean {
+  const mySegments = bedSegments(rows[i])
+  return rows
+    .slice(0, i)
+    .some((r) =>
+      bedSegments(r).some((rSeg) =>
+        mySegments.some(
+          (mySeg) =>
+            mySeg.bedId === rSeg.bedId &&
+            overlaps(rSeg.startMin, rSeg.durationMin, mySeg.startMin, mySeg.durationMin)
+        )
+      )
+    )
+}
+
 /** หมอว่าง = ไม่มีคิว (รอ/กำลังนวด) คร่อมเวลานี้ · คิวไม่ระบุหมอไม่ทำให้ใครติด */
 export function countFreeTherapists(
   therapistIds: string[],

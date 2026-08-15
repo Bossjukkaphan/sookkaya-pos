@@ -12,6 +12,7 @@ import {
   bedSegments,
   bedStartMin,
   canMoveCardWindow,
+  groupBedClash,
   minToTime,
   overlaps,
   timeToMin,
@@ -450,14 +451,9 @@ export async function createQueueGroup(
         row.duration_min
       )
       if (bedError) return { ok: false, error: `คนที่ ${i + 1}: ${bedError}` }
-      const inGroupBedClash = rows
-        .slice(0, i)
-        .some(
-          (r) =>
-            r.bed_id === row.bed_id &&
-            overlaps(timeToMin(r.start_time), r.duration_min, startMin, row.duration_min)
-        )
-      if (inGroupBedClash)
+      // แถวก่อนหน้ายังไม่มีในฐานข้อมูล (จะ insert พร้อมกันทีเดียวท้ายฟังก์ชัน) — bedConflictError
+      // ข้างบนจึงมองไม่เห็น ต้องเช็คกันเองในหน่วยความจำผ่าน groupBedClash (ใช้ bedSegments เหมือนทุกจุด)
+      if (groupBedClash(rows, i))
         return {
           ok: false,
           error: `คนที่ ${i + 1}: เลือกเตียงซ้ำกับคนอื่นในกลุ่มช่วงเวลาเดียวกัน — เตียงหนึ่งใช้ได้ทีละคน`,
