@@ -657,7 +657,16 @@ export function QueueFormDialog({
                     value={p.serviceId}
                     onChange={(serviceId) =>
                       setExtraPeople((arr) =>
-                        arr.map((x, j) => (j === i ? { ...x, serviceId } : x))
+                        arr.map((x, j) => {
+                          if (j !== i) return x
+                          // กฎเดียวกับคนแรก (บรรทัด 405) — สลับมาเมนูที่ไม่ย้ายห้อง
+                          // ห้องที่สองต้องหายไปด้วย ไม่งั้นจอคิดเป็นสองช่วงทั้งที่ช่องหายไปแล้ว
+                          // แล้วไปเถียงกับ server ที่ทิ้งค่านั้นและตรวจเต็มโปรแกรม
+                          const s = services.find((y) => y.id === serviceId)
+                          return s?.splits_room
+                            ? { ...x, serviceId }
+                            : { ...x, serviceId, bedId2: null }
+                        })
                       )
                     }
                     placeholder="— เลือกเมนู —"
