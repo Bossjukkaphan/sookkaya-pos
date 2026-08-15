@@ -10,11 +10,11 @@ import {
   BOARD_START_MIN,
   PX_PER_MIN,
   ROW_H,
-  bedStartMin,
+  busyBedIds,
   clampStart,
+  hasBedClash,
   minToTime,
   minToX,
-  overlaps,
   snapMin,
   timeToMin,
 } from "@/lib/queue"
@@ -27,7 +27,13 @@ import { Button } from "@/components/ui/button"
 
 export type QueueEntry = Tables<"queue_entries">
 export type Therapist = { id: string; name: string }
-export type ServiceOption = { id: string; name: string; duration_min: number | null }
+export type ServiceOption = {
+  id: string
+  name: string
+  duration_min: number | null
+  /** เมนูนี้ย้ายห้องกลางคันเป็นค่าตั้งต้นไหม — ฟอร์มคิวใช้ตัดสินว่าจะโชว์ช่องเลือกห้องที่สอง */
+  splits_room: boolean
+}
 // Bed/shortBedName ย้ายไป @/lib/beds — ไฟล์นี้เป็น "use client" ห้ามมี util
 // ที่ฝั่ง server ต้องเรียก (หน้าประวัติบิลเคยพังเพราะ import จากที่นี่)
 import type { Bed } from "@/lib/beds"
@@ -388,7 +394,15 @@ export function QueueBoard({
           const freeTherapists = availableTherapists.filter(
             (t) => !busyTherapists.has(t.id)
           ).length
-          const busyBeds = new Set(busy.map((e) => e.bed_id).filter(Boolean))
+          // เตียงต้องผ่านสูตรกลาง bedSegments เสมอ — การ์ดที่ย้ายห้องกลางคันครองสองห้อง
+          // คนละช่วงเวลา เทียบ e.bed_id ตรงๆ (แบบ busy ข้างบน) จะเห็นห้องแรกไม่ว่างค้าง
+          // ทั้งที่ลูกค้าย้ายออกไปแล้ว และมองไม่เห็นห้องที่สองที่มีคนอยู่จริง
+          // เช็ค "ตอนนี้" ตรงๆ ด้วยช่วง 1 นาทีที่ nowMin (เหมือน countFreeTherapists)
+          const busyBeds = busyBedIds(
+            entries.filter((e) => e.status !== "pending"),
+            nowMin,
+            1
+          )
           const freeBedList = beds.filter((b) => !busyBeds.has(b.id))
           // แยกตามห้องเพื่อให้พนักงานรู้ทันทีว่าเหลือห้องไหน ไม่ใช่แค่จำนวนรวม
           const byRoom = new Map<string, string[]>()
@@ -564,26 +578,15 @@ export function QueueBoard({
                       bed={beds.find((b) => b.id === e.bed_id) ?? null}
                       therapists={therapists}
                       beds={beds}
+                      services={services}
                       allEntries={entries}
                       siblings={entries.filter(
                         (s) => s.therapist_id === row.id && s.id !== e.id
                       )}
-                      bedConflict={
-                        // เตียงมีจำกัด — ใบไหนใช้เตียงซ้อนกับใบอื่น (ข้ามช่องหมอ) ต้องเห็นทันที
-                        !!e.bed_id &&
-                        entries.some(
-                          (s) =>
-                            s.id !== e.id &&
-                            s.bed_id === e.bed_id &&
-                            s.status !== "cancelled" &&
-                            overlaps(
-                              bedStartMin(s),
-                              s.duration_min,
-                              bedStartMin(e),
-                              e.duration_min
-                            )
-                        )
-                      }
+                      // เตียงมีจำกัด — ใบไหนใช้เตียงซ้อนกับใบอื่น (ข้ามช่องหมอ) ต้องเห็นทันที
+                      // ผ่านสูตรกลาง (hasBedClash → bedSegments) เทียบทีละช่วง ไม่ใช่เทียบ
+                      // bed_id ตรงๆ เต็มโปรแกรม — ดูคอมเมนต์ที่นิยามฟังก์ชันใน src/lib/queue.ts
+                      bedConflict={hasBedClash(e, entries)}
                       groupSize={
                         e.group_id
                           ? entries.filter((s) => s.group_id === e.group_id).length

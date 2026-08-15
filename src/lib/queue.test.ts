@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  bedSegments,
   canMoveCardWindow,
   BOARD_END_MIN,
   BOARD_START_MIN,
@@ -10,7 +11,9 @@ import {
   busyTherapistIds,
   clampStart,
   countFreeTherapists,
+  groupBedClash,
   groupSlotTimes,
+  hasBedClash,
   minToTime,
   minToX,
   overlaps,
@@ -100,6 +103,99 @@ describe("busyBedIds", () => {
   })
 })
 
+describe("busyBedIds — การ์ดที่ย้ายห้องกลางคัน", () => {
+  const moved = [
+    {
+      bed_id: "chair3", bed_id_2: "thai2",
+      start_time: "13:55", duration_min: 120, status: "paid",
+    },
+  ]
+
+  it("เก้าอี้ว่างหลังลูกค้าย้ายออก แต่เตียงไทยไม่ว่าง", () => {
+    // 15:00–16:30 (900, 90 นาที): เก้าอี้ว่างแล้ว (ออกตอน 14:55) เตียงไทยยังอยู่ถึง 15:55
+    expect(busyBedIds(moved, 900, 90)).toEqual(new Set(["thai2"]))
+  })
+
+  it("ช่วงครึ่งแรกยังติดเก้าอี้ ยังไม่ติดเตียงไทย", () => {
+    // 14:00–14:30 (840, 30 นาที)
+    expect(busyBedIds(moved, 840, 30)).toEqual(new Set(["chair3"]))
+  })
+})
+
+describe("hasBedClash — ป้าย ⚠️ซ้อน บนบอร์ดคิว", () => {
+  // เคสจริง 9 ส.ค. 2569: เอ็ม เมธี 13:55 เมนู 120 นาที เก้าอี้ 3 → ย้ายเตียงไทย 2 ตอน 14:55
+  // (bed_id_2) · กอล์ฟฟี่ 15:00 เมนู 90 นาที เก้าอี้ 3 — ไม่ได้ชนกันจริง
+  const emm = {
+    id: "emm",
+    bed_id: "chair3",
+    bed_id_2: "thai2",
+    start_time: "13:55",
+    duration_min: 120,
+    status: "in_service",
+    started_at: null as string | null,
+  }
+  const golffy = {
+    id: "golffy",
+    bed_id: "chair3",
+    bed_id_2: null,
+    start_time: "15:00",
+    duration_min: 90,
+    status: "waiting",
+    started_at: null as string | null,
+  }
+
+  it("การ์ดย้ายห้องกลางคัน + คิวถัดไปจองห้องแรกหลังย้ายออก — ไม่ใช่ซ้อน (เทียบเต็มโปรแกรมจะพลาดเคสนี้)", () => {
+    expect(hasBedClash(emm, [emm, golffy])).toBe(false)
+    expect(hasBedClash(golffy, [emm, golffy])).toBe(false)
+  })
+
+  it("ห้องที่สองชนจริง — เตียงไทยมีคิวอื่นทับช่วงครึ่งหลัง", () => {
+    const other = {
+      id: "other",
+      bed_id: "thai2",
+      bed_id_2: null,
+      start_time: "15:30",
+      duration_min: 60,
+      status: "waiting",
+      started_at: null as string | null,
+    }
+    expect(hasBedClash(emm, [emm, other])).toBe(true)
+    expect(hasBedClash(other, [emm, other])).toBe(true)
+  })
+
+  it("การ์ดห้องเดียวชนกันตรงๆ (พฤติกรรมเดิม) — ยังจับได้เหมือนเดิม", () => {
+    const a = {
+      id: "a", bed_id: "b1", bed_id_2: null,
+      start_time: "10:00", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    const b = {
+      id: "b", bed_id: "b1", bed_id_2: null,
+      start_time: "10:30", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    expect(hasBedClash(a, [a, b])).toBe(true)
+  })
+
+  it("ยกเลิกแล้วไม่นับว่าครองเตียง", () => {
+    const a = {
+      id: "a", bed_id: "b1", bed_id_2: null,
+      start_time: "10:00", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    const cancelled = {
+      id: "b", bed_id: "b1", bed_id_2: null,
+      start_time: "10:30", duration_min: 60, status: "cancelled", started_at: null as string | null,
+    }
+    expect(hasBedClash(a, [a, cancelled])).toBe(false)
+  })
+
+  it("ไม่นับตัวเอง แม้จะอยู่ใน others", () => {
+    const a = {
+      id: "a", bed_id: "b1", bed_id_2: null,
+      start_time: "10:00", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    expect(hasBedClash(a, [a])).toBe(false)
+  })
+})
+
 describe("bedStartMin", () => {
   it("ยังไม่เริ่ม = เวลาจอง · เริ่มแล้ว = เวลาเริ่มจริง (เวลาไทย)", () => {
     expect(bedStartMin({ start_time: "14:00", started_at: null })).toBe(840)
@@ -176,6 +272,21 @@ describe("queueMirrorFromSale", () => {
   it("เมนูที่ไม่ได้ตั้งความยาวเวลาไว้ ใช้ 60 นาทีเป็นค่าตั้งต้น", () => {
     const out = queueMirrorFromSale(fd({}), "s", { name: "x", duration_min: null }, "t")
     expect(out.duration_min).toBe(60)
+  })
+
+  it("ฟอร์มไม่ส่ง bed_id_2 มา — ต้องไม่แตะห้องที่สองของการ์ด", () => {
+    // ฟอร์มแก้บิลไม่มีช่องห้องที่สอง ถ้าเขียน null ทับจะลบห้องที่พนักงานเลือกไว้ทิ้ง
+    const fd = new FormData()
+    fd.set("customer_name", "ทดสอบ")
+    const patch = queueMirrorFromSale(fd, "svc1", { name: "นวดไทย", duration_min: 60 }, "th1")
+    expect(Object.keys(patch)).not.toContain("bed_id_2")
+  })
+
+  it("ฟอร์มส่ง bed_id_2 ค่าว่างมา — ตั้งใจเอาห้องที่สองออก เขียน null ถูกแล้ว", () => {
+    const fd = new FormData()
+    fd.set("bed_id_2", "")
+    const patch = queueMirrorFromSale(fd, "svc1", { name: "นวดไทย", duration_min: 60 }, "th1")
+    expect(patch).toMatchObject({ bed_id_2: null })
   })
 })
 
@@ -324,5 +435,76 @@ describe("bedHolderInGroup", () => {
     // คนแรก 10:00 ยาว 120 นาที · คนที่สอง 11:00 → ทับ
     const rows = [row("b1", 600, 120), row("b1", 660, 60)]
     expect(bedHolderInGroup(rows, 1, "b1")).toBe(0)
+  })
+})
+
+describe("groupBedClash — ห้องซ้ำในกลุ่มเดียวกันก่อนแถวไหนถูก insert จริง (createQueueGroup)", () => {
+  // คนแรกอยู่ room1 ตลอด 10:00–11:00 (ไม่มีห้องที่สอง)
+  const personA = { bed_id: "room1", bed_id_2: null, start_time: "10:00", duration_min: 60 }
+
+  it("คนที่สองถือ room1 เป็น 'ห้องที่สอง' ทับช่วงเวลาของคนแรก — เทียบ bed_id ตรงตัวจะพลาดเคสนี้", () => {
+    // ครึ่งหลังของคนที่สอง (room1) คือ 10:45–11:15 ซึ่งทับกับคนแรก 10:00–11:00
+    const personB = { bed_id: "roomX", bed_id_2: "room1", start_time: "10:15", duration_min: 60 }
+    expect(groupBedClash([personA, personB], 1)).toBe(true)
+  })
+
+  it("คนที่สองถือ room1 เป็นห้องที่สอง แต่ช่วงเวลาไม่ทับกับคนแรก — ต้องผ่าน ไม่ใช่กันไปหมด", () => {
+    // ครึ่งหลังของคนที่สอง (room1) เริ่ม 12:00 พ้นช่วงคนแรก (จบ 11:00) ไปแล้ว
+    const personB = { bed_id: "roomX", bed_id_2: "room1", start_time: "11:30", duration_min: 60 }
+    expect(groupBedClash([personA, personB], 1)).toBe(false)
+  })
+})
+
+describe("bedSegments — การ์ดหนึ่งใบยึดห้องไหน ช่วงไหนบ้าง", () => {
+  const base = { start_time: "10:00", duration_min: 120, status: "waiting" }
+
+  it("ไม่มีห้องที่สอง — ช่วงเดียว ยาวเต็มโปรแกรม (พฤติกรรมเดิมเป๊ะ)", () => {
+    expect(bedSegments({ ...base, bed_id: "b1" })).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 120 },
+    ])
+  })
+
+  it("มีห้องที่สอง 120 นาที — สองช่วงละ 60 ต่อกันพอดี ไม่มีรู ไม่ทับกัน", () => {
+    expect(bedSegments({ ...base, bed_id: "b1", bed_id_2: "b2" })).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 60 },
+      { bedId: "b2", startMin: 660, durationMin: 60 },
+    ])
+  })
+
+  it("นาทีคี่ — ครึ่งหลังได้เศษ รวมสองช่วงต้องเท่าโปรแกรมเป๊ะ", () => {
+    const segs = bedSegments({
+      ...base, duration_min: 45, bed_id: "b1", bed_id_2: "b2",
+    })
+    expect(segs).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 22 },
+      { bedId: "b2", startMin: 622, durationMin: 23 },
+    ])
+    expect(segs[0].durationMin + segs[1].durationMin).toBe(45)
+  })
+
+  it("ไม่มีห้องแรกเลย — ไม่ยึดอะไรทั้งนั้น", () => {
+    expect(bedSegments({ ...base, bed_id: null })).toEqual([])
+    expect(bedSegments({ ...base, bed_id: null, bed_id_2: "b2" })).toEqual([])
+  })
+
+  it("ห้องที่สองเป็นห้องเดียวกับห้องแรก — ยังเป็นสองช่วงที่ต่อกัน ไม่ยุบรวม", () => {
+    // ลูกค้าอยู่ห้องเดิมแต่พนักงานกรอกซ้ำ — ผลลัพธ์ต้องเท่ากับครองยาวอยู่ดี
+    expect(bedSegments({ ...base, bed_id: "b1", bed_id_2: "b1" })).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 60 },
+      { bedId: "b1", startMin: 660, durationMin: 60 },
+    ])
+  })
+
+  it("กดเริ่มนวดแล้ว — ทั้งสองช่วงเลื่อนตามเวลาเริ่มจริง", () => {
+    // จอง 10:00 เริ่มจริง 10:30 (03:30Z = 10:30 เวลาไทย) → ครึ่งแรก 10:30 ครึ่งหลัง 11:30
+    expect(
+      bedSegments({
+        ...base, bed_id: "b1", bed_id_2: "b2",
+        started_at: "2026-07-26T03:30:00+00:00",
+      })
+    ).toEqual([
+      { bedId: "b1", startMin: 630, durationMin: 60 },
+      { bedId: "b2", startMin: 690, durationMin: 60 },
+    ])
   })
 })

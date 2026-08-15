@@ -156,7 +156,7 @@ export default async function PosPage({
       : Promise.resolve({ data: null }),
     supabase
       .from("queue_entries")
-      .select("id, bed_id, start_time, duration_min, status, started_at")
+      .select("id, bed_id, bed_id_2, start_time, duration_min, status, started_at")
       .eq("queue_date", queueEntry.queue_date)
       .not("status", "in", "(cancelled,rejected)"),
   ])

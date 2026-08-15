@@ -15,12 +15,12 @@ import { computeSaleAmounts } from "@/lib/sale-math"
 import { checkCreditSpend } from "@/lib/member-credit"
 import { parsePaymentLines, primaryMethod } from "@/lib/payments"
 import { pointExpiryDate, pointsForSale } from "@/lib/points"
-import { queueMirrorFromSale, timeToMin } from "@/lib/queue"
+import { bedSegments, queueMirrorFromSale } from "@/lib/queue"
 import {
   CLASH_COLUMNS,
   CLASH_STATUS_FILTER,
   clashLabel,
-  firstClash,
+  firstBedClash,
 } from "@/lib/bed-clash"
 
 export type SaleResult =
@@ -41,28 +41,53 @@ export type SaleResult =
  * ที่ไม่เกี่ยวกับเงิน (แนวเดียวกับ approveBooking ที่เตือนแต่ไม่บล็อกการรับจอง)
  * การกันจริงอยู่ที่หน้าจอ — ปุ่มเตียงที่ไม่ว่างกดไม่ได้ ตรงนี้คือตาข่ายชั้นสุดท้าย
  *
- * เจอจริง 9/8/2569: เก้าอี้ 3 ถูกจองซ้อน 55 นาที (เอ็ม เมธี 13:55–15:55 กับ
- * กอล์ฟฟี่ 15:00–16:30) เพราะเตียงทั้งคู่ถูกกำหนดตอนกดเก็บเงิน ซึ่งไม่เคยมีด่านตรวจเลย
+ * segment-aware เหมือนฝั่งคิว (bedConflictError ใน queue-actions.ts): การ์ดที่ผูกกับบิลนี้
+ * อาจย้ายห้องกลางคัน (bed_id_2) — ต้องกาง bedId/bedId2 เป็นช่วงๆ ด้วย bedSegments แล้วเช็ค
+ * แต่ละห้องกับ "ช่วงเวลาของตัวเอง" ไม่ใช่เหมารวมเต็มโปรแกรมของ bedId ห้องเดียว
+ *
+ * เจอจริง 9/8/2569: เช็คแบบเดิม (เต็มโปรแกรมห้องเดียว) จะเห็นเก้าอี้ 3 ถูกจองซ้อน 55 นาที
+ * (เอ็ม เมธี 13:55–15:55 กับ กอล์ฟฟี่ 15:00–16:30) ทั้งที่ไม่ใช่การจองซ้อนจริง — เอ็ม เมธี
+ * ย้ายไปเตียงไทยตั้งแต่ 14:55 (bed_id_2) เก้าอี้ 3 จึงว่างก่อนกอล์ฟฟี่มาถึง
+ *
+ * กรองด้วย .or (เหมือน findBedClash ใน queue-actions.ts) เพราะการ์ดที่ใช้ห้องนี้เป็น
+ * ห้องที่สองจะหลุดตัวกรอง .eq("bed_id", ...) แบบเดิมไปทั้งที่ครองห้องอยู่จริง
+ *
+ * query พลาด (network/RLS) ไม่ปล่อยผ่านเงียบๆ — ฝั่งนี้เป็นแค่คำเตือนไม่ใช่ด่านกัน จึง
+ * "surface" ความล้มเหลวไปกับข้อความเตือนแทน (ต่างจากฝั่งคิวที่ fail closed เป็นการปฏิเสธ)
  */
 async function bedClashWarning(
   supabase: Awaited<ReturnType<typeof createClient>>,
   bedId: string | null,
+  bedId2: string | null,
   saleDate: string,
   startTime: string,
   durationMin: number,
   excludeIds: string[]
 ): Promise<string | null> {
   if (!bedId) return null
-  const { data } = await supabase
-    .from("queue_entries")
-    .select(CLASH_COLUMNS)
-    .eq("queue_date", saleDate)
-    .eq("bed_id", bedId)
-    .not("status", "in", CLASH_STATUS_FILTER)
-  const clash = firstClash(data ?? [], timeToMin(startTime), durationMin, excludeIds)
-  return clash
-    ? `บันทึกบิลแล้ว แต่เตียงนี้ชนกับ ${clashLabel(clash)} — เปิดการ์ดย้ายเตียงให้ถูกด้วย`
-    : null
+  const segments = bedSegments({
+    bed_id: bedId,
+    bed_id_2: bedId2,
+    start_time: startTime,
+    duration_min: durationMin,
+    started_at: null,
+  })
+  for (const seg of segments) {
+    const { data, error } = await supabase
+      .from("queue_entries")
+      .select(CLASH_COLUMNS)
+      .eq("queue_date", saleDate)
+      .or(`bed_id.eq.${seg.bedId},bed_id_2.eq.${seg.bedId}`)
+      .not("status", "in", CLASH_STATUS_FILTER)
+    if (error) {
+      return `บันทึกบิลแล้ว แต่ตรวจสอบเตียงชนไม่สำเร็จ — เช็คมือด้วย (${error.message})`
+    }
+    const clash = firstBedClash(data ?? [], seg.bedId, seg.startMin, seg.durationMin, excludeIds)
+    if (clash) {
+      return `บันทึกบิลแล้ว แต่เตียงนี้ชนกับ ${clashLabel(clash)} — เปิดการ์ดย้ายเตียงให้ถูกด้วย`
+    }
+  }
+  return null
 }
 
 function toNumber(value: FormDataEntryValue | null, fallback = 0): number {
@@ -195,13 +220,17 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   // ต้องคำนวณก่อนด่านเครดิตด้านล่าง เพราะด่านนั้นต้องเทียบวันหมดอายุกับวันที่ของบิล ไม่ใช่วันนี้
   const linkedQueueId = String(formData.get("queue_entry_id") ?? "")
   let saleDate = todayInShopTz()
+  // ห้องที่สองของการ์ด (ถ้าย้ายห้องกลางคัน) — ฟอร์มเก็บเงินไม่มีช่องนี้เลย ต้องอ่านจากการ์ด
+  // คิวที่ผูกบิลนี้เอง ใช้ทำ bedClashWarning ให้ segment-aware ด้านล่าง
+  let linkedQueueBedId2: string | null = null
   if (linkedQueueId) {
     const { data: linkedQueue } = await supabase
       .from("queue_entries")
-      .select("queue_date")
+      .select("queue_date, bed_id_2")
       .eq("id", linkedQueueId)
       .maybeSingle()
     if (linkedQueue?.queue_date) saleDate = linkedQueue.queue_date
+    linkedQueueBedId2 = linkedQueue?.bed_id_2 ?? null
   }
 
   // สัดส่วนรับรู้รายได้ของสมาชิก — อ่านก่อนคำนวณ เพราะสูตรต้องใช้
@@ -455,6 +484,7 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   const bedWarning = await bedClashWarning(
     supabase,
     String(formData.get("bed_id") ?? "") || null,
+    linkedQueueBedId2,
     saleDate,
     saleTime,
     service.duration_min ?? 60,

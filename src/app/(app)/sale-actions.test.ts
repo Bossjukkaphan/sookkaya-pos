@@ -356,3 +356,120 @@ describe("createSale — วันเงินเข้าของบรรท�
     expect(firstLine(lines).received_date).toBe("2026-08-11")
   })
 })
+
+describe("createSale — เตือนเตียงชนตอนจ่ายเงิน segment-aware (bedClashWarning)", () => {
+  // เคสจริง 9/8/2569: เอ็ม เมธี เมนู 120 นาที เริ่ม 13:55 เก้าอี้ 3 → ย้ายเตียงไทย 2 (thai2)
+  // ตอน 14:55 (bed_id_2 ของการ์ดคิว) · กอล์ฟฟี่ เมนู 90 นาที เริ่ม 15:00 เก้าอี้ 3
+  // เช็คแบบเดิม (เต็มโปรแกรมห้องเดียว 13:55–15:55) จะเห็นชนกอล์ฟฟี่ทั้งที่ไม่ได้ชนจริง —
+  // segment-aware ต้องเช็คเก้าอี้ 3 แค่ช่วง 13:55–14:55 (ครึ่งแรก) เท่านั้น
+  function tablesFor(queueEntries: Result[]) {
+    return {
+      services: seqTable([
+        {
+          data: {
+            name: "นวดคลายเท้า & คอบ่าไหล่ 120 นาที",
+            price: 900,
+            commission: 300,
+            duration_min: 120,
+          },
+        },
+      ]),
+      queue_entries: seqTable(queueEntries),
+      profiles: seqTable([{ data: { full_name: "Boss" } }]),
+      sales: seqTable([{ data: { id: SALE, receipt_no: "R0200" } }]),
+      point_transactions: seqTable([{ data: null }, { data: null }]),
+    }
+  }
+
+  function saleForm(bedId: string): FormData {
+    return baseFormData({
+      therapist_id: "th1",
+      service_id: "svc1",
+      payment_method: "เงินสด",
+      customer_id: CUST,
+      discount: "0",
+      queue_entry_id: QUEUE,
+      bed_id: bedId,
+      sale_time: "13:55",
+    })
+  }
+
+  it("การ์ดย้ายห้องกลางคัน — ไม่เตือนเท็จเมื่อคิวถัดไปจองห้องแรกหลังลูกค้าย้ายออกไปแล้ว", async () => {
+    const tables = tablesFor([
+      { data: { queue_date: "2026-08-09", bed_id_2: "thai2" } }, // linkedQueue select
+      {
+        // segment 1: เก้าอี้ 3 ช่วง 13:55–14:55 — กอล์ฟฟี่เริ่ม 15:00 ไม่ทับ
+        data: [
+          {
+            id: "golffy",
+            customer_name: "กอล์ฟฟี่",
+            service_name: "นวดไทย 90 นาที",
+            duration_min: 90,
+            start_time: "15:00",
+            started_at: null,
+            bed_id: "chair3",
+            bed_id_2: null,
+          },
+        ],
+      },
+      { data: [] }, // segment 2: เตียงไทย 14:55–15:55 — ไม่มีใครอยู่
+      { data: null }, // มิเรอร์การ์ดคิวท้ายฟังก์ชัน
+    ])
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
+
+    const r = await createSale(saleForm("chair3"))
+
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.warning).toBeUndefined()
+  })
+
+  it("ครึ่งหลังชนจริง (เตียงไทยมีคิวอื่นทับ) — ต้องเตือน", async () => {
+    const tables = tablesFor([
+      { data: { queue_date: "2026-08-09", bed_id_2: "thai2" } },
+      { data: [] }, // segment 1 ไม่ชน
+      {
+        // segment 2: อีกคนจองเตียงไทยทับช่วง 14:55–15:55
+        data: [
+          {
+            id: "other",
+            customer_name: "มายด์",
+            service_name: "นวดไทย 60 นาที",
+            duration_min: 60,
+            start_time: "15:30",
+            started_at: null,
+            bed_id: "thai2",
+            bed_id_2: null,
+          },
+        ],
+      },
+      { data: null },
+    ])
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
+
+    const r = await createSale(saleForm("chair3"))
+
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.warning).toContain("ชนกับ")
+      expect(r.warning).toContain("มายด์")
+    }
+  })
+
+  it("เช็คเตียงชนพลาด (query error) — ไม่บล็อกเงิน แต่เตือนว่าตรวจไม่สำเร็จ ไม่ใช่เงียบว่าไม่ชน", async () => {
+    const tables = tablesFor([
+      { data: { queue_date: "2026-08-09", bed_id_2: "thai2" } },
+      { data: null, error: { message: "timeout" } }, // segment 1 query พัง
+      { data: null }, // มิเรอร์การ์ดคิวท้ายฟังก์ชันยังทำงานต่อได้ตามปกติ
+    ])
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
+
+    const r = await createSale(saleForm("chair3"))
+
+    // บิลต้องยังบันทึกได้ — bedClashWarning เป็นแค่คำเตือน ไม่ใช่ด่านกันเงินเข้า
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.warning).toContain("ตรวจสอบเตียงชนไม่สำเร็จ")
+      expect(r.warning).toContain("timeout")
+    }
+  })
+})

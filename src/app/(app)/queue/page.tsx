@@ -67,7 +67,12 @@ export default async function QueuePage({
     .map((t) => ({ id: t.id, name: t.name }))
   const services = allServices
     .filter((s) => s.is_active)
-    .map((s) => ({ id: s.id, name: s.name, duration_min: s.duration_min }))
+    .map((s) => ({
+      id: s.id,
+      name: s.name,
+      duration_min: s.duration_min,
+      splits_room: s.splits_room,
+    }))
 
   // ค้างรับต่อการ์ด (เฉพาะการ์ดที่จ่ายแล้วและผูกบิลขาย) — โหลดเป็น batch เดียวจากบิลของวันนี้เท่านั้น
   // ห้าม query ต่อการ์ด: การ์ดคิวมีเป็นสิบใบต่อวัน ยิงทีละใบจะช้าและถล่ม DB โดยไม่จำเป็น

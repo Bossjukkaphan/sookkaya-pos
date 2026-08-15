@@ -947,6 +947,7 @@ export type Database = {
       queue_entries: {
         Row: {
           bed_id: string | null
+          bed_id_2: string | null
           booking_channel: string | null
           client_key: string | null
           created_at: string
@@ -974,6 +975,7 @@ export type Database = {
         }
         Insert: {
           bed_id?: string | null
+          bed_id_2?: string | null
           booking_channel?: string | null
           client_key?: string | null
           created_at?: string
@@ -1001,6 +1003,7 @@ export type Database = {
         }
         Update: {
           bed_id?: string | null
+          bed_id_2?: string | null
           booking_channel?: string | null
           client_key?: string | null
           created_at?: string
@@ -1027,6 +1030,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "queue_entries_bed_id_2_fkey"
+            columns: ["bed_id_2"]
+            isOneToOne: false
+            referencedRelation: "beds"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "queue_entries_bed_id_fkey"
             columns: ["bed_id"]
@@ -1276,6 +1286,7 @@ export type Database = {
           name: string
           price: number
           price_old: number | null
+          splits_room: boolean
         }
         Insert: {
           commission: number
@@ -1288,6 +1299,7 @@ export type Database = {
           name: string
           price: number
           price_old?: number | null
+          splits_room?: boolean
         }
         Update: {
           commission?: number
@@ -1300,6 +1312,7 @@ export type Database = {
           name?: string
           price?: number
           price_old?: number | null
+          splits_room?: boolean
         }
         Relationships: []
       }

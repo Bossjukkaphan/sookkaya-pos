@@ -126,7 +126,26 @@ with expected(check_name, expected_value) as (values
   --   · 26/7 หมอบีบี — "รุ" ลงเวลาจอง 14:20 แต่นวดจริง 13:20 แก้เวลาการ์ดแล้ว
   --   · 28/7 เตียง 1 ห้องนวดไทย — "จิราพิชญ์" นวดจริงที่เตียง 2 แก้ทั้งการ์ดและบิลแล้ว
   -- ขึ้นเป็น 1 เมื่อไหร่ = มีคนคีย์เวลาหรือเตียงผิด ให้ไล่หาว่าใบไหนแล้วถามพนักงาน
-  ('bed_double_booked', 0),
+  --
+  -- ยกเว้นที่รู้อยู่แล้ว 1 คู่ — เก็บเป็น known exception เหมือน credit_used_exceeds_net/
+  -- credit_used_without_customer ด้านบน (ไม่ใช่ศูนย์เพราะมีเคสที่สืบแล้วว่าไม่ใช่บั๊ก):
+  --   คู่ 9 สิงหาคม 2569 — เอ็ม เมธี (จองไว้ 13:55 แต่ข้อตรวจนี้ใช้เวลาเริ่ม*จริง* 13:56 จาก
+  --   started_at เพราะหมอกดเริ่มช้าไปหนึ่งนาที · เมนู 120 นาที) กับ กอล์ฟฟี่ (เริ่ม 15:00 ·
+  --   เมนู 90 นาที) ทั้งคู่บันทึกเก้าอี้ 3
+  --
+  -- ไม่ใช่การจองซ้อนจริง — ตามกติกาที่ทำหน้าร้านจริง เอ็ม เมธีลุกจากเก้าอี้ 3 ตอน 14:56
+  -- (ครึ่งทางของนวดจริงที่เริ่ม 13:56) ไปนอนต่อครึ่งหลังบนเตียงไทย กอล์ฟฟี่เริ่ม 15:00
+  -- จึงไม่ได้ชนกับใครเลย พนักงานทำถูกมาตลอด
+  -- ระบบตอนนั้นยังไม่มีช่องเก็บห้องที่สอง (bed_id_2 เพิ่งมีใน migration
+  -- 20260815100000_two_room_queue.sql) จึงไม่มีทางบันทึกการย้ายห้องครั้งนั้นไว้ได้เลย
+  --
+  -- การ์ดใบนี้เกิดก่อนคอลัมน์ bed_id_2 จะมีอยู่ และตั้งใจ **ไม่ backfill ประวัติ** — เขียนเตียงไทย
+  -- ใบใดใบหนึ่งลงไปตอนนี้เท่ากับกุเรื่องขึ้นมาเองโดยไม่มีใครยืนยันได้ว่าใช่เตียงไหนจริง ๆ
+  --
+  -- ดังนั้นค่าที่ถูกต้องคือ 1 เสมอ **ถ้าขึ้นมากกว่า 1 = มีคู่ใหม่ที่ต้องสืบทันที** อย่าเข้าใจว่า
+  -- แถวนี้ถูกปิดตาไปตลอดกาล — การ์ดที่สร้างจากนี้ไปสามารถระบุ bed_id_2 ได้แล้ว
+  -- ("ย้ายห้องกลางคัน" มีทางบันทึกจริงในระบบแล้ว) ข้อยกเว้นนี้จึงไม่ควรโตขึ้นอีก
+  ('bed_double_booked', 1),
   ('therapist_double_booked', 0),
 
   -- บรรทัดชำระ (สเปก 2026-08-01): บรรทัดต้องมีบิลจริง · เกินรับต้องศูนย์เมื่อพัก · วิธีหลักตรงบรรทัด
@@ -139,6 +158,37 @@ with expected(check_name, expected_value) as (values
   -- — ตัวจริงอยู่ที่ commissionPeriodOfExpense ใน src/lib/payout-periods.ts)
   -- ขึ้นมากกว่า 0 = มีคนแก้รายจ่ายหมวดค่ามือ/เงินเดือนหลังเจ้าของร้านปิดงวดแล้ว ต้องสืบทันที
   ('endorsed_payout_drift', 0)
+),
+-- ใช้ร่วมกับข้อตรวจ bed_double_booked ด้านล่าง: กางการ์ดคิวแต่ละใบเป็น 1-2 ช่วง (ห้อง ·
+-- เวลาเริ่ม · นาที) ด้วยกติกาเดียวกับ bedSegments() ในแอป (src/lib/queue.ts) — เวลาเริ่ม =
+-- started_at แปลงเป็นเวลาไทยถ้ามี ไม่งั้น start_time ที่จอง · มี bed_id_2 = ครึ่งแรก
+-- floor(duration_min/2) นาทีอยู่ bed_id ครึ่งหลังที่เหลืออยู่ bed_id_2 · ไม่มี bed_id_2 =
+-- ครองห้องเดียวเต็มโปรแกรม (พฤติกรรมเดิมก่อนมีการย้ายห้อง) · ใบยกเลิก/ถูกปฏิเสธไม่ครองห้องใด ๆ
+bed_segments as (
+  select
+    qe.id as entry_id,
+    qe.queue_date,
+    seg.room_id,
+    seg.seg_start,
+    seg.seg_dur
+  from public.queue_entries qe
+  cross join lateral (
+    select qe.bed_id as room_id,
+           coalesce((qe.started_at at time zone 'Asia/Bangkok')::time, qe.start_time) as seg_start,
+           case when qe.bed_id_2 is null then qe.duration_min
+                else floor(qe.duration_min / 2.0)::int end as seg_dur
+    where qe.bed_id is not null
+    union all
+    select qe.bed_id_2,
+           coalesce((qe.started_at at time zone 'Asia/Bangkok')::time, qe.start_time)
+             + make_interval(mins => floor(qe.duration_min / 2.0)::int),
+           qe.duration_min - floor(qe.duration_min / 2.0)::int
+    -- ต้องมี bed_id ด้วยไม่ใช่แค่ bed_id_2 — bedSegments() ในแอปขึ้นต้นด้วย
+    -- if (!e.bed_id) return [] การ์ดที่ไม่มีห้องแรกไม่ครองห้องอะไรเลยแม้ bed_id_2 จะมีค่า
+    -- (ไม่มี state แบบนี้เกิดขึ้นจริงตอนนี้ แต่ต้องกันไว้ไม่ให้ SQL เพี้ยนจากกติกาแอป)
+    where qe.bed_id_2 is not null and qe.bed_id is not null
+  ) as seg(room_id, seg_start, seg_dur)
+  where qe.status not in ('cancelled','rejected')
 ),
 actual(check_name, actual_value) as (
   select 'net_revenue_' || replace(to_char(sale_date,'YYYY-MM'),'-','_'),
@@ -277,16 +327,31 @@ actual(check_name, actual_value) as (
   from public.sales where credit_used > 0 and customer_id is null
 
   union all
+  -- เตียงจองซ้อน: ต้องกางการ์ดเป็นช่วง ๆ ก่อนจับคู่ ไม่ใช่เทียบทั้งใบเป็นห้องเดียว
+  -- เมนู "นวดคลายเท้า & คอบ่าไหล่" ลูกค้านวดเท้าครึ่งแรกแล้วย้ายเตียงไทยครึ่งหลัง (bed_id_2)
+  -- ข้อตรวจเดิมมองเห็นแค่ bed_id ห้องเดียวทั้งใบ จึงฟ้องคู่นี้มาตั้งแต่ 9 ส.ค. 2569 ว่าชนกัน:
+  --   เอ็ม เมธี · เริ่ม 13:55 · เมนู 120 นาที · เก้าอี้ 3
+  --   กอล์ฟฟี่ · เริ่ม 15:00 · เมนู 90 นาที · เก้าอี้ 3
+  -- ทั้งที่พนักงานทำถูก — เอ็ม เมธีย้ายออกจากเก้าอี้ 3 ไปเตียงไทยตั้งแต่กลางโปรแกรม
+  -- ระบบเดิมเก็บได้แค่ห้องเดียวต่อการ์ดเท่านั้น จึงไม่มีทางบันทึกการย้ายห้องนี้ไว้ได้ตั้งแต่ต้น
+  --
+  -- กางแต่ละใบเป็น 1-2 ช่วง (ห้อง · เวลาเริ่ม · นาที) ด้วยกติกาเดียวกับ bedSegments()
+  -- ที่แอปใช้จริง (src/lib/queue.ts): เวลาเริ่ม = started_at แปลงเป็นเวลาไทยถ้ามี ไม่งั้น
+  -- start_time ที่จอง · มี bed_id_2 = ครึ่งแรก floor(duration_min/2) นาทีอยู่ bed_id
+  -- ครึ่งหลังที่เหลืออยู่ bed_id_2 · ไม่มี bed_id_2 = ครองห้องเดียวเต็มโปรแกรม (พฤติกรรมเดิม)
+  -- ใบยกเลิก/ถูกปฏิเสธไม่ครองห้องใด ๆ แล้วจับคู่ช่วงที่ bed_id เดียวกันทับกันเกิน 20 นาที
   select 'bed_double_booked', count(*)
-  from public.queue_entries a
-  join public.queue_entries b
-    on b.id > a.id and b.queue_date = a.queue_date and b.bed_id = a.bed_id
-  where a.bed_id is not null
-    and a.status not in ('cancelled','rejected')
-    and b.status not in ('cancelled','rejected')
-    and least(a.start_time + make_interval(mins => a.duration_min),
-              b.start_time + make_interval(mins => b.duration_min))
-      - greatest(a.start_time, b.start_time) > interval '20 min'
+  from (
+    select distinct sa.entry_id, sb.entry_id
+    from bed_segments sa
+    join bed_segments sb
+      on sb.entry_id > sa.entry_id
+     and sb.queue_date = sa.queue_date
+     and sb.room_id = sa.room_id
+    where least(sa.seg_start + make_interval(mins => sa.seg_dur),
+                sb.seg_start + make_interval(mins => sb.seg_dur))
+        - greatest(sa.seg_start, sb.seg_start) > interval '20 min'
+  ) bad
 
   union all
   select 'therapist_double_booked', count(*)

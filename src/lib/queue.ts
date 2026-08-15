@@ -54,6 +54,7 @@ type QueueLike = {
 
 type BedLike = {
   bed_id: string | null
+  bed_id_2?: string | null
   start_time: string
   duration_min: number
   status: string
@@ -80,6 +81,44 @@ export function bedStartMin(e: {
   return e.started_at ? isoToShopMin(e.started_at) : timeToMin(e.start_time)
 }
 
+/** ช่วงที่การ์ดหนึ่งใบครองห้องหนึ่งห้อง — การ์ดที่ย้ายห้องกลางคันจะมีสองช่วงต่อกัน */
+export type BedSegment = { bedId: string; startMin: number; durationMin: number }
+
+/**
+ * การ์ดใบนี้ยึดห้องไหน ช่วงไหนบ้าง — **สูตรเดียวที่ทุกจุดต้องใช้ตอบว่าห้องว่างไหม**
+ *
+ * เมนู "นวดคลายเท้า & คอบ่าไหล่ 90/120 นาที" ลูกค้านวดเท้าบนโซฟาครึ่งแรก แล้วย้ายไป
+ * คอบ่าไหล่บนเตียงไทยครึ่งหลัง เดิมระบบเก็บได้ห้องเดียวจึงเข้าใจผิดสองทางพร้อมกัน:
+ * คิดว่าโซฟายังไม่ว่างทั้งที่ลูกค้าย้ายไปแล้ว และคิดว่าเตียงไทยว่างทั้งที่มีคนอยู่
+ *
+ * จุดแบ่งคือครึ่งหนึ่งของโปรแกรมเสมอ (60=30+30 · 90=45+45 · 120=60+60 ตามที่หน้าร้านทำจริง)
+ * ใช้ floor ให้ครึ่งหลังรับเศษไป เมนูจริงหารลงตัวหมด แต่ต้องไม่พังถ้าวันหนึ่งมีเมนูนาทีคี่
+ *
+ * ไม่มี bed_id_2 = อยู่ห้องเดียวตลอด → คืนช่วงเดียวยาวเต็มโปรแกรม = พฤติกรรมเดิมเป๊ะ
+ */
+export function bedSegments(e: {
+  bed_id: string | null
+  bed_id_2?: string | null
+  start_time: string
+  duration_min: number
+  started_at?: string | null
+}): BedSegment[] {
+  if (!e.bed_id) return []
+  const startMin = bedStartMin(e)
+  if (!e.bed_id_2) {
+    return [{ bedId: e.bed_id, startMin, durationMin: e.duration_min }]
+  }
+  const firstHalf = Math.floor(e.duration_min / 2)
+  return [
+    { bedId: e.bed_id, startMin, durationMin: firstHalf },
+    {
+      bedId: e.bed_id_2,
+      startMin: startMin + firstHalf,
+      durationMin: e.duration_min - firstHalf,
+    },
+  ]
+}
+
 /** หมอที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — หมอหนึ่งรับได้ทีละคิว นับจากเวลานวดจริง */
 export function busyTherapistIds(
   entries: {
@@ -104,21 +143,52 @@ export function busyTherapistIds(
   )
 }
 
-/** เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้น "ไม่ว่าง" */
+/**
+ * เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้น "ไม่ว่าง"
+ *
+ * ไล่เป็นช่วง ๆ ผ่าน bedSegments เพราะการ์ดที่ย้ายห้องกลางคันยึดสองห้องคนละช่วงเวลา
+ * การ์ดห้องเดียวได้ช่วงเดียวยาวเต็มโปรแกรม ผลจึงเท่าเดิมทุกประการ
+ */
 export function busyBedIds(
   entries: BedLike[],
   startMin: number,
   durationMin: number
 ): Set<string> {
-  return new Set(
-    entries
-      .filter(
-        (e) =>
-          e.bed_id !== null &&
-          e.status !== "cancelled" &&
-          overlaps(bedStartMin(e), e.duration_min, startMin, durationMin)
+  const busy = new Set<string>()
+  for (const e of entries) {
+    if (e.status === "cancelled") continue
+    for (const seg of bedSegments(e)) {
+      if (overlaps(seg.startMin, seg.durationMin, startMin, durationMin)) {
+        busy.add(seg.bedId)
+      }
+    }
+  }
+  return busy
+}
+
+/**
+ * การ์ดใบนี้ใช้เตียงซ้อนกับใบอื่นไหม (ข้ามช่องหมอ) — ป้าย ⚠️ซ้อน บนบอร์ดคิวใช้ตัวนี้ตัดสิน
+ *
+ * เทียบผ่าน bedSegments ทีละช่วง (ห้องแรก/ห้องที่สอง) ไม่ใช่เทียบ bed_id ตรงๆ เต็มโปรแกรม —
+ * เดิมเทียบเต็มโปรแกรมจะเห็นการ์ดที่ย้ายห้องกลางคัน (ถูกต้อง) เป็น "ซ้อน" ผิดๆ เพราะห้องแรก
+ * ที่ว่างไปแล้วครึ่งหลังยังถูกนับรวมเป็นช่วงเดียวยาวเต็ม (เคสจริง 9 ส.ค. 2569 เอ็ม เมธี/กอล์ฟฟี่)
+ */
+export function hasBedClash<T extends BedLike & { id: string }>(
+  entry: T,
+  others: T[]
+): boolean {
+  const mySegments = bedSegments(entry)
+  return others.some(
+    (s) =>
+      s.id !== entry.id &&
+      s.status !== "cancelled" &&
+      bedSegments(s).some((sSeg) =>
+        mySegments.some(
+          (mySeg) =>
+            mySeg.bedId === sSeg.bedId &&
+            overlaps(mySeg.startMin, mySeg.durationMin, sSeg.startMin, sSeg.durationMin)
+        )
       )
-      .map((e) => e.bed_id as string)
   )
 }
 
@@ -165,6 +235,37 @@ export function bedHolderInGroup(
   })
 }
 
+/** ใครในกลุ่ม (ก่อนแถวที่ i) ครองห้องเดียวกับรายการที่ i ทับช่วงเวลากันไหม — ใช้ตอนสร้างคิวกลุ่ม
+ *
+ * แถวในกลุ่มยังไม่ถูก insert ตอนเช็ค (insert รวมทีเดียวท้ายฟังก์ชัน) — bedConflictError ที่คุย
+ * กับฐานข้อมูลจึงมองไม่เห็นกัน ต้องเทียบกันเองในหน่วยความจำตรงนี้
+ *
+ * เทียบผ่าน bedSegments เหมือนทุกจุดที่ถามว่า "ห้องนี้ว่างไหม" — เทียบแค่ bed_id === bed_id
+ * เฉยๆ ไม่พอ เพราะคนหนึ่งอาจถือห้องนี้เป็น "ห้องที่สอง" (bed_id_2) ซึ่งจะหลุดการเทียบแบบตรงตัว
+ */
+export function groupBedClash(
+  rows: {
+    bed_id: string | null
+    bed_id_2?: string | null
+    start_time: string
+    duration_min: number
+  }[],
+  i: number
+): boolean {
+  const mySegments = bedSegments(rows[i])
+  return rows
+    .slice(0, i)
+    .some((r) =>
+      bedSegments(r).some((rSeg) =>
+        mySegments.some(
+          (mySeg) =>
+            mySeg.bedId === rSeg.bedId &&
+            overlaps(rSeg.startMin, rSeg.durationMin, mySeg.startMin, mySeg.durationMin)
+        )
+      )
+    )
+}
+
 /** หมอว่าง = ไม่มีคิว (รอ/กำลังนวด) คร่อมเวลานี้ · คิวไม่ระบุหมอไม่ทำให้ใครติด */
 export function countFreeTherapists(
   therapistIds: string[],
@@ -206,6 +307,8 @@ export function queueMirrorFromSale(
   // ไม่ใช่เขียน null ทับ (จะลบเตียงที่พนักงานเลือกไว้ตอนกดชำระทิ้ง)
   // มีคีย์แต่ค่าว่าง = พนักงานตั้งใจเอาออก อันนั้นเขียน null ถูกแล้ว
   const bed = formData.get("bed_id")
+  // ห้องที่สองก็เป็นช่องที่ฟอร์มแก้บิลไม่มีเหมือนกัน — ปฏิบัติแบบเดียวกับเตียงเป๊ะ
+  const bed2 = formData.get("bed_id_2")
 
   return {
     service_id: serviceId,
@@ -217,6 +320,7 @@ export function queueMirrorFromSale(
     is_request: formData.get("is_request") === "on",
     private_room: formData.get("private_room") === "on",
     ...(bed === null ? {} : { bed_id: String(bed) || null }),
+    ...(bed2 === null ? {} : { bed_id_2: String(bed2) || null }),
     updated_at: new Date().toISOString(),
   }
 }
