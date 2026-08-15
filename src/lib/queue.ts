@@ -80,6 +80,44 @@ export function bedStartMin(e: {
   return e.started_at ? isoToShopMin(e.started_at) : timeToMin(e.start_time)
 }
 
+/** ช่วงที่การ์ดหนึ่งใบครองห้องหนึ่งห้อง — การ์ดที่ย้ายห้องกลางคันจะมีสองช่วงต่อกัน */
+export type BedSegment = { bedId: string; startMin: number; durationMin: number }
+
+/**
+ * การ์ดใบนี้ยึดห้องไหน ช่วงไหนบ้าง — **สูตรเดียวที่ทุกจุดต้องใช้ตอบว่าห้องว่างไหม**
+ *
+ * เมนู "นวดคลายเท้า & คอบ่าไหล่ 90/120 นาที" ลูกค้านวดเท้าบนโซฟาครึ่งแรก แล้วย้ายไป
+ * คอบ่าไหล่บนเตียงไทยครึ่งหลัง เดิมระบบเก็บได้ห้องเดียวจึงเข้าใจผิดสองทางพร้อมกัน:
+ * คิดว่าโซฟายังไม่ว่างทั้งที่ลูกค้าย้ายไปแล้ว และคิดว่าเตียงไทยว่างทั้งที่มีคนอยู่
+ *
+ * จุดแบ่งคือครึ่งหนึ่งของโปรแกรมเสมอ (60=30+30 · 90=45+45 · 120=60+60 ตามที่หน้าร้านทำจริง)
+ * ใช้ floor ให้ครึ่งหลังรับเศษไป เมนูจริงหารลงตัวหมด แต่ต้องไม่พังถ้าวันหนึ่งมีเมนูนาทีคี่
+ *
+ * ไม่มี bed_id_2 = อยู่ห้องเดียวตลอด → คืนช่วงเดียวยาวเต็มโปรแกรม = พฤติกรรมเดิมเป๊ะ
+ */
+export function bedSegments(e: {
+  bed_id: string | null
+  bed_id_2?: string | null
+  start_time: string
+  duration_min: number
+  started_at?: string | null
+}): BedSegment[] {
+  if (!e.bed_id) return []
+  const startMin = bedStartMin(e)
+  if (!e.bed_id_2) {
+    return [{ bedId: e.bed_id, startMin, durationMin: e.duration_min }]
+  }
+  const firstHalf = Math.floor(e.duration_min / 2)
+  return [
+    { bedId: e.bed_id, startMin, durationMin: firstHalf },
+    {
+      bedId: e.bed_id_2,
+      startMin: startMin + firstHalf,
+      durationMin: e.duration_min - firstHalf,
+    },
+  ]
+}
+
 /** หมอที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — หมอหนึ่งรับได้ทีละคิว นับจากเวลานวดจริง */
 export function busyTherapistIds(
   entries: {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  bedSegments,
   canMoveCardWindow,
   BOARD_END_MIN,
   BOARD_START_MIN,
@@ -324,5 +325,59 @@ describe("bedHolderInGroup", () => {
     // คนแรก 10:00 ยาว 120 นาที · คนที่สอง 11:00 → ทับ
     const rows = [row("b1", 600, 120), row("b1", 660, 60)]
     expect(bedHolderInGroup(rows, 1, "b1")).toBe(0)
+  })
+})
+
+describe("bedSegments — การ์ดหนึ่งใบยึดห้องไหน ช่วงไหนบ้าง", () => {
+  const base = { start_time: "10:00", duration_min: 120, status: "waiting" }
+
+  it("ไม่มีห้องที่สอง — ช่วงเดียว ยาวเต็มโปรแกรม (พฤติกรรมเดิมเป๊ะ)", () => {
+    expect(bedSegments({ ...base, bed_id: "b1" })).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 120 },
+    ])
+  })
+
+  it("มีห้องที่สอง 120 นาที — สองช่วงละ 60 ต่อกันพอดี ไม่มีรู ไม่ทับกัน", () => {
+    expect(bedSegments({ ...base, bed_id: "b1", bed_id_2: "b2" })).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 60 },
+      { bedId: "b2", startMin: 660, durationMin: 60 },
+    ])
+  })
+
+  it("นาทีคี่ — ครึ่งหลังได้เศษ รวมสองช่วงต้องเท่าโปรแกรมเป๊ะ", () => {
+    const segs = bedSegments({
+      ...base, duration_min: 45, bed_id: "b1", bed_id_2: "b2",
+    })
+    expect(segs).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 22 },
+      { bedId: "b2", startMin: 622, durationMin: 23 },
+    ])
+    expect(segs[0].durationMin + segs[1].durationMin).toBe(45)
+  })
+
+  it("ไม่มีห้องแรกเลย — ไม่ยึดอะไรทั้งนั้น", () => {
+    expect(bedSegments({ ...base, bed_id: null })).toEqual([])
+    expect(bedSegments({ ...base, bed_id: null, bed_id_2: "b2" })).toEqual([])
+  })
+
+  it("ห้องที่สองเป็นห้องเดียวกับห้องแรก — ยังเป็นสองช่วงที่ต่อกัน ไม่ยุบรวม", () => {
+    // ลูกค้าอยู่ห้องเดิมแต่พนักงานกรอกซ้ำ — ผลลัพธ์ต้องเท่ากับครองยาวอยู่ดี
+    expect(bedSegments({ ...base, bed_id: "b1", bed_id_2: "b1" })).toEqual([
+      { bedId: "b1", startMin: 600, durationMin: 60 },
+      { bedId: "b1", startMin: 660, durationMin: 60 },
+    ])
+  })
+
+  it("กดเริ่มนวดแล้ว — ทั้งสองช่วงเลื่อนตามเวลาเริ่มจริง", () => {
+    // จอง 10:00 เริ่มจริง 10:30 (03:30Z = 10:30 เวลาไทย) → ครึ่งแรก 10:30 ครึ่งหลัง 11:30
+    expect(
+      bedSegments({
+        ...base, bed_id: "b1", bed_id_2: "b2",
+        started_at: "2026-07-26T03:30:00+00:00",
+      })
+    ).toEqual([
+      { bedId: "b1", startMin: 630, durationMin: 60 },
+      { bedId: "b2", startMin: 690, durationMin: 60 },
+    ])
   })
 })
