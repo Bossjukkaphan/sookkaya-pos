@@ -166,6 +166,32 @@ export function busyBedIds(
   return busy
 }
 
+/**
+ * การ์ดใบนี้ใช้เตียงซ้อนกับใบอื่นไหม (ข้ามช่องหมอ) — ป้าย ⚠️ซ้อน บนบอร์ดคิวใช้ตัวนี้ตัดสิน
+ *
+ * เทียบผ่าน bedSegments ทีละช่วง (ห้องแรก/ห้องที่สอง) ไม่ใช่เทียบ bed_id ตรงๆ เต็มโปรแกรม —
+ * เดิมเทียบเต็มโปรแกรมจะเห็นการ์ดที่ย้ายห้องกลางคัน (ถูกต้อง) เป็น "ซ้อน" ผิดๆ เพราะห้องแรก
+ * ที่ว่างไปแล้วครึ่งหลังยังถูกนับรวมเป็นช่วงเดียวยาวเต็ม (เคสจริง 9 ส.ค. 2569 เอ็ม เมธี/กอล์ฟฟี่)
+ */
+export function hasBedClash<T extends BedLike & { id: string }>(
+  entry: T,
+  others: T[]
+): boolean {
+  const mySegments = bedSegments(entry)
+  return others.some(
+    (s) =>
+      s.id !== entry.id &&
+      s.status !== "cancelled" &&
+      bedSegments(s).some((sSeg) =>
+        mySegments.some(
+          (mySeg) =>
+            mySeg.bedId === sSeg.bedId &&
+            overlaps(mySeg.startMin, mySeg.durationMin, sSeg.startMin, sSeg.durationMin)
+        )
+      )
+  )
+}
+
 /** เวลาเริ่ม·ระยะเวลาของแต่ละรายการในคิวกลุ่ม
  *
  *  **ต้องให้ผลตรงกับ `createQueueGroup` ฝั่ง server เป๊ะ** — ฟอร์มใช้ค่านี้บอกว่าเตียงไหนว่าง

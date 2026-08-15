@@ -13,6 +13,7 @@ import {
   countFreeTherapists,
   groupBedClash,
   groupSlotTimes,
+  hasBedClash,
   minToTime,
   minToX,
   overlaps,
@@ -118,6 +119,80 @@ describe("busyBedIds — การ์ดที่ย้ายห้องกล�
   it("ช่วงครึ่งแรกยังติดเก้าอี้ ยังไม่ติดเตียงไทย", () => {
     // 14:00–14:30 (840, 30 นาที)
     expect(busyBedIds(moved, 840, 30)).toEqual(new Set(["chair3"]))
+  })
+})
+
+describe("hasBedClash — ป้าย ⚠️ซ้อน บนบอร์ดคิว", () => {
+  // เคสจริง 9 ส.ค. 2569: เอ็ม เมธี 13:55 เมนู 120 นาที เก้าอี้ 3 → ย้ายเตียงไทย 2 ตอน 14:55
+  // (bed_id_2) · กอล์ฟฟี่ 15:00 เมนู 90 นาที เก้าอี้ 3 — ไม่ได้ชนกันจริง
+  const emm = {
+    id: "emm",
+    bed_id: "chair3",
+    bed_id_2: "thai2",
+    start_time: "13:55",
+    duration_min: 120,
+    status: "in_service",
+    started_at: null as string | null,
+  }
+  const golffy = {
+    id: "golffy",
+    bed_id: "chair3",
+    bed_id_2: null,
+    start_time: "15:00",
+    duration_min: 90,
+    status: "waiting",
+    started_at: null as string | null,
+  }
+
+  it("การ์ดย้ายห้องกลางคัน + คิวถัดไปจองห้องแรกหลังย้ายออก — ไม่ใช่ซ้อน (เทียบเต็มโปรแกรมจะพลาดเคสนี้)", () => {
+    expect(hasBedClash(emm, [emm, golffy])).toBe(false)
+    expect(hasBedClash(golffy, [emm, golffy])).toBe(false)
+  })
+
+  it("ห้องที่สองชนจริง — เตียงไทยมีคิวอื่นทับช่วงครึ่งหลัง", () => {
+    const other = {
+      id: "other",
+      bed_id: "thai2",
+      bed_id_2: null,
+      start_time: "15:30",
+      duration_min: 60,
+      status: "waiting",
+      started_at: null as string | null,
+    }
+    expect(hasBedClash(emm, [emm, other])).toBe(true)
+    expect(hasBedClash(other, [emm, other])).toBe(true)
+  })
+
+  it("การ์ดห้องเดียวชนกันตรงๆ (พฤติกรรมเดิม) — ยังจับได้เหมือนเดิม", () => {
+    const a = {
+      id: "a", bed_id: "b1", bed_id_2: null,
+      start_time: "10:00", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    const b = {
+      id: "b", bed_id: "b1", bed_id_2: null,
+      start_time: "10:30", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    expect(hasBedClash(a, [a, b])).toBe(true)
+  })
+
+  it("ยกเลิกแล้วไม่นับว่าครองเตียง", () => {
+    const a = {
+      id: "a", bed_id: "b1", bed_id_2: null,
+      start_time: "10:00", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    const cancelled = {
+      id: "b", bed_id: "b1", bed_id_2: null,
+      start_time: "10:30", duration_min: 60, status: "cancelled", started_at: null as string | null,
+    }
+    expect(hasBedClash(a, [a, cancelled])).toBe(false)
+  })
+
+  it("ไม่นับตัวเอง แม้จะอยู่ใน others", () => {
+    const a = {
+      id: "a", bed_id: "b1", bed_id_2: null,
+      start_time: "10:00", duration_min: 60, status: "waiting", started_at: null as string | null,
+    }
+    expect(hasBedClash(a, [a])).toBe(false)
   })
 })
 
