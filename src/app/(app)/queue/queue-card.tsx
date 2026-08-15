@@ -234,6 +234,7 @@ export function QueueCard({
   onChanged,
   therapists = [],
   beds = [],
+  services = [],
   allEntries = [],
 }: {
   entry: QueueEntry
@@ -264,6 +265,9 @@ export function QueueCard({
   /** รายชื่อหมอ/เตียง/คิวทั้งวัน — ใช้เฉพาะกล่องย้ายเตียง-เปลี่ยนหมอของการ์ดที่จ่ายแล้ว */
   therapists?: { id: string; name: string }[]
   beds?: Bed[]
+  /** เมนู — ใช้เช็ค splits_room ว่ากล่องย้ายเตียงต้องโชว์ช่องห้องที่สองไหม (การ์ดจ่ายแล้ว
+   * ที่ยังไม่เคยมีห้องที่สองก็ต้องเลือกได้ ไม่ใช่รอให้มีค่าอยู่ก่อนถึงจะโชว์ช่อง) */
+  services?: { id: string; splits_room: boolean }[]
   allEntries?: QueueEntry[]
 }) {
   const [open, setOpen] = useState(false)
@@ -688,6 +692,7 @@ export function QueueCard({
           entry={entry}
           therapists={therapists}
           beds={beds}
+          services={services}
           allEntries={allEntries}
           nowMin={nowMin}
           pending={pending}
@@ -736,6 +741,7 @@ function MoveCardDialog({
   entry,
   therapists,
   beds,
+  services,
   allEntries,
   nowMin,
   pending,
@@ -745,6 +751,7 @@ function MoveCardDialog({
   entry: QueueEntry
   therapists: { id: string; name: string }[]
   beds: Bed[]
+  services: { id: string; splits_room: boolean }[]
   allEntries: QueueEntry[]
   /** นาทีปัจจุบัน — เช็คว่างเฉพาะช่วงที่เหลือของการนวด (ส่วนที่ผ่านแล้วไม่ต้องว่าง) */
   nowMin: number
@@ -759,7 +766,7 @@ function MoveCardDialog({
 }) {
   const [therapistId, setTherapistId] = useState(entry.therapist_id ?? "")
   const [bedId, setBedId] = useState(entry.bed_id ?? "")
-  // ห้องช่วงครึ่งหลัง — ขึ้นเฉพาะการ์ดที่ตอนจ่ายเงินแยกห้องไว้แล้ว (bed_id_2 มีค่า)
+  // ห้องช่วงครึ่งหลัง — ค่าตั้งต้นมาจากการ์ดที่เคยแยกห้องไว้แล้ว (ถ้ามี) แก้ในกล่องนี้ได้อิสระ
   const [bedId2, setBedId2] = useState(entry.bed_id_2 ?? "")
   const [isRequest, setIsRequest] = useState(Boolean(entry.is_request))
 
@@ -774,13 +781,26 @@ function MoveCardDialog({
   // ห้องแรก/ห้องที่สองแยกช่วงเช็คว่างกันคนละช่วง — สูตรเดียวกับทุกจุด (bedSegments)
   // ไม่หารครึ่งเวลาเอง: ช่องแรกเทียบกับ "ช่วงครึ่งแรกที่ยังเหลือ" ช่องที่สองเทียบกับ
   // "ช่วงครึ่งหลังที่ยังเหลือ" (การ์ดที่ไม่แยกห้องได้ช่วงเดียวยาวเต็มเหมือนเดิมทุกประการ)
-  // เหลือช่วงเวลาของ segment นี้เท่าไร นับจาก "ตอนนี้" (ส่วนที่ผ่านไปแล้วไม่ต้องว่าง)
+  //
+  // ต้องคำนวณจากค่าที่ "กำลังเลือกอยู่ในกล่องนี้" (bedId/bedId2 state) ไม่ใช่จาก entry ที่บันทึกไว้
+  // — เคลียร์ห้องที่สองในกล่องนี้แล้วช่องแรกยังเช็คแค่ครึ่งแรกทั้งที่ server (movePaidCard) จะเช็ค
+  // ครึ่งโปรแกรมที่เหลือทั้งหมด (ไม่มีห้องที่สองแล้ว) — เตียงที่จอเสนอให้เลือกจะโดน server ปฏิเสธ
+  // (bed_id ใส่ตัวคั่นเพื่อบังคับให้ bedSegments คำนวณได้เสมอแม้ยังไม่เลือกเตียง เหมือน queue-form-dialog)
   const remainingWindowOf = (seg: { startMin: number; durationMin: number }) => {
     const start = Math.max(seg.startMin, nowMin)
     return { start, duration: seg.startMin + seg.durationMin - start }
   }
-  const segments = bedSegments(entry)
-  const showSecondBed = segments.length === 2
+  const segments = bedSegments({
+    bed_id: bedId || "_",
+    bed_id_2: bedId2 || null,
+    start_time: entry.start_time,
+    duration_min: entry.duration_min,
+    started_at: entry.started_at,
+  })
+  // โชว์ช่องห้องที่สองตามเมนูของการ์ดว่าย้ายห้องกลางคันไหม — ไม่ใช่ตามว่ามีห้องที่สองอยู่แล้ว
+  // หรือไม่ (สเปกต้องให้แก้ทีหลังได้แม้การ์ดจ่ายแล้วไม่เคยมีห้องที่สองมาก่อนเลย)
+  const service = services.find((s) => s.id === entry.service_id)
+  const showSecondBed = Boolean(service?.splits_room)
   const seg1 = segments[0] ?? { startMin, durationMin: entry.duration_min }
   const seg2 = segments[1] ?? null
   const win1 = remainingWindowOf(seg1)
@@ -884,8 +904,9 @@ function MoveCardDialog({
               onClick={() =>
                 onSave({
                   bedId: bedId || null,
-                  // ช่องนี้ซ่อนเมื่อการ์ดไม่ได้แยกห้อง — ค่าใน state ยังเป็นค่าเดิมจาก
-                  // entry.bed_id_2 เสมอ (ไม่มีใครแตะ) ส่งกลับไปเฉยๆ ไม่เผลอล้างทิ้ง
+                  // ช่องห้องที่สองโชว์ทุกครั้งที่เมนูของการ์ดย้ายห้องกลางคัน (showSecondBed) —
+                  // พนักงานแก้ได้อิสระ ทั้งใส่ห้องที่สองครั้งแรกและล้างว่างเพื่อยกเลิก ส่งค่า
+                  // ปัจจุบันใน state ตรงๆ · เมนูไม่แยกห้อง = ช่องไม่โชว์ = state ไม่เคยถูกแตะ
                   bedId2: bedId2 || null,
                   therapistId,
                   // checkbox โชว์เฉพาะตอนเปลี่ยนหมอ — ถ้าสุดท้ายเลือกหมอเดิมกลับมา
