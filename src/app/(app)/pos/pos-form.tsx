@@ -119,6 +119,10 @@ export function PosForm({
   dayEntries?: {
     id: string
     bed_id: string | null
+    /** ห้องช่วงครึ่งหลัง (การ์ดที่ย้ายห้องกลางคัน) — ขาดช่องนี้แล้วบิลจ่ายเงินจะมองว่าการ์ด
+     * ครองห้องเดียวทั้งโปรแกรม เตียงที่ย้ายออกไปแล้วจะขึ้น "ไม่ว่าง" ค้าง และห้องที่สองที่มี
+     * คนอยู่จริงจะขึ้น "ว่าง" ผิด — busyBedIds ต้องเห็นครบทั้งสองห้องถึงจะตอบถูก */
+    bed_id_2: string | null
     start_time: string
     duration_min: number
     status: string
