@@ -54,6 +54,7 @@ type QueueLike = {
 
 type BedLike = {
   bed_id: string | null
+  bed_id_2?: string | null
   start_time: string
   duration_min: number
   status: string
@@ -142,22 +143,27 @@ export function busyTherapistIds(
   )
 }
 
-/** เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้น "ไม่ว่าง" */
+/**
+ * เตียงที่มีคิว (ไม่นับยกเลิก) คร่อมช่วงเวลานี้ — ใช้ทำปุ่มเตียงขึ้น "ไม่ว่าง"
+ *
+ * ไล่เป็นช่วง ๆ ผ่าน bedSegments เพราะการ์ดที่ย้ายห้องกลางคันยึดสองห้องคนละช่วงเวลา
+ * การ์ดห้องเดียวได้ช่วงเดียวยาวเต็มโปรแกรม ผลจึงเท่าเดิมทุกประการ
+ */
 export function busyBedIds(
   entries: BedLike[],
   startMin: number,
   durationMin: number
 ): Set<string> {
-  return new Set(
-    entries
-      .filter(
-        (e) =>
-          e.bed_id !== null &&
-          e.status !== "cancelled" &&
-          overlaps(bedStartMin(e), e.duration_min, startMin, durationMin)
-      )
-      .map((e) => e.bed_id as string)
-  )
+  const busy = new Set<string>()
+  for (const e of entries) {
+    if (e.status === "cancelled") continue
+    for (const seg of bedSegments(e)) {
+      if (overlaps(seg.startMin, seg.durationMin, startMin, durationMin)) {
+        busy.add(seg.bedId)
+      }
+    }
+  }
+  return busy
 }
 
 /** เวลาเริ่ม·ระยะเวลาของแต่ละรายการในคิวกลุ่ม

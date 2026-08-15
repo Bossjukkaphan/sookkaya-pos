@@ -101,6 +101,25 @@ describe("busyBedIds", () => {
   })
 })
 
+describe("busyBedIds — การ์ดที่ย้ายห้องกลางคัน", () => {
+  const moved = [
+    {
+      bed_id: "chair3", bed_id_2: "thai2",
+      start_time: "13:55", duration_min: 120, status: "paid",
+    },
+  ]
+
+  it("เก้าอี้ว่างหลังลูกค้าย้ายออก แต่เตียงไทยไม่ว่าง", () => {
+    // 15:00–16:30 (900, 90 นาที): เก้าอี้ว่างแล้ว (ออกตอน 14:55) เตียงไทยยังอยู่ถึง 15:55
+    expect(busyBedIds(moved, 900, 90)).toEqual(new Set(["thai2"]))
+  })
+
+  it("ช่วงครึ่งแรกยังติดเก้าอี้ ยังไม่ติดเตียงไทย", () => {
+    // 14:00–14:30 (840, 30 นาที)
+    expect(busyBedIds(moved, 840, 30)).toEqual(new Set(["chair3"]))
+  })
+})
+
 describe("bedStartMin", () => {
   it("ยังไม่เริ่ม = เวลาจอง · เริ่มแล้ว = เวลาเริ่มจริง (เวลาไทย)", () => {
     expect(bedStartMin({ start_time: "14:00", started_at: null })).toBe(840)
