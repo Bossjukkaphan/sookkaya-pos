@@ -14,6 +14,7 @@ import {
 import {
   CARD_H,
   PX_PER_MIN,
+  bedSegments,
   bedStartMin,
   clampStart,
   minToX,
@@ -271,6 +272,11 @@ export function QueueCard({
   const [moveOpen, setMoveOpen] = useState(false)
   const [pending, startTransition] = useTransition()
 
+  // ห้องช่วงครึ่งหลัง (ถ้าการ์ดนี้ย้ายห้องกลางคัน) — ใช้ทำป้าย "ห้องแรก → ห้องที่สอง" บนการ์ด
+  const bed2 = entry.bed_id_2
+    ? (beds.find((b) => b.id === entry.bed_id_2) ?? null)
+    : null
+
   const startMin = timeToMin(entry.start_time)
   // เวลานวดจริง (นาทีในวัน) — มีเมื่อกดเริ่มนวดแล้ว · จบจริง = เริ่มจริง + นาทีโปรแกรม
   const actualStartMin = entry.started_at ? timeToMin(bkkTime(entry.started_at)) : null
@@ -412,7 +418,14 @@ export function QueueCard({
           {warnNoStart && " · ⚠️ไม่มีเวลาเริ่ม"}
         </p>
         <p className="truncate leading-tight text-slate-500">
-          📍 {bed ? `${bed.room} (${bed.name})` : "ยังไม่ระบุเตียง"}
+          {/* การ์ดที่ย้ายห้องกลางคัน (bed_id_2 ต่างจาก bed_id) โชว์ "ห้องแรก → ห้องที่สอง"
+              ให้เห็นจากกระดานได้เลย ไม่ต้องเปิดการ์ด · ห้องเดียวตลอด/ไม่มีห้องที่สองแสดงเหมือนเดิม */}
+          📍{" "}
+          {bed
+            ? bed2 && bed2.id !== bed.id
+              ? `${bed.room} (${bed.name}) → ${bed2.room} (${bed2.name})`
+              : `${bed.room} (${bed.name})`
+            : "ยังไม่ระบุเตียง"}
           {bedConflict && " ⚠️ซ้อน"}
           {entry.private_room && " · ห้องสปา"}
         </p>
@@ -737,10 +750,17 @@ function MoveCardDialog({
   nowMin: number
   pending: boolean
   onClose: () => void
-  onSave: (v: { bedId: string | null; therapistId: string; isRequest: boolean }) => void
+  onSave: (v: {
+    bedId: string | null
+    bedId2: string | null
+    therapistId: string
+    isRequest: boolean
+  }) => void
 }) {
   const [therapistId, setTherapistId] = useState(entry.therapist_id ?? "")
   const [bedId, setBedId] = useState(entry.bed_id ?? "")
+  // ห้องช่วงครึ่งหลัง — ขึ้นเฉพาะการ์ดที่ตอนจ่ายเงินแยกห้องไว้แล้ว (bed_id_2 มีค่า)
+  const [bedId2, setBedId2] = useState(entry.bed_id_2 ?? "")
   const [isRequest, setIsRequest] = useState(Boolean(entry.is_request))
 
   // เช็คว่างเฉพาะ "ช่วงที่เหลือ" ของการนวดนี้ — ปลายทางที่เพิ่งว่างหลังคิวก่อนจบ
@@ -750,7 +770,24 @@ function MoveCardDialog({
   const remainMin = startMin + entry.duration_min - checkStart
   const others = allEntries.filter((e) => e.id !== entry.id)
   const busyT = busyTherapistIds(others, checkStart, remainMin)
-  const busyB = busyBedIds(others, checkStart, remainMin)
+
+  // ห้องแรก/ห้องที่สองแยกช่วงเช็คว่างกันคนละช่วง — สูตรเดียวกับทุกจุด (bedSegments)
+  // ไม่หารครึ่งเวลาเอง: ช่องแรกเทียบกับ "ช่วงครึ่งแรกที่ยังเหลือ" ช่องที่สองเทียบกับ
+  // "ช่วงครึ่งหลังที่ยังเหลือ" (การ์ดที่ไม่แยกห้องได้ช่วงเดียวยาวเต็มเหมือนเดิมทุกประการ)
+  // เหลือช่วงเวลาของ segment นี้เท่าไร นับจาก "ตอนนี้" (ส่วนที่ผ่านไปแล้วไม่ต้องว่าง)
+  const remainingWindowOf = (seg: { startMin: number; durationMin: number }) => {
+    const start = Math.max(seg.startMin, nowMin)
+    return { start, duration: seg.startMin + seg.durationMin - start }
+  }
+  const segments = bedSegments(entry)
+  const showSecondBed = segments.length === 2
+  const seg1 = segments[0] ?? { startMin, durationMin: entry.duration_min }
+  const seg2 = segments[1] ?? null
+  const win1 = remainingWindowOf(seg1)
+  const busyB = busyBedIds(others, win1.start, win1.duration)
+  const win2 = seg2 ? remainingWindowOf(seg2) : null
+  const busyB2 = win2 ? busyBedIds(others, win2.start, win2.duration) : new Set<string>()
+
   const therapistChanged = therapistId !== (entry.therapist_id ?? "")
 
   return (
@@ -802,6 +839,29 @@ function MoveCardDialog({
               ))}
             </select>
           </div>
+          {showSecondBed && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">ห้องช่วงครึ่งหลัง</p>
+              <select
+                value={bedId2}
+                onChange={(e) => setBedId2(e.target.value)}
+                className="h-11 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none"
+                aria-label="เลือกห้องช่วงครึ่งหลังใหม่"
+              >
+                <option value="">— ไม่ระบุเตียง —</option>
+                {beds.map((b) => (
+                  <option
+                    key={b.id}
+                    value={b.id}
+                    disabled={b.id !== entry.bed_id_2 && busyB2.has(b.id)}
+                  >
+                    {b.room} · {b.name}
+                    {b.id !== entry.bed_id_2 && busyB2.has(b.id) ? " (ไม่ว่าง)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {therapistChanged && (
             <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700">
               <input
@@ -824,6 +884,9 @@ function MoveCardDialog({
               onClick={() =>
                 onSave({
                   bedId: bedId || null,
+                  // ช่องนี้ซ่อนเมื่อการ์ดไม่ได้แยกห้อง — ค่าใน state ยังเป็นค่าเดิมจาก
+                  // entry.bed_id_2 เสมอ (ไม่มีใครแตะ) ส่งกลับไปเฉยๆ ไม่เผลอล้างทิ้ง
+                  bedId2: bedId2 || null,
                   therapistId,
                   // checkbox โชว์เฉพาะตอนเปลี่ยนหมอ — ถ้าสุดท้ายเลือกหมอเดิมกลับมา
                   // ค่าที่ติ๊กไว้ตอน checkbox โผล่ห้ามติดไป (รีเควสเดิมของบิลต้องคงอยู่)

@@ -27,7 +27,13 @@ import { Button } from "@/components/ui/button"
 
 export type QueueEntry = Tables<"queue_entries">
 export type Therapist = { id: string; name: string }
-export type ServiceOption = { id: string; name: string; duration_min: number | null }
+export type ServiceOption = {
+  id: string
+  name: string
+  duration_min: number | null
+  /** เมนูนี้ย้ายห้องกลางคันเป็นค่าตั้งต้นไหม — ฟอร์มคิวใช้ตัดสินว่าจะโชว์ช่องเลือกห้องที่สอง */
+  splits_room: boolean
+}
 // Bed/shortBedName ย้ายไป @/lib/beds — ไฟล์นี้เป็น "use client" ห้ามมี util
 // ที่ฝั่ง server ต้องเรียก (หน้าประวัติบิลเคยพังเพราะ import จากที่นี่)
 import type { Bed } from "@/lib/beds"

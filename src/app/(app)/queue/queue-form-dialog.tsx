@@ -13,6 +13,7 @@ import {
   type CustomerSource,
 } from "@/lib/customer-source"
 import {
+  bedSegments,
   busyBedIds,
   busyTherapistIds,
   groupSlotTimes,
@@ -111,6 +112,8 @@ export function QueueFormDialog({
       : ""
   )
   const [bedId, setBedId] = useState(entry?.bed_id ?? "")
+  // ห้องช่วงครึ่งหลัง — ขึ้นเฉพาะเมนูที่ย้ายห้องกลางคัน · ว่างได้ = อยู่ห้องเดียวตลอด
+  const [bedId2, setBedId2] = useState(entry?.bed_id_2 ?? "")
   const [notes, setNotes] = useState(entry?.notes ?? "")
   const [customerId, setCustomerId] = useState(entry?.customer_id ?? "")
   const [customerName, setCustomerName] = useState(entry?.customer_name ?? "")
@@ -136,6 +139,8 @@ export function QueueFormDialog({
   // โหมดแก้ไข: ไม่นับคิวใบที่กำลังแก้ ไม่งั้นเตียง/หมอของตัวเองขึ้น "ไม่ว่าง"
   const otherEntries = entries.filter((en) => en.id !== entry?.id)
   const rooms = [...new Set(beds.map((b) => b.room))]
+  // เมนูที่เลือกอยู่ตอนนี้ — ใช้เช็ค splits_room ว่าจะโชว์ช่องห้องที่สองไหม
+  const selectedService = services.find((s) => s.id === serviceId)
   // เวลาของทุกรายการในกลุ่ม คิดด้วยกติกาเดียวกับ server เป๊ะ (ดู groupSlotTimes)
   // ดัชนี 0 = คนแรก (ช่องหลักด้านบน) · 1 เป็นต้นไป = extraPeople ตามลำดับ
   const slots = groupSlotTimes(
@@ -153,6 +158,22 @@ export function QueueFormDialog({
   const bedOf = (i: number) => (i === 0 ? bedId || null : extraPeople[i - 1].bedId)
   const therapistOf = (i: number) =>
     i === 0 ? therapistId || null : extraPeople[i - 1].therapistId
+
+  // ช่วงเวลาที่ห้องแรก/ห้องที่สองของคนแรก (ช่องหลักด้านบน) ถูกยึด — สูตรเดียวกับทุกจุด
+  // (bed_id/bed_id_2 ใส่ตัวคั่นที่ไม่ใช่ค่าว่างเพื่อบังคับให้ได้ครบสองช่วงตอนเมนูย้ายห้อง
+  // ค่าเตียงจริงที่ใช้เช็คว่างมาจาก state bedId/bedId2 ด้านล่าง ไม่ใช่ตัวคั่นนี้)
+  const bedFormSegments = bedSegments({
+    bed_id: bedId || "_",
+    bed_id_2: selectedService?.splits_room ? bedId2 || "_" : null,
+    start_time: minToTime(mainSlot.startMin),
+    duration_min: mainSlot.durationMin,
+    started_at: null,
+  })
+  const firstHalfSeg = bedFormSegments[0]
+  const secondHalfSeg = bedFormSegments[1] ?? null
+  const secondHalfLabel = secondHalfSeg
+    ? `${minToTime(secondHalfSeg.startMin)}–${minToTime(secondHalfSeg.startMin + secondHalfSeg.durationMin)} น.`
+    : ""
 
   /** เตียง/หมอที่คนอื่นในกลุ่มจองไว้คร่อมเวลาของรายการที่ i → หมายเลขคนที่จอง (นับจาก 1)
    *  server ก็กันซ้ำในกลุ่มอีกชั้น (createQueueGroup) — ตรงนี้กันไม่ให้พนักงานเสียเที่ยว */
@@ -240,6 +261,7 @@ export function QueueFormDialog({
           <input type="hidden" name="source" value={source} />
           <input type="hidden" name="booking_channel" value={bookingChannel} />
           <input type="hidden" name="bed_id" value={bedId} />
+          <input type="hidden" name="bed_id_2" value={bedId2} />
           <input type="hidden" name="client_key" value={clientKey} />
 
           <fieldset className="space-y-2">
@@ -382,10 +404,12 @@ export function QueueFormDialog({
               เตียง <span className="font-normal text-slate-500">(ไม่บังคับ)</span>
             </legend>
             {(() => {
+              // เมนูย้ายห้องกลางคัน: เช็คว่างเฉพาะ "ช่วงครึ่งแรก" ไม่ใช่เต็มโปรแกรม
+              // (เมนูปกติ firstHalfSeg ยาวเท่า mainSlot อยู่แล้ว — พฤติกรรมเดิมเป๊ะ)
               const busy = busyBedIds(
                 otherEntries,
-                mainSlot.startMin,
-                mainSlot.durationMin
+                firstHalfSeg.startMin,
+                firstHalfSeg.durationMin
               )
               // เตียงที่คนอื่นในกลุ่ม (ที่ยังไม่ได้บันทึก) จองไว้ทับเวลาเดียวกัน
               const takenByOthers = takenInGroup(0, bedOf)
@@ -427,6 +451,67 @@ export function QueueFormDialog({
               ))
             })()}
           </fieldset>
+
+          {/* ห้องช่วงครึ่งหลัง — ขึ้นเฉพาะเมนูที่ตั้ง splits_room ไว้ (นวดเท้า→คอบ่าไหล่ ฯลฯ)
+              จุดแบ่งคือครึ่งหนึ่งของโปรแกรมเสมอ (bedSegments คำนวณให้ ไม่หารครึ่งเวลาเอง) */}
+          {selectedService?.splits_room && (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">
+                ห้องช่วงครึ่งหลัง · {secondHalfLabel}
+              </p>
+              {(() => {
+                const busy2 = secondHalfSeg
+                  ? busyBedIds(
+                      otherEntries,
+                      secondHalfSeg.startMin,
+                      secondHalfSeg.durationMin
+                    )
+                  : new Set<string>()
+                // เตียงที่คนอื่นในกลุ่ม (ที่ยังไม่ได้บันทึก) จองไว้ทับเวลาเดียวกัน
+                const takenByOthers = takenInGroup(0, bedOf)
+                return rooms.map((room) => (
+                  <div key={room}>
+                    <p className="text-xs text-slate-500">{room}</p>
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {beds
+                        .filter((b) => b.room === room)
+                        .map((b) => {
+                          const takenBy = takenByOthers.get(b.id)
+                          const unavailable =
+                            (busy2.has(b.id) || takenBy !== undefined) &&
+                            bedId2 !== b.id
+                          return (
+                            <Button
+                              key={b.id}
+                              type="button"
+                              size="sm"
+                              variant={bedId2 === b.id ? "default" : "outline"}
+                              className={
+                                unavailable ? "opacity-40 line-through" : ""
+                              }
+                              disabled={unavailable}
+                              onClick={() =>
+                                setBedId2(bedId2 === b.id ? "" : b.id)
+                              }
+                            >
+                              {b.name}
+                              {busy2.has(b.id)
+                                ? " · ไม่ว่าง"
+                                : takenBy !== undefined
+                                  ? ` · คนที่ ${takenBy} ใช้อยู่`
+                                  : ""}
+                            </Button>
+                          )
+                        })}
+                    </div>
+                  </div>
+                ))
+              })()}
+              <p className="text-xs text-slate-500">
+                เว้นว่าง = ลูกค้าอยู่ห้องเดิมตลอด (รีเควสนวดยาวไม่ย้ายห้อง)
+              </p>
+            </div>
+          )}
 
           {/* รีเควสหมอ — เก็บตั้งแต่ตอนจอง ระบบคิดค่ารีเควสตายตัวตอนเก็บเงิน */}
           <div className="flex items-center gap-3 rounded-lg border p-3">

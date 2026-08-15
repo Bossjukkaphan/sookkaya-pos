@@ -972,7 +972,13 @@ export async function rejectBooking(id: string, reason: string): Promise<Result>
  */
 export async function movePaidCard(
   id: string,
-  input: { bedId: string | null; therapistId: string; isRequest: boolean }
+  input: {
+    bedId: string | null
+    /** ห้องช่วงครึ่งหลัง — มีเฉพาะการ์ดที่แยกห้อง (ฟอร์มย้ายบิลจ่ายแล้วโชว์ช่องนี้เมื่อมี) */
+    bedId2: string | null
+    therapistId: string
+    isRequest: boolean
+  }
 ): Promise<Result> {
   if (!input.therapistId) return { ok: false, error: "เลือกหมอนวดก่อน" }
   const supabase = await createClient()
@@ -997,10 +1003,34 @@ export async function movePaidCard(
   const nowM = nh * 60 + nm
   const checkStart = Math.max(startMin, nowM)
   const remainMin = startMin + entry.duration_min - checkStart
-  // movePaidCard ยังไม่รองรับย้ายห้องที่สอง (ไม่มีช่องนี้ในฟอร์มย้ายบิลจ่ายแล้ว) — ส่ง null ไว้ก่อน
+
+  // ห้องช่วงครึ่งหลัง (ถ้ามี) เช็คว่างแยกช่วงจาก bedSegments เดียวกับทุกจุด — ไม่หารครึ่งเวลาเอง
+  // bed_id ที่ป้อนให้ bedSegments ตรงนี้ใช้แค่บังคับให้ตัดสองช่วงได้เมื่อ bedId2 มีค่า
+  // (ห้องจริงที่เช็คว่างคือ input.bedId/input.bedId2 ผ่าน bedConflictError ด้านล่าง)
+  const segments = bedSegments({
+    bed_id: input.bedId ?? "_",
+    bed_id_2: input.bedId2,
+    start_time: entry.start_time,
+    duration_min: entry.duration_min,
+    started_at: entry.started_at,
+  })
+  const seg1 = segments[0] ?? { startMin, durationMin: entry.duration_min }
+  const seg2 = segments[1] ?? null
+
+  const check1Start = Math.max(seg1.startMin, nowM)
+  const remain1 = seg1.startMin + seg1.durationMin - check1Start
   const bedErr = await bedConflictError(
-    supabase, input.bedId, null, entry.queue_date, checkStart, remainMin, [entry.id])
+    supabase, input.bedId, null, entry.queue_date, check1Start, remain1, [entry.id])
   if (bedErr) return { ok: false, error: bedErr }
+
+  if (seg2) {
+    const check2Start = Math.max(seg2.startMin, nowM)
+    const remain2 = seg2.startMin + seg2.durationMin - check2Start
+    const bedErr2 = await bedConflictError(
+      supabase, input.bedId2, null, entry.queue_date, check2Start, remain2, [entry.id])
+    if (bedErr2) return { ok: false, error: bedErr2 }
+  }
+
   const thErr = await therapistConflictError(
     supabase, input.therapistId, entry.queue_date, checkStart, remainMin, [entry.id])
   if (thErr) return { ok: false, error: thErr }
@@ -1040,6 +1070,8 @@ export async function movePaidCard(
   )
     return { ok: false, error: "ตัวเลขบิลไม่ตรงสูตรกลาง — แจ้งผู้ดูแลก่อนย้าย" }
 
+  // ตาราง sales มีแค่ bed_id ช่องเดียว (ห้องช่วงครึ่งหลังไม่ใช่ข้อมูลของบิล) —
+  // bed_id_2 เก็บที่ queue_entries อย่างเดียว เหมือนทุกทางเข้าอื่น (createQueueEntry ฯลฯ)
   const { error: saleErr } = await supabase
     .from("sales")
     .update({
@@ -1058,6 +1090,7 @@ export async function movePaidCard(
     .update({
       therapist_id: input.therapistId,
       bed_id: input.bedId,
+      bed_id_2: input.bedId2,
       is_request: input.isRequest,
       updated_at: new Date().toISOString(),
     })
