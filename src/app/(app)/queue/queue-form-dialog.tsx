@@ -160,11 +160,16 @@ export function QueueFormDialog({
     i === 0 ? therapistId || null : extraPeople[i - 1].therapistId
 
   // ช่วงเวลาที่ห้องแรก/ห้องที่สองของคนแรก (ช่องหลักด้านบน) ถูกยึด — สูตรเดียวกับทุกจุด
-  // (bed_id/bed_id_2 ใส่ตัวคั่นที่ไม่ใช่ค่าว่างเพื่อบังคับให้ได้ครบสองช่วงตอนเมนูย้ายห้อง
-  // ค่าเตียงจริงที่ใช้เช็คว่างมาจาก state bedId/bedId2 ด้านล่าง ไม่ใช่ตัวคั่นนี้)
+  // (bed_id ใส่ตัวคั่นที่ไม่ใช่ค่าว่างเพื่อบังคับให้ bedSegments คำนวณให้เสมอแม้ยังไม่เลือกเตียง
+  // ค่าเตียงจริงที่ใช้เช็คว่างมาจาก state bedId/bedId2 ด้านล่าง ไม่ใช่ตัวคั่นนี้ —
+  // แต่ bed_id_2 ห้ามใส่ตัวคั่น ต้องส่งค่าจริง (null เมื่อยังไม่เลือกห้องที่สอง) เพราะค่าว่าง
+  // = ลูกค้าอยู่ห้องเดิมตลอด (ค่าเริ่มต้นของเมนูย้ายห้อง) ถ้าใส่ตัวคั่นแทน null ตรงนี้
+  // bedSegments จะตัดครึ่งให้เสมอ ทำให้ "ช่องแรก" เช็คว่างแค่ครึ่งแรกทั้งที่ยังไม่มีห้องที่สอง
+  // จริง — เตียงที่ไม่ว่างเฉพาะครึ่งหลังจะโชว์ว่างผิด ๆ (server ปฏิเสธตอน submit แต่พนักงาน
+  // ต้องเลือกใหม่ซ้ำไปซ้ำมา)
   const bedFormSegments = bedSegments({
     bed_id: bedId || "_",
-    bed_id_2: selectedService?.splits_room ? bedId2 || "_" : null,
+    bed_id_2: bedId2 || null,
     start_time: minToTime(mainSlot.startMin),
     duration_min: mainSlot.durationMin,
     started_at: null,
