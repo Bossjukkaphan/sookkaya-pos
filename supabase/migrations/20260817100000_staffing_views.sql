@@ -107,8 +107,10 @@ select
     filter (where day_class in ('fri', 'weekend')))         as fri_sun_revenue_per_therapist,
   sum(turn_away_count)                                      as turn_away_total,
   sum(therapists_checked_in)                                as therapist_days,
-  sum(guarantee_shortfall_count)                            as guarantee_shortfall_total,
-  round(100.0 * sum(guarantee_shortfall_count)
+  -- ร้านไม่จ่ายการันตีวันที่หมอไม่มีคิวเลย (กติกาใน v_therapist_daily) แต่สำหรับสัญญาณจ้างเกิน
+  -- วันศูนย์บิลคือเคสหนักสุด ต้องนับ · วันข้อมูลประมาณ idle เป็น 0 โครงสร้างอยู่แล้ว จึงไม่ปนเปื้อน
+  sum(guarantee_shortfall_count + idle_therapists)          as guarantee_shortfall_total,
+  round(100.0 * sum(guarantee_shortfall_count + idle_therapists)
     / nullif(sum(therapists_checked_in), 0), 1)             as guarantee_shortfall_pct,
   count(*) filter (where is_estimated)                      as estimated_days
 from public.v_staffing_daily
