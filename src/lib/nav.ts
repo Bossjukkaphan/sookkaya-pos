@@ -170,6 +170,13 @@ export const NAV_SECTIONS: { title: string; links: NavLink[] }[] = [
         description: "โปรฯ ไหนคุ้ม โปรฯ ไหนแค่แจกส่วนลด",
         minRole: "manager",
       },
+      {
+        href: "/insights/staffing",
+        label: "จัดกำลังหมอ",
+        icon: Users,
+        description: "แต่ละวันควรจัดหมอกี่คน และถึงเวลาจ้างเพิ่มหรือยัง",
+        minRole: "manager",
+      },
     ],
   },
   {
