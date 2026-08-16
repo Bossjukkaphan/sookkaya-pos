@@ -80,7 +80,7 @@ select
   att.is_estimated,
   coalesce(sal.bills, 0)                                    as bills,
   coalesce(sal.revenue, 0)                                  as revenue,
-  round(sal.revenue / nullif(att.therapists_checked_in, 0)) as revenue_per_therapist,
+  round(coalesce(sal.revenue, 0) / nullif(att.therapists_checked_in, 0)) as revenue_per_therapist,
   coalesce(shortfall.guarantee_shortfall_count, 0)          as guarantee_shortfall_count,
   coalesce(idle.idle_therapists, 0)                         as idle_therapists,
   coalesce(ta.turn_away_count, 0)                           as turn_away_count,
