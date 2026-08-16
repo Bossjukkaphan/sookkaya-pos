@@ -5,8 +5,19 @@ import {
   dayClass,
   hireVerdict,
   recommendedTherapists,
+  thaiMonthLabel,
   type StaffingDayRow,
 } from "./staffing"
+
+describe("thaiMonthLabel — ป้ายเดือนไทยแบบเต็ม + พ.ศ.", () => {
+  it("แปลง YYYY-MM เป็นชื่อเดือนเต็มภาษาไทย + ปี พ.ศ.", () => {
+    expect(thaiMonthLabel("2026-08")).toBe("สิงหาคม 2569")
+  })
+  it("เดือนมกราคมและธันวาคม (ขอบสองด้านของตาราง)", () => {
+    expect(thaiMonthLabel("2026-01")).toBe("มกราคม 2569")
+    expect(thaiMonthLabel("2026-12")).toBe("ธันวาคม 2569")
+  })
+})
 
 describe("dayClass — จำแนกประเภทวันจากวันที่", () => {
   it("จันทร์ถึงพฤหัสเป็น mon_thu", () => {

@@ -7,6 +7,17 @@
  * ร้านโตแล้วเกณฑ์เก่าไม่เหมาะ — แก้ที่ค่าคงที่นี้ที่เดียว
  */
 
+const THAI_MONTHS_FULL = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+] as const
+
+/** "2026-08" → "สิงหาคม 2569" (พ.ศ.) — ใช้บอกว่าเดือนที่การ์ดเกณฑ์กำลังแสดงคือเดือนไหน */
+export function thaiMonthLabel(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split("-").map(Number)
+  return `${THAI_MONTHS_FULL[m - 1]} ${y + 543}`
+}
+
 export type DayClass = "mon_thu" | "fri" | "weekend"
 
 export const DAY_CLASS_LABEL: Record<DayClass, string> = {
