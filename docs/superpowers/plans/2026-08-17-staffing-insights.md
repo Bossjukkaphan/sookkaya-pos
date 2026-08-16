@@ -26,7 +26,7 @@
    */
   ```
 - คอมเมนต์และข้อความหน้าจอเป็นภาษาไทย · ชื่อตัวแปรภาษาอังกฤษ
-- ฟีเจอร์นี้**ไม่แตะเงิน** — ห้ามแก้ตาราง/ค่าใด ๆ ตรวจรับด้วย `reconciliation.sql` 38/38 PASS (`bed_double_booked` expected = 1) และยอด `v_daily_summary` ช่วง 1-16 ส.ค. ต้องเท่าเดิมเป๊ะ
+- ฟีเจอร์นี้**ไม่แตะเงิน** — ห้ามแก้ตาราง/ค่าใด ๆ ตรวจรับด้วย `reconciliation.sql` 38/38 PASS ด้วย known exception ถาวรสองตัว: `bed_double_booked` expected = 1 (คู่ 9 ส.ค. 2569 ก่อนมีคอลัมน์ `bed_id_2`) และ `therapist_double_booked` expected = 1 (คู่ 26 ก.ค. 2569 หมอโมเมกดปุ่มเริ่มผิดใบ) — ค่าเกิน 1 ของข้อไหนก็ตาม = มีคู่ใหม่ต้องสืบ และยอด `v_daily_summary` ช่วง 1-16 ส.ค. ต้องเท่าเดิมเป๊ะ
 - ขึ้น production: push main แล้ว `vercel deploy --prod --yes` เอง + เช็ค alias ว่าชี้ build ใหม่
 
 ## แผนผังไฟล์
@@ -844,7 +844,9 @@ Expected: เทสต์ผ่านทั้งหมด (ของเดิ�
 - [ ] **Step 2: reconciliation ต้องไม่ขยับ**
 
 รัน `supabase/reconciliation.sql` ทั้งไฟล์ผ่าน `execute_sql`
-Expected: **38/38 PASS** (`bed_double_booked` = 1 ตาม expected)
+Expected: **38/38 PASS** ด้วย known exception ถาวรสองตัวตาม expected: `bed_double_booked` = 1
+(คู่ 9 ส.ค. 2569 คอลัมน์ `bed_id_2` ยังไม่มีตอนนั้น) และ `therapist_double_booked` = 1
+(คู่ 26 ก.ค. 2569 หมอโมเมกดปุ่มเริ่มผิดใบ) — ค่าเกิน 1 ของข้อไหนก็ตาม = มีคู่ใหม่ต้องสืบ
 
 - [ ] **Step 3: เงินต้องไม่ขยับ**
 

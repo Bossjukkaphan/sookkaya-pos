@@ -67,7 +67,10 @@ Boss ต้องการให้การวิเคราะห์นี้
   `supabase/migrations/` เสมอ
 - คอมเมนต์และข้อความหน้าจอเป็นภาษาไทย · ชื่อตัวแปรภาษาอังกฤษ
 - ฟีเจอร์นี้ไม่แตะเงิน — หลังเสร็จรัน `supabase/reconciliation.sql` ต้องผ่าน 38/38
-  (`bed_double_booked` expected = 1) และยอด `v_daily_summary` ต้องไม่ขยับ
+  ด้วย known exception ถาวรสองตัว: `bed_double_booked` = 1 (คู่ 9 ส.ค. 2569 เกิดก่อนคอลัมน์
+  `bed_id_2` มีอยู่จริง) และ `therapist_double_booked` = 1 (คู่ 26 ก.ค. 2569 หมอโมเมกดปุ่มเริ่ม
+  ผิดใบ) — ค่าเกิน 1 ของข้อไหนก็ตามคือมีคู่ใหม่ต้องสืบ ไม่ใช่ 0 ทั้งคู่ และยอด `v_daily_summary`
+  ต้องไม่ขยับ
 - ขึ้น production: push main แล้ว `vercel deploy --prod` เอง + เช็ค alias
 
 ## ส่วนที่ 1 — ข้อมูล
