@@ -1695,6 +1695,37 @@ export type Database = {
         }
         Relationships: []
       }
+      v_staffing_daily: {
+        Row: {
+          bills: number | null
+          day_class: string | null
+          guarantee_shortfall_count: number | null
+          idle_therapists: number | null
+          is_estimated: boolean | null
+          peak_concurrent_therapists: number | null
+          revenue: number | null
+          revenue_per_therapist: number | null
+          therapists_checked_in: number | null
+          turn_away_count: number | null
+          work_date: string | null
+        }
+        Relationships: []
+      }
+      v_staffing_monthly: {
+        Row: {
+          estimated_days: number | null
+          fri_sun_revenue_per_therapist: number | null
+          guarantee_shortfall_pct: number | null
+          guarantee_shortfall_total: number | null
+          month: string | null
+          therapist_days: number | null
+          turn_away_total: number | null
+          weekend_days: number | null
+          weekend_full_days: number | null
+          weekend_full_pct: number | null
+        }
+        Relationships: []
+      }
       v_therapist_daily: {
         Row: {
           guarantee_amount: number | null
