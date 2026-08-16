@@ -3,6 +3,7 @@ import { getMyProfile } from "@/lib/auth"
 import { InsightsAccessDenied, canSeeInsights } from "../shared"
 import {
   DAY_CLASS_LABEL, STAFFING, criterionStatus, hireVerdict, recommendedTherapists,
+  thaiMonthLabel,
   type CriterionStatus, type DayClass, type StaffingDayRow,
 } from "@/lib/staffing"
 import { formatBaht } from "@/lib/constants"
@@ -63,10 +64,13 @@ export default async function StaffingPage() {
   const monthly = monthlyRes.data ?? []
 
   // ---------- ส่วนบน: จัดกี่คนต่อประเภทวัน ----------
+  // ก่อน 27 ก.ค. 2569 peak_concurrent_therapists เป็น 0 เทียมเสมอ (queue_entries ยังไม่มี
+  // ข้อมูล) — ถ้าปนแถวเหล่านี้เข้าไป การ์ดแนะนำจะอ่าน "หมอไม่เคยเต็ม" ทั้งที่จริงไม่มีข้อมูลวัด
+  // เลย จึงกรองเหลือเฉพาะแถวเช็คอินจริง (is_estimated = false) ก่อนคำนวณ
   const classes: DayClass[] = ["mon_thu", "fri", "weekend"]
   const recs = classes.map((c) => ({
     dayClass: c,
-    rec: recommendedTherapists(daily.filter((r) => r.day_class === c)),
+    rec: recommendedTherapists(daily.filter((r) => r.day_class === c && !r.is_estimated)),
   }))
 
   // ---------- ส่วนล่าง: เกณฑ์ 4 ข้อจากเดือนล่าสุด + sparkline 6 เดือน ----------
@@ -128,6 +132,9 @@ export default async function StaffingPage() {
     }
   })
   const { verdict } = hireVerdict(allPassByMonth)
+  // เดือนล่าสุดอาจเป็นเดือนที่ยังไม่จบ (เช่นวันนี้ 1 ก.ย. → weekend/fri aggregate เป็น NULL
+  // แล้วตกเป็น 0 ทำให้เกณฑ์ดูเหมือนไม่ผ่านทั้งที่แค่ข้อมูลยังไม่ครบเดือน) ต้องบอกตรง ๆ บนจอ
+  const isPartialMonth = newest?.month === today.slice(0, 7)
 
   return (
     <div className="space-y-4">
@@ -149,7 +156,9 @@ export default async function StaffingPage() {
 
       <section className="space-y-2">
         <h2 className="font-semibold">สัปดาห์นี้จัดกี่คนดี</h2>
-        <p className="text-xs text-slate-500">จากข้อมูล 8 สัปดาห์ล่าสุด</p>
+        <p className="text-xs text-slate-500">
+          จากข้อมูลเช็คอินจริง ตั้งแต่ 27 ก.ค. 2569 · หน้าต่าง 8 สัปดาห์
+        </p>
         <div className="grid gap-3 sm:grid-cols-3">
           {recs.map(({ dayClass: c, rec }) => (
             <Card key={c}>
@@ -190,14 +199,22 @@ export default async function StaffingPage() {
         <h2 className="font-semibold">ถึงเวลาจ้างคนที่ 8 หรือยัง</h2>
         <Card>
           <CardHeader className="pb-2">
+            {newest?.month && (
+              <p className="text-xs text-slate-500">เดือน {thaiMonthLabel(newest.month)}</p>
+            )}
             <CardTitle className="text-base">
-              ผ่าน {passCount} จาก 4 เกณฑ์ —{" "}
+              ผ่าน {passCount} จาก {criteria.length} เกณฑ์ —{" "}
               {verdict === "ready" ? (
                 <span className="text-emerald-700">ถึงเวลาพิจารณา (ผ่านครบ 2 เดือนติด)</span>
               ) : (
                 <span className="text-slate-600">ยังไม่ถึงเวลา</span>
               )}
             </CardTitle>
+            {isPartialMonth && (
+              <p className="pt-1 text-xs text-amber-700">
+                ข้อมูลถึงวันนี้ — เดือนยังไม่จบ เกณฑ์อาจยังไม่ผ่านชั่วคราว
+              </p>
+            )}
           </CardHeader>
           <CardContent>
             <table className="w-full text-sm">
