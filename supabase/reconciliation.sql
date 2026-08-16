@@ -146,7 +146,7 @@ with expected(check_name, expected_value) as (values
   -- แถวนี้ถูกปิดตาไปตลอดกาล — การ์ดที่สร้างจากนี้ไปสามารถระบุ bed_id_2 ได้แล้ว
   -- ("ย้ายห้องกลางคัน" มีทางบันทึกจริงในระบบแล้ว) ข้อยกเว้นนี้จึงไม่ควรโตขึ้นอีก
   ('bed_double_booked', 1),
-  ('therapist_double_booked', 0),
+  ('therapist_double_booked', 1),
 
   -- บรรทัดชำระ (สเปก 2026-08-01): บรรทัดต้องมีบิลจริง · เกินรับต้องศูนย์เมื่อพัก · วิธีหลักตรงบรรทัด
   ('bill_payments_orphaned', 0),
@@ -354,6 +354,12 @@ actual(check_name, actual_value) as (
   ) bad
 
   union all
+  -- ใช้เวลาเริ่มจริงถ้ามี ไม่งั้นเวลาจอง — กติกาเดียวกับ bed_double_booked เพราะหน้างาน
+  -- เลื่อนคิวจริงได้ (เคส 16 ส.ค. 2569: จองทับกันแต่เริ่มจริงไม่ทับ)
+  --
+  -- ค่าคาดหวังเป็น 1 ถาวร — คู่ 26 ก.ค. 2569 หมอโมเม ใบ "ดิว" (จอง 13:10) ถูกกดปุ่มเริ่มผิดใบตอน 15:10
+  -- ห่างจากกดเริ่มใบ "Bee" แค่ 7 นาที ตามเวลาจองไม่ทับกันเลย · ห้ามแก้ started_at ย้อนหลัง
+  -- เพราะเท่ากับกุข้อมูล · **ถ้าขึ้นมากกว่า 1 = มีคู่ใหม่ที่ต้องสืบทันที**
   select 'therapist_double_booked', count(*)
   from public.queue_entries a
   join public.queue_entries b
@@ -361,9 +367,10 @@ actual(check_name, actual_value) as (
   where a.therapist_id is not null
     and a.status not in ('cancelled','rejected')
     and b.status not in ('cancelled','rejected')
-    and least(a.start_time + make_interval(mins => a.duration_min),
-              b.start_time + make_interval(mins => b.duration_min))
-      - greatest(a.start_time, b.start_time) > interval '20 min'
+    and least(coalesce((a.started_at at time zone 'Asia/Bangkok')::time, a.start_time) + make_interval(mins => a.duration_min),
+              coalesce((b.started_at at time zone 'Asia/Bangkok')::time, b.start_time) + make_interval(mins => b.duration_min))
+      - greatest(coalesce((a.started_at at time zone 'Asia/Bangkok')::time, a.start_time),
+                 coalesce((b.started_at at time zone 'Asia/Bangkok')::time, b.start_time)) > interval '20 min'
 
   union all
   select 'points_negative_customers', count(*)
