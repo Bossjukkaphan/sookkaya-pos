@@ -19,6 +19,7 @@ import { playNotifySound } from "@/lib/notify-sound"
 import { formatThaiDate } from "@/lib/datetime"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { PushSetup } from "@/components/push-setup"
 import type { Tables } from "@/types/database"
 import type { ExpenseReminder } from "@/lib/expense-reminders"
 
@@ -274,11 +275,6 @@ export function QueueNotificationsProvider({
 export function QueueBell() {
   const live = usePendingQueue()
   const [open, setOpen] = useState(false)
-  // Notification.permission: server ไม่มีคลาสนี้ → "unsupported" (dropdown ยังไม่
-  // render ตอน hydrate เพราะ open=false เสมอ เลยไม่มีปัญหา server/client ไม่ตรง)
-  const [perm, setPerm] = useState<NotificationPermission | "unsupported">(() =>
-    typeof Notification === "undefined" ? "unsupported" : Notification.permission
-  )
   const rootRef = useRef<HTMLDivElement>(null)
 
   // กดนอกกล่อง → ปิด
@@ -380,30 +376,9 @@ export function QueueBell() {
               ))}
             </ul>
           )}
-          {perm === "default" && (
-            <div className="border-t p-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  // ขอครั้งเดียวจาก user gesture — เบราว์เซอร์บล็อกการขอแบบ auto
-                  Notification.requestPermission().then(setPerm)
-                }}
-              >
-                เปิดการแจ้งเตือนบนเครื่องนี้
-              </Button>
-              <p className="px-1 pt-1 text-[11px] text-slate-400">
-                จะเด้งเตือนแม้พับจอหรือสลับไปแอปอื่น
-              </p>
-            </div>
-          )}
-          {perm === "denied" && (
-            <p className="border-t px-3 py-2 text-[11px] text-slate-400">
-              การแจ้งเตือนถูกปิดไว้ในเบราว์เซอร์ — เปิดได้จากตั้งค่าเว็บไซต์
-            </p>
-          )}
+          {/* เปิด/ปิด Web Push ของเครื่องนี้ — จัดการสิทธิ์ Notification ในตัวเอง
+              (เดิมปุ่มตรงนี้ขอสิทธิ์อย่างเดียว ซึ่งเตือนได้เฉพาะตอนเปิดเว็บค้างไว้) */}
+          <PushSetup />
         </div>
       )}
     </div>
