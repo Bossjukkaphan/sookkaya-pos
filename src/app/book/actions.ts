@@ -10,6 +10,8 @@ import {
   MAX_ADVANCE_DAYS, type LoadEntry,
 } from "@/lib/booking-slots"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
+import { bookingPushPayload } from "@/lib/push-message"
+import { sendPushToStaff } from "@/lib/web-push-send"
 
 type Fail = { ok: false; error: string; code?: "auth" }
 
@@ -393,6 +395,22 @@ export async function createBookingRequest(
       ? "รีเควสหมอตามที่เลือกไว้ค่ะ" : undefined,
   }
   await pushLineMessage(who.userId, msgRequested(info)) // ส่งไม่ผ่านก็ไม่เป็นไร
+
+  // เด้งเข้ามือถือพนักงานทุกเครื่องที่เปิดไว้ — ช่องทางเดียวที่ไม่ต้องพึ่ง
+  // "มีคนเปิดหน้าเว็บค้างไว้" และไม่กินโควตา LINE OA (ดู src/lib/web-push-send.ts)
+  await sendPushToStaff(
+    bookingPushPayload({
+      customerName: customerName,
+      queueDate: input.date,
+      startTime: input.time,
+      services: info.services,
+      therapistNote: input.people.some((p) => p.therapistId)
+        ? "ลูกค้ารีเควสหมอ"
+        : null,
+      // คำขอชุดเดียวกันเตือนทับอันเดิม ไม่กองเป็นตับ (จองกลุ่ม = ใบเดียวในสายตาพนักงาน)
+      tag: `booking-${input.date}-${input.time}-${who.userId.slice(-6)}`,
+    })
+  )
   // แจ้งกลุ่มทีมร้านผ่าน OA ผู้ช่วย — env ยังไม่ตั้ง/ส่งพลาด → ข้ามเงียบๆ ไม่กระทบการจอง
   await pushAssistantMessage(
     process.env.LINE_ASSISTANT_QUEUE_GROUP_ID ?? "",
