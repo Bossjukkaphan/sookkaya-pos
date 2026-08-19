@@ -766,14 +766,20 @@ export default async function ReportsPage({
               <p className="text-xs text-slate-500">บิลไม่ระบุชื่อ</p>
               <p className="text-lg font-bold">{unnamedBills}</p>
             </div>
-            <div className="rounded-lg bg-red-50 px-3 py-2">
+            {/* กดแล้วไปดูรายการจริง+ช่วงเวลาที่ปฏิเสธบ่อยในหน้าจัดกำลังหมอ —
+                ตัวเลขเปล่าตอบไม่ได้ว่าควรจ้างหมอเพิ่มไหม */}
+            <Link
+              href="/insights/staffing"
+              className="rounded-lg bg-red-50 px-3 py-2 hover:bg-red-100"
+            >
               <p className="text-xs text-slate-500">ปฏิเสธลูกค้า</p>
               <p
                 className={`text-lg font-bold ${(turnAways ?? 0) > 0 ? "text-red-700" : ""}`}
               >
                 {turnAways ?? 0} ครั้ง
               </p>
-            </div>
+              <p className="text-[11px] text-slate-400">แตะดูรายการ/ช่วงเวลา</p>
+            </Link>
           </div>
 
           {customerIds.length > 0 && (

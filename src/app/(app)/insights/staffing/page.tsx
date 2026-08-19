@@ -7,7 +7,8 @@ import {
   type CriterionStatus, type DayClass, type StaffingDayRow,
 } from "@/lib/staffing"
 import { formatBaht } from "@/lib/constants"
-import { todayInShopTz } from "@/lib/datetime"
+import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { turnAwayHour, turnAwayHourHistogram } from "@/lib/turn-away"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Sparkline } from "./sparkline"
 import type { Database } from "@/types/database"
@@ -54,14 +55,24 @@ export default async function StaffingPage() {
   // 8 สัปดาห์ล่าสุดสำหรับการ์ดจำนวนแนะนำ — สั้นกว่านี้ข้อมูลต่อ n ไม่พอ ยาวกว่านี้โดนช่วงร้านยังเล็กถ่วง
   const from8w = shiftDate(today, -56)
 
-  const [dailyRes, monthlyRes] = await Promise.all([
+  const [dailyRes, monthlyRes, turnAwayRes] = await Promise.all([
     supabase.from("v_staffing_daily").select("*").gte("work_date", from8w)
       .order("work_date"),
     supabase.from("v_staffing_monthly").select("*").order("month", { ascending: false })
       .limit(6),
+    // รายการปฏิเสธทั้งหมด — ตารางเล็ก (กดมือทีละครั้ง) ดึงหมดแล้วสรุปฝั่งนี้
+    // เพดาน 500 กันอนาคตไกล: ถึงวันที่เกินจริงค่อยทำแบ่งหน้า
+    supabase.from("turn_aways")
+      .select("queue_date, note, created_by, created_at")
+      .order("queue_date", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(500),
   ])
   const daily = (dailyRes.data ?? []).map(toDayRow)
   const monthly = monthlyRes.data ?? []
+  const turnAways = turnAwayRes.data ?? []
+  const hourHisto = turnAwayHourHistogram(turnAways)
+  const histoMax = Math.max(1, ...hourHisto.map((h) => h.count))
 
   // ---------- ส่วนบน: จัดกี่คนต่อประเภทวัน ----------
   // ก่อน 27 ก.ค. 2569 peak_concurrent_therapists เป็น 0 เทียมเสมอ (queue_entries ยังไม่มี
@@ -249,6 +260,79 @@ export default async function StaffingPage() {
             )}
           </CardContent>
         </Card>
+      </section>
+
+      {/* รายการปฏิเสธลูกค้า + ช่วงเวลาที่ดีมานด์ล้น — คู่กับการ์ดจัดกำลังด้านบน:
+          ถ้าช่วงพีคของการปฏิเสธตรงกับวันที่หมอเต็ม = สัญญาณจ้างเพิ่มที่จับต้องได้
+          ชั่วโมงอ่านจากหมายเหตุก่อนเสมอ (พนักงานมักกดบันทึกหลังเหตุการณ์หลายชั่วโมง) */}
+      <section className="space-y-2">
+        <h2 className="font-semibold">ปฏิเสธลูกค้าไปตอนไหนบ้าง</h2>
+        <p className="text-xs text-slate-500">
+          ทั้งหมดที่เคยบันทึก {turnAways.length} ครั้ง ·
+          ช่วงเวลาอ่านจากหมายเหตุ (ไม่มีเวลาในหมายเหตุจึงใช้เวลาที่กดบันทึก)
+        </p>
+        {turnAways.length === 0 ? (
+          <Card>
+            <CardContent className="py-6 text-center text-sm text-slate-500">
+              ยังไม่มีการบันทึกปฏิเสธลูกค้า — ปุ่มอยู่บนหน้าคิว กดทุกครั้งที่รับลูกค้าไม่ได้
+              ตัวเลขหน้านี้จึงจะเชื่อถือได้
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">ช่วงเวลาที่ปฏิเสธบ่อย</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {hourHisto.map(({ hour, count }) => (
+                  <div key={hour} className="flex items-center gap-2 text-sm">
+                    <span className="w-14 shrink-0 text-slate-600 tabular-nums">
+                      {String(hour).padStart(2, "0")}:00
+                    </span>
+                    <div className="h-4 flex-1 rounded-sm bg-slate-100">
+                      <div
+                        className="h-4 rounded-sm bg-[#664343]/70"
+                        style={{ width: `${(count / histoMax) * 100}%` }}
+                      />
+                    </div>
+                    <span className="w-10 shrink-0 text-right font-medium tabular-nums">
+                      {count}
+                    </span>
+                  </div>
+                ))}
+                <p className="pt-2 text-xs text-slate-500">
+                  แท่งสูงช่วงไหน = ดีมานด์ล้นช่วงนั้น —
+                  เทียบกับการ์ด &quot;วันที่หมอเต็มพร้อมกัน&quot; ด้านบนก่อนตัดสินใจจ้างเพิ่ม
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">รายการล่าสุด</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="max-h-80 divide-y overflow-y-auto text-sm">
+                  {turnAways.slice(0, 30).map((t, i) => (
+                    <li key={i} className="py-2">
+                      <p className="text-xs text-slate-500">
+                        {formatThaiDate(t.queue_date)} · ช่วง{" "}
+                        {String(turnAwayHour(t.note, t.created_at)).padStart(2, "0")}:00 น.
+                        {t.created_by ? ` · บันทึกโดย${t.created_by}` : ""}
+                      </p>
+                      <p className="text-slate-800">{t.note?.trim() || "(ไม่ได้ใส่เหตุผล)"}</p>
+                    </li>
+                  ))}
+                </ul>
+                {turnAways.length > 30 && (
+                  <p className="pt-2 text-xs text-slate-400">
+                    แสดง 30 รายการล่าสุดจากทั้งหมด {turnAways.length}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </section>
     </div>
   )
