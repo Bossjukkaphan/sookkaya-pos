@@ -5,10 +5,16 @@ import { birthdayCoverage } from "./birthday-coverage"
 const cust = (id: string, name: string, birthday: string) => ({
   id, name, nickname: null, birthday,
 })
-/** contact แถวหนึ่ง: อวยพรลูกค้า id ตอนเวลาไทย isoLocal (แปลงเป็น UTC ให้เอง) */
-const contact = (customer_id: string, bkkDate: string, time = "10:00") => ({
+/** contact แถวหนึ่ง: อวยพรลูกค้า id ตอนเวลาไทย bkkDate (แปลงเป็น UTC ให้เอง) */
+const contact = (
+  customer_id: string,
+  bkkDate: string,
+  time = "10:00",
+  result: string | null = "contacted"
+) => ({
   customer_id,
   created_at: new Date(`${bkkDate}T${time}:00+07:00`).toISOString(),
+  result,
 })
 
 describe("birthdayCoverage", () => {
@@ -36,14 +42,54 @@ describe("birthdayCoverage", () => {
     expect(r.greeted).toBe(1)
   })
 
-  it("อวยพรห่างเกิน 1 วัน → ไม่นับ (คนละรอบ)", () => {
+  it("ทักล่วงหน้าตามการ์ด 🎂 (ไม่เกิน 7 วันก่อนวันเกิด) → นับว่าส่ง", () => {
+    // หน้า /crm โชว์วันเกิดล่วงหน้า 7 วัน และพอกดบันทึกแล้วชื่อหลุดลิสต์ไป 30 วัน
+    // จึงกดซ้ำในวันเกิดจริงไม่ได้ — ถ้าไม่นับช่วงนี้ ร้านที่ทักล่วงหน้าจะได้ 0% ทั้งที่ทำถูก
+    const r = birthdayCoverage(
+      [cust("a", "น้ำ", "1990-08-16")],
+      [contact("a", "2026-08-11")],
+      today, 30
+    )
+    expect(r.greeted).toBe(1)
+    expect(r.missed).toEqual([])
+  })
+
+  it("ทักล่วงหน้าเกิน 7 วัน → ไม่นับ (คนละรอบ)", () => {
+    const r = birthdayCoverage(
+      [cust("a", "น้ำ", "1990-08-16")],
+      [contact("a", "2026-08-08")],
+      today, 30
+    )
+    expect(r.greeted).toBe(0)
+    expect(r.missed).toEqual([{ customerId: "a", name: "น้ำ", date: "2026-08-16" }])
+  })
+
+  it("อวยพรช้าเกิน 1 วัน → ไม่นับ", () => {
     const r = birthdayCoverage(
       [cust("a", "น้ำ", "1990-08-16")],
       [contact("a", "2026-08-19")],
       today, 30
     )
     expect(r.greeted).toBe(0)
-    expect(r.missed).toEqual([{ customerId: "a", name: "น้ำ", date: "2026-08-16" }])
+  })
+
+  it("เบอร์ผิด = ลูกค้าไม่ได้รับอะไรเลย → ไม่นับว่าส่ง", () => {
+    const r = birthdayCoverage(
+      [cust("a", "น้ำ", "1990-08-16")],
+      [contact("a", "2026-08-16", "10:00", "wrong_number")],
+      today, 30
+    )
+    expect(r.greeted).toBe(0)
+    expect(r.missed[0].name).toBe("น้ำ")
+  })
+
+  it("ติดต่อได้แต่ลูกค้าปฏิเสธข้อเสนอ → ยังนับว่าส่งถึงตัวแล้ว", () => {
+    const r = birthdayCoverage(
+      [cust("a", "น้ำ", "1990-08-16")],
+      [contact("a", "2026-08-16", "10:00", "declined")],
+      today, 30
+    )
+    expect(r.greeted).toBe(1)
   })
 
   it("วันเกิดวันนี้ที่ยังไม่ส่ง — ไม่นับเป็นตกหล่น (ยังส่งทันอยู่)", () => {

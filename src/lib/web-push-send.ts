@@ -11,12 +11,20 @@ function vapidReady(): boolean {
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
   const privateKey = process.env.VAPID_PRIVATE_KEY
   if (!publicKey || !privateKey) return false
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || "mailto:boss.jukkaphan@gmail.com",
-    publicKey,
-    privateKey
-  )
-  return true
+  try {
+    // setVapidDetails โยน exception แบบ sync ถ้าคีย์/subject รูปแบบผิด
+    // (เช่น subject ไม่มี mailto: หรือคีย์ติดขึ้นบรรทัดใหม่ตอน paste เข้า env)
+    // ปล่อยให้หลุดออกไปไม่ได้เด็ดขาด — ผู้เรียกคือเส้นทางจองของลูกค้าและ cron
+    webpush.setVapidDetails(
+      process.env.VAPID_SUBJECT || "mailto:boss.jukkaphan@gmail.com",
+      publicKey,
+      privateKey
+    )
+    return true
+  } catch (e) {
+    console.error("web-push: VAPID keys ไม่ถูกต้อง — ข้ามการส่ง", e)
+    return false
+  }
 }
 
 export type PushResult = { sent: number; failed: number; removed: number }
@@ -33,6 +41,17 @@ export type PushResult = { sent: number; failed: number; removed: number }
  * ไม่งั้นแถวตายค้างสะสมและถูกยิงซ้ำทุกครั้งไปเรื่อยๆ
  */
 export async function sendPushToStaff(payload: PushPayload): Promise<PushResult> {
+  try {
+    return await sendPushToStaffInner(payload)
+  } catch (e) {
+    // ห้าม throw ออกไปเด็ดขาด — ผู้เรียกคือการจองของลูกค้า (ต้องสำเร็จเสมอ)
+    // และ cron ที่จองสิทธิ์ส่งไว้ก่อนแล้ว (throw = วันนั้นไม่มีใครได้รับอะไรเลย)
+    console.error("web-push: ส่งล้มเหลวแบบไม่คาดคิด", e)
+    return { sent: 0, failed: 0, removed: 0 }
+  }
+}
+
+async function sendPushToStaffInner(payload: PushPayload): Promise<PushResult> {
   const empty: PushResult = { sent: 0, failed: 0, removed: 0 }
   if (!vapidReady()) {
     console.error("web-push: ยังไม่ได้ตั้ง VAPID keys — ข้ามการส่ง")

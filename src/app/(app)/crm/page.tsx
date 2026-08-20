@@ -76,9 +76,11 @@ export default async function CrmPage({
   ).toISOString()
   // ช่วงที่การ์ดสถิติวันเกิดมองย้อน — 90 วันพอเห็นแนวโน้มโดยไม่ดึงข้อมูลเกินจำเป็น
   const COVERAGE_DAYS = 90
-  const coverageSince = new Date(
-    Date.parse(`${today}T00:00:00Z`) - (COVERAGE_DAYS + 1) * 86400000
-  ).toISOString()
+  // เผื่อขอบให้ครอบคำอวยพรที่ทักล่วงหน้าได้ถึง 7 วัน และยึดเที่ยงคืน "เวลาไทย"
+  // (ใช้ 00:00Z จะเป็น 07:00 ไทย = มีรู 7 ชม. ทำให้วันเก่าสุดของช่วงถูกนับว่าตกหล่นผิดๆ)
+  const coverageSince = `${new Date(
+    Date.parse(`${today}T00:00:00Z`) - (COVERAGE_DAYS + 8) * 86400000
+  ).toISOString().slice(0, 10)}T00:00:00+07:00`
   const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }, { data: lineAccounts }, { data: birthdayContacts }] =
     await Promise.all([
       supabase
@@ -114,7 +116,7 @@ export default async function CrmPage({
       // (ช่วงยาวกว่า cooldown ข้างบนที่ดูแค่ 30 วันเพื่อกันชื่อซ้ำ)
       supabase
         .from("crm_contacts")
-        .select("customer_id, created_at")
+        .select("customer_id, created_at, result")
         .eq("list_type", "birthday")
         .gte("created_at", coverageSince),
     ])
@@ -244,6 +246,11 @@ export default async function CrmPage({
                       {formatThaiDate(m.date)} · {m.name}
                     </li>
                   ))}
+                  {coverage.missed.length > 20 && (
+                    <li className="py-0.5 text-slate-400">
+                      และอีก {coverage.missed.length - 20} คน
+                    </li>
+                  )}
                 </ul>
                 <p className="pt-1 text-[11px] text-slate-400">
                   ผ่านไปแล้วส่งย้อนหลังไม่ได้ — แต่ตัวเลขนี้จะบอกได้ว่าเดือนหน้าดีขึ้นไหม

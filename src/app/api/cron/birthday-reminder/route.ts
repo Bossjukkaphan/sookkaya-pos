@@ -63,11 +63,14 @@ export async function GET(request: NextRequest) {
   // Web Push เป็นทางหลัก — ไม่พึ่งโควตา LINE และถึงมือถือแม้ไม่มีใครเปิดเว็บ
   // (ตรวจข้อมูลจริง 20/8/2569: 30 วันย้อนหลังส่งอวยพรจริงแค่ 3 จาก 10 คน
   //  ช่วงที่หลุดตรงกับตอนที่โควตา OA ผู้ช่วยเต็มพอดี — ข้อความเตือนเข้ากลุ่มไม่ออกเลย)
-  const pushResult = await sendPushToStaff(birthdayPushPayload(names)!)
+  // ยิงไลน์ก่อน push เสมอ — pushAssistantMessage รับปากว่าไม่ throw (ดู line-assistant.ts)
+  // ส่วน push ต่อให้พังยับก็คืน {sent:0} ไม่โยนออกมา (ดู web-push-send.ts)
+  // ลำดับนี้ทำให้ไม่มีทางที่ "จองสิทธิ์ส่งไปแล้วแต่ไม่มีช่องทางไหนได้ยิงเลย"
   const lineSent = await pushAssistantMessage(
     process.env.LINE_ASSISTANT_QUEUE_GROUP_ID ?? "",
     msgBirthdayReminder(names)
   )
+  const pushResult = await sendPushToStaff(birthdayPushPayload(names)!)
   // ถือว่าสำเร็จเมื่อ "ถึงพนักงานอย่างน้อยหนึ่งทาง" — ไลน์ล้มแต่ push ถึงแล้ว
   // ห้ามคืนสิทธิ์ให้ตัวสำรองมายิงซ้ำ ไม่งั้นพนักงานโดนเตือนวันเกิดซ้ำทั้งวัน
   const sent = pushResult.sent > 0 || lineSent
