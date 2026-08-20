@@ -5,6 +5,7 @@ import { getMyProfile } from "@/lib/auth"
 import { todayInShopTz, formatThaiDate } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
 import { birthdayWithinDays, daysUntilBirthday } from "@/lib/crm"
+import { birthdayCoverage } from "@/lib/birthday-coverage"
 import { daysSince, dormantCutoff } from "@/lib/insights"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { canSeeInsights, InsightsAccessDenied } from "../insights/shared"
@@ -73,7 +74,14 @@ export default async function CrmPage({
   const cooldownSince = new Date(
     Date.parse(`${today}T00:00:00Z`) - CONTACT_COOLDOWN_DAYS * 86400000
   ).toISOString()
-  const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }, { data: lineAccounts }] =
+  // ช่วงที่การ์ดสถิติวันเกิดมองย้อน — 90 วันพอเห็นแนวโน้มโดยไม่ดึงข้อมูลเกินจำเป็น
+  const COVERAGE_DAYS = 90
+  // เผื่อขอบให้ครอบคำอวยพรที่ทักล่วงหน้าได้ถึง 7 วัน และยึดเที่ยงคืน "เวลาไทย"
+  // (ใช้ 00:00Z จะเป็น 07:00 ไทย = มีรู 7 ชม. ทำให้วันเก่าสุดของช่วงถูกนับว่าตกหล่นผิดๆ)
+  const coverageSince = `${new Date(
+    Date.parse(`${today}T00:00:00Z`) - (COVERAGE_DAYS + 8) * 86400000
+  ).toISOString().slice(0, 10)}T00:00:00+07:00`
+  const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }, { data: lineAccounts }, { data: birthdayContacts }] =
     await Promise.all([
       supabase
         .from("customers")
@@ -104,6 +112,13 @@ export default async function CrmPage({
         .from("line_accounts")
         .select("line_user_id, customer_id, created_at")
         .order("created_at", { ascending: true }),
+      // ประวัติอวยพรวันเกิด 90 วัน — ใช้ทำการ์ด "ส่งครบตามแผนแค่ไหน"
+      // (ช่วงยาวกว่า cooldown ข้างบนที่ดูแค่ 30 วันเพื่อกันชื่อซ้ำ)
+      supabase
+        .from("crm_contacts")
+        .select("customer_id, created_at, result")
+        .eq("list_type", "birthday")
+        .gte("created_at", coverageSince),
     ])
 
   const contacted = new Set(
@@ -115,6 +130,14 @@ export default async function CrmPage({
   for (const a of lineAccounts ?? []) {
     if (a.customer_id) lineByCustomer.set(a.customer_id, a.line_user_id)
   }
+
+  // ส่งอวยพรครบตามแผนแค่ไหน — วัดจากที่บันทึกจริง ไม่นับวันเกิดของวันนี้ (ยังส่งทัน)
+  const coverage = birthdayCoverage(
+    birthdayCustomers ?? [],
+    birthdayContacts ?? [],
+    today,
+    COVERAGE_DAYS
+  )
 
   const birthdayRows: CrmRow[] = (birthdayCustomers ?? [])
     .filter((c) => c.birthday && birthdayWithinDays(c.birthday, today, 7))
@@ -192,6 +215,51 @@ export default async function CrmPage({
           )}
         </CardContent>
       </Card>
+
+      {/* ทำได้ตามแผนแค่ไหน — ตัวเลขจากที่บันทึกจริง ไม่ใช่ความรู้สึก
+          วันเกิดของวันนี้ไม่ถูกนับว่าตกหล่น เพราะยังส่งทันอยู่ (การ์ดด้านบนเตือนอยู่แล้ว) */}
+      {coverage.total > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              📊 ส่งอวยพรทัน {coverage.greeted} จาก {coverage.total} คน ({coverage.pct}%)
+            </CardTitle>
+            <p className="text-xs text-slate-500">
+              {COVERAGE_DAYS} วันล่าสุด · ส่งวันเกิดหรือช้าไม่เกิน 1 วัน นับว่าทัน
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className={`h-2 rounded-full ${coverage.pct >= 80 ? "bg-emerald-500" : coverage.pct >= 50 ? "bg-amber-500" : "bg-red-400"}`}
+                style={{ width: `${coverage.pct}%` }}
+              />
+            </div>
+            {coverage.missed.length > 0 && (
+              <details className="text-sm">
+                <summary className="cursor-pointer text-slate-600">
+                  ตกหล่น {coverage.missed.length} คน — ดูรายชื่อ
+                </summary>
+                <ul className="pt-1.5 text-xs text-slate-500">
+                  {coverage.missed.slice(0, 20).map((m) => (
+                    <li key={`${m.customerId}-${m.date}`} className="py-0.5">
+                      {formatThaiDate(m.date)} · {m.name}
+                    </li>
+                  ))}
+                  {coverage.missed.length > 20 && (
+                    <li className="py-0.5 text-slate-400">
+                      และอีก {coverage.missed.length - 20} คน
+                    </li>
+                  )}
+                </ul>
+                <p className="pt-1 text-[11px] text-slate-400">
+                  ผ่านไปแล้วส่งย้อนหลังไม่ได้ — แต่ตัวเลขนี้จะบอกได้ว่าเดือนหน้าดีขึ้นไหม
+                </p>
+              </details>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="border-amber-200">
         <CardHeader className="pb-2">

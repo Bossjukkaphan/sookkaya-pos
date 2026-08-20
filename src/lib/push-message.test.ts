@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { bookingPushPayload, pendingReminderPayload } from "./push-message"
+import {
+  birthdayPushPayload,
+  bookingPushPayload,
+  pendingReminderPayload,
+} from "./push-message"
 
 describe("bookingPushPayload", () => {
   it("บอกชื่อ วันเวลา และเมนู — พนักงานตัดสินใจได้จากหน้าจอล็อกเลย", () => {
@@ -90,5 +94,30 @@ describe("pendingReminderPayload", () => {
 
   it("ไม่มีคำขอค้าง → null (ไม่ต้องส่งอะไรเลย)", () => {
     expect(pendingReminderPayload([])).toBeNull()
+  })
+})
+
+describe("birthdayPushPayload", () => {
+  it("คนเดียว → บอกชื่อไปเลย พนักงานทักได้ทันที", () => {
+    const p = birthdayPushPayload(["น้ำ"])
+    expect(p?.title).toContain("วันเกิด")
+    expect(p?.body).toContain("น้ำ")
+    expect(p?.url).toBe("/crm")
+  })
+
+  it("หลายคน → รวมชื่อทุกคน", () => {
+    const p = birthdayPushPayload(["น้ำ", "ตั๊ก", "ชัย"])
+    expect(p?.body).toContain("น้ำ")
+    expect(p?.body).toContain("ตั๊ก")
+    expect(p?.body).toContain("ชัย")
+    expect(p?.body).toContain("3 คน")
+  })
+
+  it("ไม่มีวันเกิดวันนี้ → null (ไม่กวนพนักงาน)", () => {
+    expect(birthdayPushPayload([])).toBeNull()
+  })
+
+  it("tag คงที่ต่อวัน — เตือนซ้ำทับอันเดิม ไม่กองเป็นตับ", () => {
+    expect(birthdayPushPayload(["น้ำ"])?.tag).toBe("birthday-today")
   })
 })
