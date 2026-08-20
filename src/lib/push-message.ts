@@ -57,3 +57,17 @@ export function pendingReminderPayload(
     tag: "pending-queue",
   }
 }
+
+/** วันเกิดลูกค้าวันนี้ — เตือนพนักงานตอนเช้าให้ทักก่อนร้านวุ่น
+ *  ไม่มีใครวันเกิด = null (ตัวเรียกจะได้ไม่ส่งอะไรเลย ไม่ใช่ส่งข้อความว่าง) */
+export function birthdayPushPayload(names: string[]): PushPayload | null {
+  if (names.length === 0) return null
+  const count = names.length > 1 ? ` (${names.length} คน)` : ""
+  return {
+    title: "🎂 วันเกิดลูกค้าวันนี้",
+    body: `${names.join(" · ")}${count} — แตะเพื่อเปิดหน้าดูแลลูกค้า ส่งคำอวยพรได้เลย`,
+    url: "/crm",
+    // วันเดียวกันเตือนซ้ำทับอันเดิมเสมอ
+    tag: "birthday-today",
+  }
+}

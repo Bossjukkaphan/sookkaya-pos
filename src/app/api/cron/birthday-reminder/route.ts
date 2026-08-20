@@ -5,9 +5,12 @@ import { pushAssistantMessage } from "@/lib/line-assistant"
 import { birthdayTodayCustomers } from "@/lib/crm-birthday"
 import { msgBirthdayReminder } from "@/lib/crm"
 import { cronRequestAuthorized, triggerSourceOf } from "@/lib/cron-auth"
+import { birthdayPushPayload } from "@/lib/push-message"
+import { sendPushToStaff } from "@/lib/web-push-send"
 import { todayInShopTz } from "@/lib/datetime"
 
-/** มีลูกค้าวันเกิดวันนี้ → เตือนเข้ากลุ่มไลน์ทีมร้านผ่าน OA ผู้ช่วย (ท่อเดียวกับแจ้งคิวจองใหม่)
+/** มีลูกค้าวันเกิดวันนี้ → เตือนพนักงานสองทาง: Web Push เข้ามือถือ (ทางหลัก)
+ *  + ข้อความเข้ากลุ่มไลน์ผ่าน OA ผู้ช่วย (ทางเสริม)
  *  ไม่มี → จบเงียบ ไม่ส่งอะไร ไม่รบกวนกลุ่ม
  *
  *  มีตัวจับเวลาสองตัวยิง route นี้ (ตั้งใจให้ซ้ำซ้อน — ดู src/lib/cron-auth.ts):
@@ -56,10 +59,18 @@ export async function GET(request: NextRequest) {
   }
 
   const names = birthdays.map((b) => b.nickname || b.name)
-  const sent = await pushAssistantMessage(
+
+  // Web Push เป็นทางหลัก — ไม่พึ่งโควตา LINE และถึงมือถือแม้ไม่มีใครเปิดเว็บ
+  // (ตรวจข้อมูลจริง 20/8/2569: 30 วันย้อนหลังส่งอวยพรจริงแค่ 3 จาก 10 คน
+  //  ช่วงที่หลุดตรงกับตอนที่โควตา OA ผู้ช่วยเต็มพอดี — ข้อความเตือนเข้ากลุ่มไม่ออกเลย)
+  const pushResult = await sendPushToStaff(birthdayPushPayload(names)!)
+  const lineSent = await pushAssistantMessage(
     process.env.LINE_ASSISTANT_QUEUE_GROUP_ID ?? "",
     msgBirthdayReminder(names)
   )
+  // ถือว่าสำเร็จเมื่อ "ถึงพนักงานอย่างน้อยหนึ่งทาง" — ไลน์ล้มแต่ push ถึงแล้ว
+  // ห้ามคืนสิทธิ์ให้ตัวสำรองมายิงซ้ำ ไม่งั้นพนักงานโดนเตือนวันเกิดซ้ำทั้งวัน
+  const sent = pushResult.sent > 0 || lineSent
 
   // ส่งไม่สำเร็จ = คืนสิทธิ์ให้ตัวสำรองลองใหม่ ไม่งั้นแถวที่จองค้างไว้จะบล็อกทั้งวัน
   // ลบเฉพาะแถวที่ "เราเป็นคนจอง" รอบนี้ — เคส force ที่ไปเจอแถวเดิมของคนอื่นต้องไม่โดนลบ
@@ -74,5 +85,11 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: sent, birthdays: birthdays.length, source })
+  return NextResponse.json({
+    ok: sent,
+    birthdays: birthdays.length,
+    pushed: pushResult.sent,
+    lineSent,
+    source,
+  })
 }
