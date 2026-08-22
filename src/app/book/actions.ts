@@ -22,9 +22,11 @@ const nowMin = () => {
   return h * 60 + m
 }
 
-/** สถานะบัญชีไลน์: ผูกกับลูกค้าแล้วหรือยัง (เรียกตอนเปิดหน้า /book) */
+/** สถานะบัญชีไลน์: ผูกกับลูกค้าแล้วหรือยัง (เรียกตอนเปิดหน้า /book)
+ *  profileComplete ติดมากับคำตอบเดิม — หน้าจองใช้ตัดสินว่าจะชวนกรอกโปรไฟล์ไหม
+ *  โดยไม่ต้องยิงเพิ่มอีกรอบ (ห้ามเพิ่ม round trip — สเปก 2026-08-21) */
 export async function getLineStatus(idToken: string): Promise<
-  | { ok: true; linked: true; customerName: string }
+  | { ok: true; linked: true; customerName: string; profileComplete: boolean }
   | { ok: true; linked: false; displayName: string | null }
   | Fail
 > {
@@ -33,17 +35,23 @@ export async function getLineStatus(idToken: string): Promise<
   const db = createServiceClient()
   const { data } = await db
     .from("line_accounts")
-    .select("customer_id, customers(name)")
+    .select("customer_id, customers(name, birthday, gender)")
     .eq("line_user_id", who.userId)
     .maybeSingle()
-  if (data)
+  if (data) {
+    const profile = (
+      data as unknown as {
+        customers: { name: string; birthday: string | null; gender: string | null } | null
+      }
+    ).customers
     return {
-      ok: true, linked: true,
-      customerName:
-        cleanLineDisplayName(
-          (data as unknown as { customers: { name: string } | null }).customers?.name
-        ) ?? "",
+      ok: true,
+      linked: true,
+      customerName: cleanLineDisplayName(profile?.name) ?? "",
+      // นิยามเดียวกับหน้าแต้ม (points-actions.ts) — ห้ามมีนิยามที่สอง
+      profileComplete: Boolean(profile?.birthday && profile?.gender),
     }
+  }
   return { ok: true, linked: false, displayName: cleanLineDisplayName(who.displayName) }
 }
 
