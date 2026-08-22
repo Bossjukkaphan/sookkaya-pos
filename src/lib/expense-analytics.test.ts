@@ -83,7 +83,9 @@ describe("compareRange — บล็อก 1", () => {
     ["2026-07-10", 322242],
   ])
 
-  const result = compareRange({ rows, revenueByDate: revenue, month: "2026-07", throughDay: 27 })
+  const result = compareRange({
+    rows, revenueByDate: revenue, commissionByDate: new Map(), month: "2026-07", throughDay: 27,
+  })
 
   it("ตัดวันเท่ากันทั้งสองฝั่ง — ค่าเช่าวันที่ 29 ต้องไม่ถูกนับ", () => {
     expect(result.current.expense).toBe(7990)
@@ -114,6 +116,7 @@ describe("compareRange — บล็อก 1", () => {
         row("2026-07-05", "ค่าเช่าสถานที่", "ค่าเช่า ก.ค.", 36000),
       ],
       revenueByDate: new Map(),
+      commissionByDate: new Map(),
       month: "2026-07",
       throughDay: 27,
     })
@@ -137,6 +140,7 @@ describe("compareRange — บล็อก 1", () => {
     const onlyPrev = compareRange({
       rows: [row("2026-06-03", "การตลาด / โฆษณา", "ยิงแอด", 5000)],
       revenueByDate: new Map(),
+      commissionByDate: new Map(),
       month: "2026-07",
       throughDay: 27,
     })
@@ -146,8 +150,79 @@ describe("compareRange — บล็อก 1", () => {
   })
 
   it("เดือนที่ปิดแล้วส่ง throughDay 31 เพื่อเอาทั้งเดือน", () => {
-    const full = compareRange({ rows, revenueByDate: revenue, month: "2026-07", throughDay: 31 })
+    const full = compareRange({
+      rows, revenueByDate: revenue, commissionByDate: new Map(), month: "2026-07", throughDay: 31,
+    })
     expect(full.previous.expense).toBe(66400)
+  })
+})
+
+/**
+ * เคสจริง 22/8/2569 — เจ้าของร้านเปิดหน้าเดือน ส.ค. (1–22) แล้วเห็นค่ามือ ก.ค. 97,025
+ * ทั้งที่ค่ามือจากงานจริงช่วงนั้นคือ 105,810: งวดจ่ายเป็นก้อนตกวันที่ 10/21/สิ้นเดือน
+ * การตัดช่วงวันกลางเดือนกับงวดจ่ายจึงเพี้ยนเสมอ — ค่ามือต้องอ่านจากงานจริงเหมือนบล็อก 2
+ */
+describe("compareRange — ค่ามือหมอมาจากงานจริง ไม่ใช่งวดจ่าย", () => {
+  const rows = [
+    // งวดจ่าย ก.ค. คีย์วันที่ 10 / 21 / 31 + เงินเบิก — เหมือนข้อมูลจริง
+    row("2026-07-05", "HR / payroll (ค่ามือหมอ)", "เบิกล่วงหน้า", 2500),
+    row("2026-07-10", "HR / payroll (ค่ามือหมอ)", "ค่ามือหมอ1-10/7/69", 45380),
+    row("2026-07-21", "HR / payroll (ค่ามือหมอ)", "ค่ามือหมอ11-20/7/69", 46645),
+    row("2026-07-31", "HR / payroll (ค่ามือหมอ)", "ค่ามือหมอ21-31/7/69", 54195),
+    row("2026-08-10", "HR / payroll (ค่ามือหมอ)", "ค่ามือหมอ1-10/8/69", 50690),
+    row("2026-08-20", "HR / payroll (ค่ามือหมอ)", "ค่ามือหมอ11-20/8/69", 52085),
+    row("2026-08-05", "อื่นๆ", "ค่าอุปกรณ์สปา", 5321),
+  ]
+  // ค่ามือรายวันจากงานจริง — วางเป็นก้อนกลางช่วงพอสำหรับการตรวจผลรวม
+  const commission = new Map([
+    ["2026-07-15", 105810], ["2026-07-30", 45230],
+    ["2026-08-15", 119705],
+  ])
+
+  const result = compareRange({
+    rows, revenueByDate: new Map(), commissionByDate: commission,
+    month: "2026-08", throughDay: 22,
+  })
+  const commissionRow = result.byCategory.find((c) => c.category === COMMISSION_LABEL)
+
+  it("แถวค่ามือหมอเท่าผลรวมงานจริงของช่วงวัน ไม่ใช่งวดที่คีย์ทัน", () => {
+    expect(commissionRow).toEqual({
+      category: COMMISSION_LABEL, current: 119705, previous: 105810, deltaBaht: 13895,
+    })
+  })
+
+  it("แถวงวดจ่าย/เงินเบิกต้องไม่โผล่เป็นหมวดแยกอีก", () => {
+    expect(result.byCategory.filter((c) => c.category.startsWith("HR / payroll"))).toHaveLength(0)
+  })
+
+  it("ยอดรายจ่ายรวมใช้ค่ามือจากงานจริงแทนงวดจ่าย", () => {
+    expect(result.current.expense).toBe(119705 + 5321)
+    expect(result.previous.expense).toBe(105810)
+  })
+
+  it("งวดจ่ายต้องไม่ครองรายการใหญ่สุด — ที่เหลือคือของก้อนจริง", () => {
+    expect(result.topItems).toEqual([{ item: "ค่าอุปกรณ์สปา", amount: 5321 }])
+  })
+
+  it("ไม่มีข้อมูลค่ามือเลย ไม่ต้องมีแถวค่ามือหมอ", () => {
+    const none = compareRange({
+      rows: [row("2026-08-05", "ซักรีด", "ซักผ้า", 5000)],
+      revenueByDate: new Map(), commissionByDate: new Map(),
+      month: "2026-08", throughDay: 22,
+    })
+    expect(none.byCategory.map((c) => c.category)).toEqual(["ซักรีด"])
+  })
+
+  it("ชื่อหมวดค่ามือเก่า/ใหม่ถูกตัดออกด้วยคำขึ้นต้นทั้งคู่", () => {
+    const renamed = compareRange({
+      rows: [
+        row("2026-07-10", "HR / payroll (เงินประกัน ค่ามือ เงินเดือน)", "ค่ามืองวด", 40000),
+        row("2026-08-10", "HR / payroll (ค่ามือหมอ)", "ค่ามืองวด", 50690),
+      ],
+      revenueByDate: new Map(), commissionByDate: commission,
+      month: "2026-08", throughDay: 22,
+    })
+    expect(renamed.byCategory.map((c) => c.category)).toEqual([COMMISSION_LABEL])
   })
 })
 
@@ -566,7 +641,9 @@ describe("monthlySeries — บล็อก 3 และ 4", () => {
     ["2026-05", 286158], ["2026-06", 347018], ["2026-07", 322242],
   ])
 
-  const result = monthlySeries({ rows, revenueByMonth, currentMonth: "2026-07" })
+  const result = monthlySeries({
+    rows, revenueByMonth, commissionByMonth: new Map(), currentMonth: "2026-07",
+  })
 
   it("เรียงเดือนจากเก่าไปใหม่", () => {
     expect(result.months).toEqual(["2026-03", "2026-04", "2026-05", "2026-06", "2026-07"])
@@ -591,11 +668,52 @@ describe("monthlySeries — บล็อก 3 และ 4", () => {
     const short = monthlySeries({
       rows: [salary("2026-05", 41650), salary("2026-06", 52450)],
       revenueByMonth,
+      commissionByMonth: new Map(),
       currentMonth: "2026-06",
     })
     const r = short.byCategory[0]
     expect(r.trend).toBeNull()
     expect(r.median3).toBeNull()
+  })
+
+  it("อนุกรมค่ามือหมอมาจากงานจริง ส่วนแถวงวดจ่ายถูกตัดออก", () => {
+    const withCommission = monthlySeries({
+      rows: [
+        ...rows,
+        // งวดจ่ายตั้งใจใส่ยอดเพี้ยน เพื่อพิสูจน์ว่าไม่ได้ถูกใช้
+        row("2026-06-30", "HR / payroll (ค่ามือหมอ)", "ค่ามือหมอ21-30/6/69", 999999),
+      ],
+      revenueByMonth,
+      commissionByMonth: new Map([
+        ["2026-04", 121325], ["2026-05", 122720],
+        ["2026-06", 140415], ["2026-07", 105810],
+      ]),
+      currentMonth: "2026-07",
+    })
+    const c = withCommission.byCategory.find((x) => x.category === COMMISSION_LABEL)!
+    expect(c.ruler).toBe("revenue_linked")
+    expect(c.amounts).toEqual([0, 121325, 122720, 140415, 105810])
+    expect(c.median3).toBe(122720)
+    expect(c.trend).toBe("up")
+    expect(
+      withCommission.byCategory.filter((x) => x.category.startsWith("HR / payroll"))
+    ).toHaveLength(0)
+    // ต้นทุนต่อ 100 ของ มิ.ย. = (เงินเดือน 52,450 + ค่ามือจริง 140,415) / 347,018
+    expect(Math.round(withCommission.costPer100Revenue[3] * 10) / 10).toBe(55.6)
+  })
+
+  it("เดือนที่มีแต่ค่ามือ (ยังไม่มีแถวรายจ่าย) ต้องโผล่ในตารางด้วย", () => {
+    const only = monthlySeries({
+      rows: [salary("2026-06", 52450)],
+      revenueByMonth,
+      commissionByMonth: new Map([["2026-07", 105810]]),
+      currentMonth: "2026-07",
+    })
+    expect(only.months).toEqual(["2026-06", "2026-07"])
+  })
+
+  it("ไม่มีข้อมูลค่ามือเลย ไม่ต้องมีแถวค่ามือหมอ", () => {
+    expect(result.byCategory.map((c) => c.category)).not.toContain(COMMISSION_LABEL)
   })
 })
 

@@ -96,6 +96,7 @@ function sumByCategory(rows: ExpenseRow[]): Map<string, number> {
 export function compareRange(input: {
   rows: ExpenseRow[]
   revenueByDate: Map<string, number>
+  commissionByDate: Map<string, number>
   month: string
   /** เดือนที่ยังไม่จบส่งวันที่ปัจจุบัน · เดือนที่ปิดแล้วส่ง 31 */
   throughDay: number
@@ -110,14 +111,23 @@ export function compareRange(input: {
   }[]
   topItems: { item: string; amount: number }[]
 } {
-  const { rows, revenueByDate, month, throughDay } = input
+  const { rows, revenueByDate, commissionByDate, month, throughDay } = input
   const prevMonth = shiftMonth(month, -1)
 
-  const curRows = rowsInRange(rows, month, throughDay)
-  const prevRows = rowsInRange(rows, prevMonth, throughDay)
+  // งวดจ่ายค่ามือเป็นก้อนตกวันที่ 10/21/สิ้นเดือน การตัดช่วงวันกับงวดจ่ายจึงเพี้ยนเสมอ
+  // (22/8/2569 เจ้าของร้านเห็นค่ามือ ก.ค. 1–22 เป็น 97,025 ทั้งที่งานจริงคือ 105,810
+  //  เพราะงวด 21–31 ทั้งก้อนคีย์วันที่ 31) — ค่ามือจึงอ่านจาก commissionByDate
+  // แล้วตัดแถวงวดจ่าย/เงินเบิกออกจากตาราง ยอดรวม และรายการใหญ่สุด
+  const expenseRows = rows.filter((r) => !r.category.startsWith(COMMISSION_CATEGORY_PREFIX))
+
+  const curRows = rowsInRange(expenseRows, month, throughDay)
+  const prevRows = rowsInRange(expenseRows, prevMonth, throughDay)
 
   const cur = sumByCategory(curRows)
   const prev = sumByCategory(prevRows)
+
+  const curCommission = sumDaily(commissionByDate, month, throughDay)
+  const prevCommission = sumDaily(commissionByDate, prevMonth, throughDay)
 
   const categories = new Set([...cur.keys(), ...prev.keys()])
   const byCategory = [...categories]
@@ -126,6 +136,12 @@ export function compareRange(input: {
       const previous = prev.get(category) ?? 0
       return { category, current, previous, deltaBaht: current - previous }
     })
+    .concat([{
+      category: COMMISSION_LABEL,
+      current: curCommission,
+      previous: prevCommission,
+      deltaBaht: curCommission - prevCommission,
+    }])
     // หมวดที่ยอดเท่าเดิมต้องอยู่ด้วย เจ้าของร้านอ่านตารางนี้เพื่อดูว่าจ่ายอะไรไปเท่าไร
     // ไม่ใช่ดูแค่ว่าอะไรเปลี่ยน — ตัดทิ้งเฉพาะหมวดที่ไม่มียอดเลยทั้งสองเดือน
     .filter((c) => c.current !== 0 || c.previous !== 0)
@@ -139,11 +155,11 @@ export function compareRange(input: {
 
   return {
     current: {
-      expense: curRows.reduce((s, r) => s + r.amount, 0),
+      expense: curRows.reduce((s, r) => s + r.amount, 0) + curCommission,
       revenue: sumDaily(revenueByDate, month, throughDay),
     },
     previous: {
-      expense: prevRows.reduce((s, r) => s + r.amount, 0),
+      expense: prevRows.reduce((s, r) => s + r.amount, 0) + prevCommission,
       revenue: sumDaily(revenueByDate, prevMonth, throughDay),
     },
     byCategory,
@@ -302,21 +318,39 @@ export type MonthlySeries = {
 export function monthlySeries(input: {
   rows: ExpenseRow[]
   revenueByMonth: Map<string, number>
+  commissionByMonth: Map<string, number>
   currentMonth: string
 }): MonthlySeries {
-  const { rows, revenueByMonth, currentMonth } = input
+  const { rows, revenueByMonth, commissionByMonth, currentMonth } = input
 
-  const months = [...new Set(rows.map((r) => r.expense_date.slice(0, 7)))].sort()
+  // ค่ามืออ่านจากงานจริง (commissionByMonth) แถวงวดจ่าย/เงินเบิกจึงต้องออกจากตารางนี้
+  // — เหตุผลเดียวกับ compareRange: งวดจ่ายบอกจังหวะเงินออก ไม่ได้บอกต้นทุนของเดือน
+  const expenseRows = rows.filter((r) => !r.category.startsWith(COMMISSION_CATEGORY_PREFIX))
+
+  const commissionOf = (month: string) => commissionByMonth.get(month) ?? 0
+
+  const months = [
+    ...new Set([
+      ...expenseRows.map((r) => r.expense_date.slice(0, 7)),
+      ...[...commissionByMonth.keys()].filter((m) => commissionOf(m) > 0),
+    ]),
+  ].sort()
   // เดือนปัจจุบันยอดยังไม่ครบ ถ้านับรวมจะได้ลูกศรชี้ลงทุกหมวดเสมอ
   const closed = months.filter((m) => m < currentMonth)
   const last3Closed = closed.slice(-3)
 
-  const categories = [...new Set(rows.map((r) => r.category))].sort()
+  const hasCommission = months.some((m) => commissionOf(m) > 0)
+  const categories = [
+    ...new Set(expenseRows.map((r) => r.category)),
+    ...(hasCommission ? [COMMISSION_LABEL] : []),
+  ].sort()
 
   const amountOf = (category: string, month: string) =>
-    rows
-      .filter((r) => r.category === category && r.expense_date.startsWith(`${month}-`))
-      .reduce((s, r) => s + r.amount, 0)
+    category === COMMISSION_LABEL
+      ? commissionOf(month)
+      : expenseRows
+          .filter((r) => r.category === category && r.expense_date.startsWith(`${month}-`))
+          .reduce((s, r) => s + r.amount, 0)
 
   const byCategory = categories.map((category) => {
     const history = last3Closed.map((m) => amountOf(category, m))
@@ -328,7 +362,7 @@ export function monthlySeries(input: {
     }
     return {
       category,
-      ruler: rulerOf(category),
+      ruler: category === COMMISSION_LABEL ? ("revenue_linked" as Ruler) : rulerOf(category),
       amounts: months.map((m) => amountOf(category, m)),
       median3: enough ? median(history) : null,
       trend,
@@ -338,9 +372,10 @@ export function monthlySeries(input: {
   const costPer100Revenue = months.map((m) => {
     const revenue = revenueByMonth.get(m) ?? 0
     if (revenue <= 0) return 0
-    const expense = rows
-      .filter((r) => r.expense_date.startsWith(`${m}-`))
-      .reduce((s, r) => s + r.amount, 0)
+    const expense =
+      expenseRows
+        .filter((r) => r.expense_date.startsWith(`${m}-`))
+        .reduce((s, r) => s + r.amount, 0) + commissionOf(m)
     return (expense / revenue) * 100
   })
 

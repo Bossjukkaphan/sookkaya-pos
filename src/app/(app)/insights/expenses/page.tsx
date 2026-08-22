@@ -7,6 +7,7 @@ import { formatBaht } from "@/lib/constants"
 import { todayInShopTz } from "@/lib/datetime"
 import { monthLabel, monthShortLabel, shiftMonth } from "@/lib/month"
 import {
+  COMMISSION_LABEL,
   compareRange,
   detectAnomalies,
   monthlySeries,
@@ -21,7 +22,9 @@ import { PagerLink } from "@/components/pager-link"
 export const metadata = { title: "วิเคราะห์รายจ่าย · สุขกายา POS" }
 
 /** ยอดของหมวดในเดือนหนึ่ง กดแล้วไปหน้ารายจ่ายที่กรองหมวดนั้นไว้ให้เลย
- *  หมวดที่ไม่มียอดในเดือนนั้นไม่ต้องลิงก์ กดไปก็เจอหน้าว่าง */
+ *  หมวดที่ไม่มียอดในเดือนนั้นไม่ต้องลิงก์ กดไปก็เจอหน้าว่าง
+ *  แถวค่ามือหมอก็ไม่ลิงก์ — ป้ายนี้ไม่ใช่ชื่อหมวดจริง (ยอดมาจากงานที่ทำจริง
+ *  ไม่ใช่แถวรายจ่าย) กดไปหน้ารายจ่ายจะเจอหน้าว่างหรือตัวเลขคนละตัว */
 function CategoryAmountLink({
   month,
   category,
@@ -32,6 +35,7 @@ function CategoryAmountLink({
   amount: number
 }) {
   if (amount === 0) return <span className="text-slate-300">—</span>
+  if (category === COMMISSION_LABEL) return <>{formatBaht(amount)}</>
   return (
     <Link
       href={`/expenses?month=${month}&category=${encodeURIComponent(category)}`}
@@ -117,7 +121,7 @@ export default async function ExpenseInsightsPage({
     (commissionRows ?? []).map((r) => ({ date: r.work_date, value: r.commission }))
   )
 
-  const cmp = compareRange({ rows, revenueByDate, month, throughDay })
+  const cmp = compareRange({ rows, revenueByDate, commissionByDate, month, throughDay })
   const anomalies = detectAnomalies({
     rows,
     revenueByDate,
@@ -133,7 +137,18 @@ export default async function ExpenseInsightsPage({
     revenueByMonth.set(m, (revenueByMonth.get(m) ?? 0) + value)
   }
 
-  const series = monthlySeries({ rows, revenueByMonth, currentMonth: today.slice(0, 7) })
+  const commissionByMonth = new Map<string, number>()
+  for (const [date, value] of commissionByDate) {
+    const m = date.slice(0, 7)
+    commissionByMonth.set(m, (commissionByMonth.get(m) ?? 0) + value)
+  }
+
+  const series = monthlySeries({
+    rows,
+    revenueByMonth,
+    commissionByMonth,
+    currentMonth: today.slice(0, 7),
+  })
   const projection = projectMonthEnd({ rows, month, throughDay })
 
   // กราฟเส้นเอาเฉพาะเดือนที่ปิดแล้ว — เดือนที่ยังไม่จบมีแต่รายจ่ายที่คีย์ทันแล้ว
@@ -194,6 +209,8 @@ export default async function ExpenseInsightsPage({
           <p className="text-xs text-slate-500">
             กดตัวเลขเพื่อดูรายการจริงของหมวดนั้น · กดชื่อเดือนเพื่อดูรายจ่ายทั้งเดือน
             {isCurrentMonth && " · ตารางเทียบแค่ช่วงวันเท่ากัน แต่ลิงก์จะพาไปดูทั้งเดือน"}
+            {" · "}ค่ามือหมอคิดจากงานที่หมอทำจริงในช่วงวัน ไม่ใช่งวดที่จ่ายออก
+            จึงเทียบกันได้ตรงแม้เดือนยังไม่จบ
           </p>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -436,7 +453,10 @@ export default async function ExpenseInsightsPage({
             </table>
           </div>
           <div className="space-y-1 px-4 pt-3 text-xs text-slate-500">
-            <p>* เดือนนี้ยังไม่จบ ยอดยังไม่ครบ · ลูกศรแนวโน้มคิดจากเดือนที่ปิดแล้ว 3 เดือนล่าสุด</p>
+            <p>
+              * เดือนนี้ยังไม่จบ ยอดยังไม่ครบ · ลูกศรแนวโน้มคิดจากเดือนที่ปิดแล้ว 3 เดือนล่าสุด ·
+              ค่ามือหมอคิดจากงานที่หมอทำจริง ไม่ใช่งวดที่จ่ายออก
+            </p>
             {isCurrentMonth && (
               <p className="font-medium text-slate-700">
                 ประมาณการรายจ่าย {monthLabel(month)} ทั้งเดือน ≈ {formatBaht(projection.total)} ฿
