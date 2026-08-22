@@ -447,7 +447,7 @@ export type MyBooking = {
 
 /** การจองข้างหน้า (pending/waiting) + ที่ผ่านมา 5 รายการ (ปุ่มจองซ้ำ — แบบ ThaiHand) */
 export async function getMyBookings(idToken: string): Promise<
-  { ok: true; upcoming: MyBooking[]; past: MyBooking[] } | Fail
+  { ok: true; upcoming: MyBooking[]; past: MyBooking[]; profileComplete: boolean } | Fail
 > {
   const who = await verifyLineIdToken(idToken)
   if (!who) return AUTH_FAIL
@@ -489,7 +489,23 @@ export async function getMyBookings(idToken: string): Promise<
   const past = group(rows.filter(
     (e) => e.status === "paid" || e.status === "cancelled" || e.status === "rejected" ||
       e.queue_date < today)).slice(0, 5)
-  return { ok: true, upcoming, past }
+
+  // โปรไฟล์ครบหรือยัง — หน้า "การจองของฉัน" ใช้ตัดสินว่าจะโชว์แถบชวนกรอกไหม
+  // query เพิ่มใน action เดียวกัน ฝั่ง client ยังยิงครั้งเดียวเท่าเดิม (ห้ามเพิ่ม round trip)
+  // นิยามเดียวกับหน้าแต้ม (points-actions.ts) — ห้ามมีนิยามที่สอง
+  const { data: account } = await db
+    .from("line_accounts")
+    .select("customers(birthday, gender)")
+    .eq("line_user_id", who.userId)
+    .maybeSingle()
+  const profile = (
+    account as unknown as {
+      customers: { birthday: string | null; gender: string | null } | null
+    } | null
+  )?.customers
+  const profileComplete = Boolean(profile?.birthday && profile?.gender)
+
+  return { ok: true, upcoming, past, profileComplete }
 }
 
 export async function cancelBooking(

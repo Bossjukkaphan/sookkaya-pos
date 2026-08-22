@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import liff from "@line/liff"
 import { useLiff } from "../liff"
@@ -64,6 +65,8 @@ export default function MyBookingsPage() {
   const [upcoming, setUpcoming] = useState<MyBooking[] | null>(null)
   const [past, setPast] = useState<MyBooking[]>([])
   const [confirmKey, setConfirmKey] = useState<string | null>(null)
+  // โปรไฟล์ยังไม่ครบ (เพศ/วันเกิด) — โชว์แถบชวนกรอกเหนือรายการจอง
+  const [profileIncomplete, setProfileIncomplete] = useState(false)
   const [cancelError, setCancelError] = useState("")
   const [authExpired, setAuthExpired] = useState(false)
   const idToken = liffState.phase === "ready" ? liffState.idToken : ""
@@ -83,6 +86,7 @@ export default function MyBookingsPage() {
         return
       }
       setUpcoming(r.upcoming); setPast(r.past)
+      setProfileIncomplete(!r.profileComplete)
     })
   }, [idToken])
   useEffect(load, [load])
@@ -116,6 +120,19 @@ export default function MyBookingsPage() {
   return (
     <div className="space-y-3">
       <h2 className="font-bold">การจองของฉัน</h2>
+      {profileIncomplete && (
+        <Link
+          href="/book/points"
+          className="block rounded-xl bg-[#FFF0D1] px-4 py-3"
+        >
+          <p className="text-sm font-semibold text-[#664343]">
+            กรอกโปรไฟล์ 1 นาที รับสิทธิ์แต้มสะสม 🌿
+          </p>
+          <p className="mt-0.5 text-xs text-[#664343]/80">
+            บอกวันเกิดไว้ มีของขวัญวันเกิดจากร้านด้วยนะคะ
+          </p>
+        </Link>
+      )}
       {upcoming.length === 0 && (
         <p className="py-6 text-center text-sm text-slate-500">ยังไม่มีคิวข้างหน้าค่ะ</p>
       )}
