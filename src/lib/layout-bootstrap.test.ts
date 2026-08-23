@@ -51,6 +51,23 @@ describe("parseLayoutBootstrap", () => {
     expect(r.expenseReminders).toHaveLength(1)
     expect(r.expenseReminders[0].label).toContain("เงินเดือน")
   })
+
+  it("duty บิลประจำใหม่ได้ label ถูกงาน ส่วน duty แปลกหน้า (SQL ใหม่กว่า app) ถูกคัดทิ้ง", () => {
+    const r = parseLayoutBootstrap({
+      profile: null,
+      pending_count: 0,
+      birthdays: [],
+      expense_reminders: [
+        { duty: "water", due: "2026-07-31" },
+        { duty: "internet", due: "2026-08-12" },
+        { duty: "duty_from_the_future", due: "2026-08-12" },
+      ],
+    })
+    expect(r.expenseReminders.map((x) => x.label)).toEqual([
+      "🚰 อย่าลืมบันทึกค่าน้ำ เดือน ก.ค.",
+      "🌐 อย่าลืมบันทึกค่าเน็ต/โทรศัพท์ร้าน รอบต้นเดือน ส.ค.",
+    ])
+  })
 })
 
 describe("layoutBootstrap", () => {

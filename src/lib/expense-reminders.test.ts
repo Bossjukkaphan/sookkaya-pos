@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest"
 import {
   lastTherapistDue,
   lastSalaryDue,
+  lastUtilityDue,
+  lastInternetDue,
   expenseReminderLabel,
 } from "./expense-reminders"
 
@@ -43,6 +45,27 @@ describe("lastSalaryDue — สิ้นเดือนล่าสุดที�
   })
 })
 
+describe("lastUtilityDue — ค่าน้ำ/ค่าไฟครบกำหนดสิ้นเดือนล่าสุดที่ผ่านมา", () => {
+  it("ระหว่างเดือน → สิ้นเดือนก่อนหน้า (เหมือนเงินเดือน)", () => {
+    expect(lastUtilityDue("2026-08-23")).toBe("2026-07-31")
+    expect(lastUtilityDue("2026-03-01")).toBe("2026-02-28")
+  })
+})
+
+describe("lastInternetDue — บิลเน็ตครบกำหนดวันที่ 12 ล่าสุดที่ผ่านมา", () => {
+  it("หลังวันที่ 12 → วันที่ 12 เดือนนี้", () => {
+    expect(lastInternetDue("2026-08-13")).toBe("2026-08-12")
+    expect(lastInternetDue("2026-08-31")).toBe("2026-08-12")
+  })
+  it("วันที่ 1-12 → วันที่ 12 เดือนก่อน (วันครบกำหนดพอดียังไม่เตือน)", () => {
+    expect(lastInternetDue("2026-08-01")).toBe("2026-07-12")
+    expect(lastInternetDue("2026-08-12")).toBe("2026-07-12")
+  })
+  it("ข้ามปี: ต้น ม.ค. → 12 ธ.ค. ปีก่อน", () => {
+    expect(lastInternetDue("2026-01-05")).toBe("2025-12-12")
+  })
+})
+
 describe("expenseReminderLabel", () => {
   it("ค่ามือหมอ รอบวันที่ 10/20 บอกวันที่", () => {
     expect(expenseReminderLabel("therapist_fee", "2026-08-10")).toBe(
@@ -60,6 +83,17 @@ describe("expenseReminderLabel", () => {
   it("เงินเดือน บอกชื่อเดือน", () => {
     expect(expenseReminderLabel("salary", "2026-07-31")).toBe(
       "💼 อย่าลืมบันทึกเงินเดือนพนักงาน เดือน ก.ค."
+    )
+  })
+  it("บิลประจำหมวดค่าน้ำ/ค่าไฟ/เน็ต บอกเดือนของรอบ", () => {
+    expect(expenseReminderLabel("electricity", "2026-07-31")).toBe(
+      "💡 อย่าลืมบันทึกค่าไฟ เดือน ก.ค."
+    )
+    expect(expenseReminderLabel("water", "2026-07-31")).toBe(
+      "🚰 อย่าลืมบันทึกค่าน้ำ เดือน ก.ค."
+    )
+    expect(expenseReminderLabel("internet", "2026-08-12")).toBe(
+      "🌐 อย่าลืมบันทึกค่าเน็ต/โทรศัพท์ร้าน รอบต้นเดือน ส.ค."
     )
   })
 })
