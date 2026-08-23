@@ -15,6 +15,10 @@ export type LayoutBootstrap = {
   expenseReminders: ExpenseReminder[]
 }
 
+const KNOWN_DUTIES: readonly ExpenseDuty[] = [
+  "therapist_fee", "salary", "electricity", "water", "internet",
+]
+
 const EMPTY: LayoutBootstrap = {
   profile: null,
   pendingCount: 0,
@@ -42,12 +46,14 @@ export function parseLayoutBootstrap(raw: unknown): LayoutBootstrap {
     ),
     // SQL ส่ง duty+due ดิบ — ประกอบ label ไทยที่นี่ด้วยฟังก์ชันเดิม จะได้ไม่ก๊อปข้อความลง SQL
     // คัดตัวที่ไม่ใช่ object หรือไม่มี duty/due เป็น string ทิ้งก่อน ป้องกัน throw ตอน destructure
+    // duty ต้องเป็นชนิดที่ app รู้จักด้วย — ช่วงที่ SQL ใหม่กว่า app (เพิ่งรัน migration
+    // ก่อน deploy เสร็จ) duty แปลกหน้าต้องถูกทิ้งเงียบๆ ไม่ใช่ได้ label ผิดงาน
     expenseReminders: reminders
       .filter(
         (r): r is { duty: ExpenseDuty; due: string } =>
           !!r &&
           typeof r === "object" &&
-          typeof (r as Record<string, unknown>).duty === "string" &&
+          KNOWN_DUTIES.includes((r as Record<string, unknown>).duty as ExpenseDuty) &&
           typeof (r as Record<string, unknown>).due === "string"
       )
       .map((r) => ({ duty: r.duty, label: expenseReminderLabel(r.duty, r.due) })),
