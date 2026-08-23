@@ -34,6 +34,8 @@ export function BookingWizard({ services, therapists, days }: {
 }) {
   const liffState = useLiff()
   const [linked, setLinked] = useState<null | boolean>(null)
+  // โปรไฟล์ยังไม่ครบ (เพศ/วันเกิด) — ใช้ชวนกรอกหลังจองสำเร็จ ไม่รบกวนระหว่างจอง
+  const [profileIncomplete, setProfileIncomplete] = useState(false)
   const [phone, setPhone] = useState("")
   const [realName, setRealName] = useState("")
   const [linking, setLinking] = useState(false)
@@ -70,6 +72,7 @@ export function BookingWizard({ services, therapists, days }: {
         return
       }
       setLinked(r.linked)
+      if (r.linked) setProfileIncomplete(!r.profileComplete)
     })
   }, [idToken])
 
@@ -158,6 +161,20 @@ export function BookingWizard({ services, therapists, days }: {
         <h2 className="mt-2 font-bold">ส่งคำขอจองแล้วค่ะ</h2>
         <p className="mt-1 text-sm text-slate-600">
           {formatThaiDate(date)} · {time}<br />รอร้านยืนยัน — แจ้งผลทางไลน์นะคะ</p>
+        {profileIncomplete && (
+          // ชวนตอนจบเท่านั้น — ระหว่างจองห้ามมีอะไรคั่น (ลูกค้ากำลังจะจ่ายเงินให้ร้าน)
+          <Link
+            href="/book/points"
+            className="mt-4 block rounded-xl bg-[#FFF0D1] px-4 py-3 text-left"
+          >
+            <p className="text-sm font-semibold text-[#664343]">
+              กรอกโปรไฟล์ 1 นาที รับสิทธิ์แต้มสะสม 🌿
+            </p>
+            <p className="mt-0.5 text-xs text-[#664343]/80">
+              บอกวันเกิดไว้ มีของขวัญวันเกิดจากร้านด้วยนะคะ
+            </p>
+          </Link>
+        )}
         <Link href="/book/mine" className="mt-4 block text-sm text-[#664343] underline">ดูการจองของฉัน</Link>
       </div>
     )

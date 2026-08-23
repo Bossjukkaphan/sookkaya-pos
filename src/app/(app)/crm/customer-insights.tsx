@@ -5,6 +5,7 @@ import { daysSince, dormantCutoff } from "@/lib/insights"
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Card, CardContent } from "@/components/ui/card"
+import { DemographicsView } from "./demographics-view"
 
 /**
  * แท็บ "วิเคราะห์ลูกค้า" ของหน้าดูแลลูกค้า — ยอดสะสมสูงสุด + หายไปนาน
@@ -22,10 +23,24 @@ export async function CustomerInsights({
   days?: string
 }) {
   const supabase = await createClient()
-  const tab = sub === "dormant" ? "dormant" : "ltv"
+  const tab = sub === "dormant" ? "dormant" : sub === "demo" ? "demo" : "ltv"
   const days = DAY_OPTIONS.includes(Number(rawDays)) ? Number(rawDays) : 60
 
   const today = todayInShopTz()
+
+  // แท็บกลุ่มลูกค้าแยกทางตั้งแต่ต้น — ไม่ต้องจ่ายค่า query LTV ที่ไม่ได้ใช้
+  if (tab === "demo") {
+    return (
+      <div className="space-y-4">
+        <nav className="flex gap-2">
+          <SubTabLink href="/crm?tab=insights" label="ยอดสะสมสูงสุด" active={false} />
+          <SubTabLink href="/crm?tab=insights&sub=dormant&days=60" label="หายไปนาน" active={false} />
+          <SubTabLink href="/crm?tab=insights&sub=demo" label="กลุ่มลูกค้า" active />
+        </nav>
+        <DemographicsView />
+      </div>
+    )
+  }
 
   // แท็บ "หายไปนาน" ต้องกรองใน SQL — ดูเหตุผลใน dormantCutoff()
   const query =
@@ -68,6 +83,7 @@ export async function CustomerInsights({
           label="หายไปนาน"
           active={tab === "dormant"}
         />
+        <SubTabLink href="/crm?tab=insights&sub=demo" label="กลุ่มลูกค้า" active={false} />
       </div>
 
       {tab === "dormant" && (
