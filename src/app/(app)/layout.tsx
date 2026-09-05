@@ -43,7 +43,9 @@ export default async function AppLayout({
       <div className="flex min-h-full flex-1 flex-col sm:flex-row">
         <AppShell role={profile?.role ?? "staff"} pendingCount={pendingCount ?? 0} />
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        {/* pb จอแคบ: กันที่ให้แถบเมนูล่างที่เป็น fixed (สูง ~60px + safe area ของ iPhone)
+            ไม่งั้นเนื้อหาบรรทัดสุดท้ายของทุกหน้าจะโดนแถบเมนูบัง */}
+        <div className="flex min-w-0 flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom))] sm:pb-0">
           {/* แถบบนขาวตามธีมรวม — โลโก้น้ำตาลแดง (เวอร์ชันสำหรับพื้นสว่างตามคู่มือ CI) */}
           <header className="border-b border-[#664343]/15 bg-white">
             <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 px-4 py-2.5 lg:px-6">
