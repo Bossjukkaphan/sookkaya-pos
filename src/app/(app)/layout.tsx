@@ -40,7 +40,10 @@ export default async function AppLayout({
       birthdayCount={birthdays.length}
       expenseReminders={expenseDue}
     >
-      <div className="flex min-h-full flex-1 flex-col sm:flex-row">
+      {/* touch-pan-x/y: ห้ามซูมสองนิ้วเฉพาะโซนพนักงาน — iOS จงใจไม่สนใจ maximum-scale=1
+          (เหตุผล accessibility) พอเผลอซูม แถบเมนูล่างที่ตรึงกับ viewport จะลอยค้างกลางจอ
+          (เจอจริงบนบอร์ดคิว 5/9/2569) · ฝั่งลูกค้า /book ไม่แตะ — ลูกค้าต้องซูมอ่านได้ */}
+      <div className="flex min-h-full flex-1 touch-pan-x touch-pan-y flex-col sm:flex-row">
         <AppShell role={profile?.role ?? "staff"} pendingCount={pendingCount ?? 0} />
 
         {/* pb จอแคบ: กันที่ให้แถบเมนูล่างที่เป็น fixed (สูง ~60px + safe area ของ iPhone)
