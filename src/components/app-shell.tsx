@@ -47,12 +47,16 @@ export function AppShell({
   return (
     <nav
       className={cn(
-        // จอแคบ: แถบล่างเหมือนเดิม — ใช้ order ดันลงล่างแทนการย้ายตำแหน่งใน DOM
+        // จอแคบ: ตรึงกับขอบล่างจอด้วย fixed — ห้ามใช้ sticky bottom ตรงนี้:
+        // บน iOS ตอนไถหน้าจอแรงๆ (momentum scroll / แถบ URL ยุบ-ขยาย) sticky จะหลุด
+        // ไปค้างกลางจอแล้วเด้งกลับ (เจอจริงบนบอร์ดคิว 5/9/2569) — fixed ไม่มีอาการนี้
+        // ที่ว่างใต้เนื้อหาถูกกันไว้ให้แล้วที่ layout.tsx (pb ของคอลัมน์เนื้อหา)
+        // pb-[env(...)]: กันแถบ home ของ iPhone ทับปุ่มแถวล่าง (ใช้คู่ viewport-fit=cover)
         // z-40: ต้องสูงกว่าคอลัมน์ชื่อหมอของบอร์ดคิว (sticky z-20) ไม่งั้นชื่อหมอทับแถบเมนูบนมือถือ
         // และสูงกว่าการ์ดที่กำลังลาก (z-30) แต่ยังต่ำกว่า Dialog/toast (z-50) ที่ต้องคลุมทั้งจอ
-        "order-last sticky bottom-0 z-40 border-t bg-white",
+        "fixed inset-x-0 bottom-0 z-40 border-t bg-white pb-[env(safe-area-inset-bottom)]",
         // จอกว้าง: แถบข้างแนวตั้งติดซ้าย เลื่อนได้เมื่อรายการยาวเกินจอ
-        "sm:order-first sm:top-0 sm:bottom-auto sm:h-dvh sm:w-56 sm:shrink-0 sm:overflow-y-auto sm:border-t-0 sm:border-r"
+        "sm:sticky sm:inset-x-auto sm:top-0 sm:bottom-auto sm:h-dvh sm:w-56 sm:shrink-0 sm:overflow-y-auto sm:border-t-0 sm:border-r sm:pb-0"
       )}
       aria-label="เมนูหลัก"
     >

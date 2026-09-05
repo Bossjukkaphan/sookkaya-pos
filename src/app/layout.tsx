@@ -18,6 +18,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // ให้ env(safe-area-inset-bottom) มีค่าจริงบน iPhone — แถบเมนูล่างใช้กันปุ่มโดนแถบ home ทับ
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
