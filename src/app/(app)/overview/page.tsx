@@ -24,7 +24,9 @@ import type { Series } from "@/components/charts/grouped-bar-chart"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { InsightsAccessDenied, canSeeInsights } from "../insights/shared"
+import { memberMoneySplit } from "@/lib/cash-composition"
 import { CareList } from "./care-list"
+import { MemberMoneyCard } from "./member-money-card"
 import { MoneyZone } from "./money-zone"
 import { TeamZone } from "./team-zone"
 import { VerdictStrip } from "./verdict-strip"
@@ -155,6 +157,8 @@ export default async function OverviewPage() {
     attendanceR,
     queueR,
     settingsR,
+    memberMoneyMtdR,
+    memberMoneyPrevR,
   ] = await Promise.allSettled([
     getMyProfile(),
     must(supabase.rpc("boss_hub_rollup", { p_from: mtd.from, p_to: mtd.to })),
@@ -247,6 +251,10 @@ export default async function OverviewPage() {
         .not("status", "in", "(cancelled,rejected)")
     ),
     getShopSettingsCached(),
+    // ส่วนผสมเงินของ MTD และเดือนก่อนช่วงวันเท่ากัน — SUM ที่ฐานข้อมูลเพื่อเลี่ยงเพดานแถว
+    // (ดูเหตุผลเต็มใน migration 20260920060000_member_money_rollup.sql)
+    must(supabase.rpc("member_money_rollup", { p_from: mtd.from, p_to: mtd.to })),
+    must(supabase.rpc("member_money_rollup", { p_from: prevMtd.from, p_to: prevMtd.to })),
   ])
 
   // ทาง diagnostic เดียวของ 17 query ขนานชุดนี้ — allSettled กลืน rejection ไว้ไม่ให้พังทั้งหน้า
@@ -254,12 +262,12 @@ export default async function OverviewPage() {
   const settledLabels = [
     "profile", "rollupMtd", "rollupPrev", "rollupWeek", "pl", "expense", "dailySummary",
     "commissionDaily", "therapistDaily", "birthday", "dormant", "credit", "birthdayHealth",
-    "therapists", "attendance", "queue", "settings",
+    "therapists", "attendance", "queue", "settings", "memberMoneyMtd", "memberMoneyPrev",
   ]
   ;[
     profileR, rollupMtdR, rollupPrevR, rollupWeekR, plR, expenseR, dailySummaryR,
     commissionDailyR, therapistDailyR, birthdayR, dormantR, creditR, birthdayHealthR,
-    therapistsR, attendanceR, queueR, settingsR,
+    therapistsR, attendanceR, queueR, settingsR, memberMoneyMtdR, memberMoneyPrevR,
   ].forEach((r, i) => {
     if (r.status === "rejected") {
       console.error(`[overview] query "${settledLabels[i]}" ล้ม:`, r.reason)
@@ -280,6 +288,33 @@ export default async function OverviewPage() {
   // birthdayHealthR คือตัวตรวจสุขภาพของ query วันเกิด (lib กลืน error) — ดูเหตุผลที่ก้อน query
   const zone3Failed = anyFailed(birthdayR, birthdayHealthR, dormantR, creditR)
   const zone4Failed = anyFailed(rollupMtdR, therapistsR, therapistDailyR, attendanceR, queueR)
+
+  // ── ส่วนผสมเงิน: เงินใหม่ vs เครดิตเก่า ──
+  // ไม่ผูกกับ zone2Failed โดยตั้งใจ — คนละ query คนละเรื่อง ถ้า RPC นี้ล้ม
+  // การ์ดกำไรต้องยังอยู่ และถ้ากำไรล้ม การ์ดนี้ก็ยังอยู่ (ล้ม = ซ่อนการ์ดนี้เฉยๆ)
+  const memberMoneyOf = (json: unknown) => {
+    const o = (json ?? {}) as Record<string, unknown>
+    return memberMoneySplit({
+      volume: n(o.volume as number),
+      creditUsed: n(o.credit_used as number),
+      topupIn: n(o.topup_in as number),
+    })
+  }
+  const memberMoneyMtdJson = value(memberMoneyMtdR)
+  const memberMoneyPrevJson = value(memberMoneyPrevR)
+  const memberMoney =
+    memberMoneyMtdJson && memberMoneyPrevJson
+      ? {
+          current: memberMoneyOf(memberMoneyMtdJson),
+          prev: memberMoneyOf(memberMoneyPrevJson),
+          outstandingCredit: n(
+            (memberMoneyMtdJson as Record<string, unknown>).outstanding_credit as number
+          ),
+          outstandingMembers: n(
+            (memberMoneyMtdJson as Record<string, unknown>).outstanding_members as number
+          ),
+        }
+      : null
 
   // ── โซน 1: วันนี้/เดือนนี้ ดีกว่าหรือแย่กว่าปกติ ──
   // parseRollup กัน null/โครงผิดให้แล้ว — โซนที่ query ล้มจะไม่ถูก render อยู่ดี
@@ -546,6 +581,16 @@ export default async function OverviewPage() {
                 </Card>
               )}
             </>
+          )}
+
+          {/* ส่วนผสมเงิน — การ์ดอิสระ แสดงได้แม้โซนกำไรล้ม (คนละ query) */}
+          {memberMoney && (
+            <MemberMoneyCard
+              current={memberMoney.current}
+              prev={memberMoney.prev}
+              outstandingCredit={memberMoney.outstandingCredit}
+              outstandingMembers={memberMoney.outstandingMembers}
+            />
           )}
         </div>
 
