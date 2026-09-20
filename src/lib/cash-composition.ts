@@ -23,7 +23,9 @@ function byAmountThenLabel<T extends { amount: number; label: string }>(a: T, b:
   return b.amount - a.amount || a.label.localeCompare(b.label)
 }
 
-export type PaymentLineRow = { method: string | null; amount: number | string }
+/** amount/cash_received เป็น nullable ตาม generated types ของ view แม้ข้อมูลจริงไม่เคยว่าง
+ *  — รับ null ไว้เลยดีกว่าให้ผู้เรียกต้อง cast ทิ้งความปลอดภัยของ type */
+export type PaymentLineRow = { method: string | null; amount: number | string | null }
 export type TopupRow = {
   payment_method: string | null
   cash_received: number | string | null

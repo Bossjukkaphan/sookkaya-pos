@@ -12,6 +12,7 @@ import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { InsightsAccessDenied, canSeeInsights } from "@/app/(app)/insights/shared"
 import { getMyProfile } from "@/lib/auth"
 import { MONEY_INFO } from "@/lib/money-info"
+import { cashInBreakdown, topupBreakdown } from "@/lib/cash-composition"
 import { revenueWaterfall } from "@/lib/revenue-waterfall"
 import { PAY_DOT, PAY_DOT_DEFAULT } from "@/lib/payment-colors"
 import { promoKey } from "@/lib/promo"
@@ -123,9 +124,11 @@ export default async function ReportsPage({
         .select("sale_date, sessions, volume, net_revenue, discount_total, cash_in, room_fee_total")
         .gte("sale_date", from)
         .lte("sale_date", to),
+      // tier มาด้วยเพื่อแยกว่าขายแพ็กเกจระดับไหนไปบ้าง — ใบเติมทั้งเดือนหลักสิบแถว
+      // ไม่มีปัญหาเพดานแถว
       supabase
         .from("member_topups")
-        .select("cash_received, payment_method")
+        .select("cash_received, payment_method, tier")
         .gte("topup_date", from)
         .lte("topup_date", to),
       // จัดกลุ่มส่วนลดตามชื่อโปรจริง — พนักงานพิมพ์ชื่อโปรได้หลายแบบ (เคยมี Happy Hour 8 แบบ)
@@ -213,16 +216,12 @@ export default async function ReportsPage({
   )
   // แยกช่องทางของเงินเข้าบัญชี: เงินจริงตามบรรทัดชำระ (v_bill_payments) + เงินเติมสมาชิกตามช่องทางที่จ่าย
   // เครดิตไม่ใช่เงินเข้า จึงไม่อยู่ใน v_bill_payments อยู่แล้ว (ตัด Member Credit ออกตั้งแต่ต้นทาง)
-  const cashByChannel = new Map<string, number>()
-  for (const p of paymentLines ?? []) {
-    // generated types ของ view เป็น nullable ทั้งที่ต้นทาง (bill_payments.method / sales.payment_method) ไม่เคย null
-    const method = p.method ?? "ไม่ระบุ"
-    cashByChannel.set(method, (cashByChannel.get(method) ?? 0) + Number(p.amount))
-  }
-  for (const t of topups ?? []) {
-    const m = t.payment_method
-    cashByChannel.set(m, (cashByChannel.get(m) ?? 0) + Number(t.cash_received ?? 0))
-  }
+  //
+  // แต่ละช่องทางต้องบอกด้วยว่ามาจากบิลเท่าไร ขายแพ็กเกจเท่าไร — ยอดรวมก้อนเดียว
+  // กระทบยอดกับสลิปไม่ได้ (ยอด QR ก้อนหนึ่งเป็นค่าบริการปนกับค่าแพ็กเกจเสมอ)
+  const cashIn = cashInBreakdown(paymentLines ?? [], topups ?? [])
+  // ขายแพ็กเกจสมาชิกในช่วงนี้ แยกช่องทาง/ระดับ — ตัวแปรที่เหวี่ยงกระแสเงินสดแรงที่สุดของร้าน
+  const topupMix = topupBreakdown(topups ?? [])
 
   const commissionCost = (therapistDaily ?? []).reduce(
     (sum, d) => sum + Number(d.total_income ?? 0),
@@ -538,27 +537,90 @@ export default async function ReportsPage({
             <p className="text-xs text-slate-500">
               ยอดขายที่ไม่ใช่เครดิตสมาชิก + เงินเติมสมาชิก
             </p>
-            {[...cashByChannel.entries()]
-              .sort((a, b) => b[1] - a[1])
-              .map(([method, amount]) => (
-                <div key={method} className="flex justify-between">
+            {cashIn.rows.map((c) => (
+              <div key={c.method}>
+                <div className="flex justify-between">
                   <span className="flex items-center gap-1.5 text-slate-600">
                     <span
-                      className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[method] ?? PAY_DOT_DEFAULT}`}
+                      className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[c.method] ?? PAY_DOT_DEFAULT}`}
                     />
-                    {method}
+                    {c.method}
                   </span>
-                  <span className="font-medium">{formatBaht(amount)}</span>
+                  <span className="font-medium">{formatBaht(c.total)}</span>
                 </div>
-              ))}
-            {cashByChannel.size === 0 && (
+                {/* แสดงที่มาทุกช่องทางเสมอแม้ฝั่งใดเป็น 0 — ถ้าซ่อนบรรทัดตอนเป็นศูนย์
+                    คนอ่านจะไม่รู้ว่า "ไม่มี" หรือ "ระบบไม่ได้แยกให้" */}
+                <div className="flex justify-between pl-3.5 text-xs text-slate-400">
+                  <span>บิลค่าบริการ · แพ็กเกจสมาชิก</span>
+                  <span className="tabular-nums">
+                    {formatBaht(c.bills)} · {formatBaht(c.topups)}
+                  </span>
+                </div>
+              </div>
+            ))}
+            {cashIn.rows.length === 0 && (
               <p className="py-2 text-center text-xs text-slate-400">
                 ไม่มีเงินเข้าในช่วงนี้
               </p>
             )}
+            {cashIn.rows.length > 0 && (
+              <div className="flex justify-between border-t pt-1.5 text-xs text-slate-500">
+                <span>รวมตามที่มา: บิล · แพ็กเกจ</span>
+                <span className="tabular-nums">
+                  {formatBaht(cashIn.billsTotal)} · {formatBaht(cashIn.topupsTotal)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </div>
+
+      {/* ขายแพ็กเกจสมาชิก — แยกการ์ดของตัวเองเพราะเป็นเงินสดก้อนใหญ่ที่เหวี่ยงแรงที่สุด
+          (ส.ค. 136,020 → ก.ย. 65,000) แต่เดิมซ่อนอยู่แค่บรรทัดเดียวในการ์ดรายรับ */}
+      {topupMix.count > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-baseline justify-between gap-2">
+              <CardTitle className="text-base">ขายแพ็กเกจสมาชิก</CardTitle>
+              <span className="text-lg font-bold text-slate-800">
+                {formatBaht(topupMix.total)} ฿
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              {topupMix.count} ใบในช่วงนี้ · เป็นเงินสดเข้าบัญชี แต่ไม่นับเป็นรายได้จนกว่าลูกค้าจะมาใช้บริการ
+            </p>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-slate-600">ช่องทางที่ลูกค้าจ่าย</p>
+              {topupMix.byMethod.map((m) => (
+                <div key={m.label} className="flex justify-between text-sm">
+                  <span className="flex items-center gap-1.5 text-slate-600">
+                    <span
+                      className={`inline-block h-2 w-2 rounded-full ${PAY_DOT[m.label] ?? PAY_DOT_DEFAULT}`}
+                    />
+                    {m.label}
+                    <span className="text-xs text-slate-400">({m.count} ใบ)</span>
+                  </span>
+                  <span className="font-medium tabular-nums">{formatBaht(m.amount)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-slate-600">ระดับแพ็กเกจ</p>
+              {topupMix.byTier.map((t) => (
+                <div key={t.label} className="flex justify-between text-sm">
+                  <span className="text-slate-600">
+                    {t.label}
+                    <span className="ml-1.5 text-xs text-slate-400">({t.count} ใบ)</span>
+                  </span>
+                  <span className="font-medium tabular-nums">{formatBaht(t.amount)}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* สรุปกำไรหยาบ */}
       <Card>
