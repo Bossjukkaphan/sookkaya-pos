@@ -1798,6 +1798,7 @@ export type Database = {
         }[]
       }
       layout_bootstrap: { Args: { p_today: string }; Returns: Json }
+      member_money_rollup: { Args: { p_from: string; p_to: string }; Returns: Json }
       next_receipt_no: { Args: { p_date?: string }; Returns: string }
       promo_key: { Args: { txt: string }; Returns: string }
       trigger_cron_route: {
