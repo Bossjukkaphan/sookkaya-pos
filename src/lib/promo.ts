@@ -13,13 +13,14 @@ export function promoKey(text: string | null | undefined): string {
 }
 
 /**
- * แปลงโปรส่วนลด % เป็นจำนวนเงินบาทเต็ม — ปัดเศษแบบคณิต (82.50 → 83)
- * ช่องส่วนลดใน POS ต้องเป็นจำนวนเต็มเสมอ ไม่งั้นเบราว์เซอร์บล็อกปุ่มชำระ
+ * แปลงโปรส่วนลด % เป็นจำนวนเงินบาท คิดถึงสตางค์ ปัดที่ทศนิยม 2 ตำแหน่ง (690 ลด 15% = 103.50)
+ * เดิมปัดเป็นบาทเต็ม — เจ้าของร้านสั่งเปลี่ยนเป็นคิดทศนิยมเต็ม 13/10/2569
+ * (ช่องส่วนลดทุกฟอร์มต้องตั้ง step="0.01" คู่กันเสมอ ไม่งั้นเบราว์เซอร์บล็อกปุ่มชำระ)
  */
 export function promoDiscountBaht(price: number, pct: number): number {
   if (!Number.isFinite(price) || !Number.isFinite(pct)) return 0
   if (price <= 0 || pct <= 0) return 0
-  return Math.min(Math.round((price * pct) / 100), Math.round(price))
+  return Math.min(Math.round(price * pct) / 100, price)
 }
 
 /** คีย์มาตรฐานของโปร Happy Hours (เทียบด้วย promoKey ของชื่อโปรที่เลือก) */

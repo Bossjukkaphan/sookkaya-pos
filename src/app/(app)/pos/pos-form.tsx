@@ -1037,16 +1037,18 @@ export function PosForm({
               id="discount"
               name="discount"
               type="number"
-              inputMode="numeric"
+              inputMode="decimal"
               min={0}
+              step="0.01"
               className="h-12"
               value={discount}
               onChange={(e) => setDiscount(e.target.value)}
               onBlur={() => {
-                // เศษสตางค์ทำให้เบราว์เซอร์บล็อกปุ่มชำระ (step=1) — ปัดเป็นบาทเต็มให้เลย
+                // รับถึงสตางค์ (step=0.01 · นโยบาย 13/10/2569) — ละเอียดกว่านั้นปัดให้ ไม่งั้นเบราว์เซอร์บล็อกปุ่มชำระ
                 const n = Number(discount)
-                if (discount !== "" && Number.isFinite(n) && !Number.isInteger(n)) {
-                  setDiscount(String(Math.round(n)))
+                const rounded = Math.round(n * 100) / 100
+                if (discount !== "" && Number.isFinite(n) && rounded !== n) {
+                  setDiscount(String(rounded))
                 }
               }}
               placeholder="0"
@@ -1158,15 +1160,17 @@ export function PosForm({
               <div className="flex items-center gap-3">
                 <Input
                   type="number"
-                  inputMode="numeric"
+                  inputMode="decimal"
                   min={0}
+                  step="0.01"
                   placeholder="ส่วนลด (฿)"
                   value={x.discount}
                   onChange={(e) => setExtra(i, { discount: e.target.value })}
                   onBlur={() => {
                     const n = Number(x.discount)
-                    if (x.discount !== "" && Number.isFinite(n) && !Number.isInteger(n)) {
-                      setExtra(i, { discount: String(Math.round(n)) })
+                    const rounded = Math.round(n * 100) / 100
+                    if (x.discount !== "" && Number.isFinite(n) && rounded !== n) {
+                      setExtra(i, { discount: String(rounded) })
                     }
                   }}
                   className="h-11 w-32"
