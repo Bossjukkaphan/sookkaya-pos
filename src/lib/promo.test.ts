@@ -84,10 +84,16 @@ describe("promoDiscountBaht", () => {
     expect(promoDiscountBaht(1000, 15)).toBe(150)
   })
 
-  it("ปัดเศษเป็นบาทเต็ม (เศษสตางค์ทำให้กดชำระไม่ได้)", () => {
-    expect(promoDiscountBaht(550, 15)).toBe(83) // 82.5 → 83
-    expect(promoDiscountBaht(590, 15)).toBe(89) // 88.5 → 89
-    expect(promoDiscountBaht(333, 20)).toBe(67) // 66.6 → 67
+  it("คิดถึงสตางค์ ไม่ปัดเป็นบาทเต็ม (เจ้าของร้านสั่ง 13/10/2569 — เคสจริงคุณตี๋ 690 ลด 15%)", () => {
+    expect(promoDiscountBaht(690, 15)).toBe(103.5)
+    expect(promoDiscountBaht(550, 15)).toBe(82.5)
+    expect(promoDiscountBaht(590, 15)).toBe(88.5)
+    expect(promoDiscountBaht(333, 20)).toBe(66.6)
+  })
+
+  it("ทศนิยมเกินสตางค์ปัดที่ 2 ตำแหน่ง — ช่องส่วนลด step=0.01 รับละเอียดกว่านี้ไม่ได้", () => {
+    expect(promoDiscountBaht(333, 15)).toBe(49.95)
+    expect(promoDiscountBaht(99.99, 15)).toBe(15) // 14.9985 → 15.00
   })
 
   it("ไม่เกินราคาขาย และกันค่าประหลาด", () => {

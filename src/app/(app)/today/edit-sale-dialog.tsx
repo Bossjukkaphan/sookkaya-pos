@@ -10,6 +10,7 @@ import { deleteBillPayment, updateBillPaymentMethod } from "../payment-actions"
 import { CollectDueDialog } from "../collect-due-dialog"
 import { CustomerPicker } from "../pos/customer-picker"
 import { computeSaleAmounts } from "@/lib/sale-math"
+import { HAPPY_HOUR_KEY, happyHourDiscountBaht, promoDiscountBaht, promoKey } from "@/lib/promo"
 import { isCreditExpiredOn, isCreditFrozen } from "@/lib/member-credit"
 import { cn } from "@/lib/utils"
 import {
@@ -41,7 +42,7 @@ import {
 
 export type Therapist = { id: string; name: string }
 export type Service = { id: string; name: string; price: number; commission: number }
-export type Promotion = { id: string; name: string }
+export type Promotion = { id: string; name: string; discount_pct: number | null }
 export type MemberBalance = {
   credit_balance: number
   credit_granted: number
@@ -256,6 +257,28 @@ function EditSaleForm({
     [services, serviceId]
   )
 
+  /** เลือกโปรฯ แล้วส่วนลดต้องเด้งเอง — กติกาเดียวกับหน้าเก็บเงิน (pos-form.tsx)
+   *  เดิมกล่องนี้เปลี่ยนแค่ชื่อโปร พนักงานต้องคำนวณมือ (เคสจริงคุณตี๋ 13/10/2569:
+   *  ลด 15% ของ 690 กรอกมือเป็น 103 ทั้งที่ค่าจริงคือ 103.50) */
+  function applyPromoDiscount(promoName: string, svcId: string) {
+    const svc = services.find((s) => s.id === svcId)
+    const promo = promotions.find((p) => p.name === promoName)
+    if (!svc || !promo) return
+    if (promoKey(promo.name) === HAPPY_HOUR_KEY) {
+      const hh = happyHourDiscountBaht(svc, services)
+      if (hh != null) {
+        toast.info(`Happy Hour: จ่ายราคา 60 นาที (ลด ${hh} ฿) · ใช้ จ–ศ ก่อน 12:00`)
+        setDiscount(String(hh))
+      } else {
+        toast.warning(
+          "เมนูนี้ไม่เข้าเงื่อนไข Happy Hour — ต้องเป็นเมนูนวด 90 นาที (ทรีตเมนต์/คอบ่าไหล่ไม่ร่วม)"
+        )
+      }
+      return
+    }
+    if (promo.discount_pct) setDiscount(String(promoDiscountBaht(svc.price, promo.discount_pct)))
+  }
+
   // เมนูที่ปิดไปแล้วไม่อยู่ใน list — ต้องใส่กลับเข้าไปไม่งั้น pre-fill จะว่าง
   const pickableServices = useMemo<ComboboxService[]>(() => {
     if (!sale.service_id || services.some((s) => s.id === sale.service_id)) {
@@ -388,7 +411,11 @@ function EditSaleForm({
           name="service_id"
           services={pickableServices}
           value={serviceId}
-          onChange={setServiceId}
+          onChange={(id) => {
+            setServiceId(id)
+            // เปลี่ยนเมนูแล้วส่วนลดโปรฯ ต้องคิดใหม่จากราคาเมนูใหม่ — เหมือนหน้าเก็บเงิน
+            applyPromoDiscount(couponPromo, id)
+          }}
         />
         {service && (
           <p className="text-sm text-slate-600">
@@ -521,6 +548,7 @@ function EditSaleForm({
                   return
                 }
                 setCouponPromo(e.target.value)
+                applyPromoDiscount(e.target.value, serviceId)
               }}
               className={SELECT_CLASS}
             >
@@ -557,8 +585,9 @@ function EditSaleForm({
               id={uid("discount")}
               name="discount"
               type="number"
-              inputMode="numeric"
+              inputMode="decimal"
               min={0}
+              step="0.01"
               className="h-12"
               value={discount}
               onChange={(e) => setDiscount(e.target.value)}

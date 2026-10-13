@@ -167,7 +167,8 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   // ห้องสปาส่วนตัว: ราคาล็อกตายตัวฝั่ง server — ไม่เชื่อตัวเลขจากฟอร์ม (กันคีย์ผิด/ปลอมค่า)
   const privateRoom = formData.get("private_room") === "on"
   const roomFee = privateRoom ? PRIVATE_ROOM_FEE : 0
-  const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount")))) // กันเศษสตางค์หลุดเข้าบิล
+  // เก็บถึงสตางค์ ปัดที่ทศนิยม 2 ตำแหน่ง — เจ้าของร้านสั่ง 13/10/2569 ให้ส่วนลด % คิดทศนิยมเต็ม
+  const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount"))) * 100) / 100
 
   const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
   let customerId = rawCustomerId === "" ? null : rawCustomerId
@@ -722,7 +723,8 @@ export async function updateSale(
 
   const rawCustomerId = String(formData.get("customer_id") ?? "").trim()
   const customerId = rawCustomerId === "" ? null : rawCustomerId
-  const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount")))) // กันเศษสตางค์หลุดเข้าบิล
+  // เก็บถึงสตางค์ ปัดที่ทศนิยม 2 ตำแหน่ง — เจ้าของร้านสั่ง 13/10/2569 ให้ส่วนลด % คิดทศนิยมเต็ม
+  const discountInput = Math.round(Math.max(0, toNumber(formData.get("discount"))) * 100) / 100
 
   // แบ่งชำระ: เครดิตบางส่วน + ช่องทางเงินจริง (สเปก 2026-07-31)
   // ช่องทาง "Member Credit" = เครดิตเต็มบิล ไม่ใช้ค่านี้ (เดินด่านเดิมด้านล่าง)

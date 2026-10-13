@@ -507,16 +507,18 @@ export function GroupPosForm({
                   <div className="grid grid-cols-2 gap-2">
                     <Input
                       type="number"
-                      inputMode="numeric"
+                      inputMode="decimal"
                       min={0}
+                      step="0.01"
                       placeholder="ส่วนลด (฿)"
                       value={p.discount}
                       onChange={(e) => setPerson(i, { discount: e.target.value })}
                       onBlur={() => {
-                        // เศษสตางค์ทำให้เบราว์เซอร์บล็อกปุ่มชำระ — ปัดเป็นบาทเต็ม
+                        // รับถึงสตางค์ (step=0.01 · นโยบาย 13/10/2569) — ละเอียดกว่านั้นปัดให้
                         const n = Number(p.discount)
-                        if (p.discount !== "" && Number.isFinite(n) && !Number.isInteger(n)) {
-                          setPerson(i, { discount: String(Math.round(n)) })
+                        const rounded = Math.round(n * 100) / 100
+                        if (p.discount !== "" && Number.isFinite(n) && rounded !== n) {
+                          setPerson(i, { discount: String(rounded) })
                         }
                       }}
                       className="h-11"
