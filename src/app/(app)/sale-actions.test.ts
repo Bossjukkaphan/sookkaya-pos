@@ -22,7 +22,7 @@ const CUST_NEW = "44444444-4444-4444-4444-444444444444"
 const QUEUE = "55555555-5555-5555-5555-555555555555"
 const SALE = "66666666-6666-6666-6666-666666666666"
 
-type Result = { data: unknown; error?: { message: string } | null }
+type Result = { data: unknown; error?: { message: string } | null; count?: number }
 
 /** โต๊ะปลอมแบบ sequence — เรียก from(table) ครั้งที่ N ได้ผลลัพธ์ตัวที่ N (ค้างตัวสุดท้ายถ้าเรียกเกิน)
  * รองรับทุกเมธอดที่ action เหล่านี้ใช้: select/eq/or/order/limit/gt/not/insert/update/delete
@@ -213,7 +213,8 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
       member_balances: seqTable([
         { data: { credit_balance: 1000, credit_granted: 1000, cash_paid: 1000, next_expiry: "2026-08-05" } },
       ]),
-      queue_entries: seqTable([{ data: null }]), // sync มิเรอร์การ์ดคิว (ไม่มีการ์ดผูกก็ไม่เป็นไร)
+      queue_entries: seqTable([{ data: null }]),
+      bill_payments: seqTable([{ data: null, count: 0 }]), // sync มิเรอร์การ์ดคิว (ไม่มีการ์ดผูกก็ไม่เป็นไร)
       point_transactions: seqTable([{ data: null }]),
       v_point_balances: seqTable([{ data: { balance: 0 } }]),
     }
@@ -237,6 +238,7 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
         { data: { credit_balance: 500, credit_granted: 500, cash_paid: 500, next_expiry: "2026-08-05" } },
       ]),
       queue_entries: seqTable([{ data: null }]),
+      bill_payments: seqTable([{ data: null, count: 0 }]),
       point_transactions: seqTable([{ data: null }]),
       v_point_balances: seqTable([{ data: { balance: 0 } }]),
     }
@@ -259,6 +261,7 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
       member_balances: seqTable([
         { data: { credit_balance: 150, credit_granted: 150, cash_paid: 150, next_expiry: "2026-08-05" } },
       ]),
+      bill_payments: seqTable([{ data: null, count: 0 }]),
     }
     vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
 
@@ -282,6 +285,7 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
       member_balances: seqTable([
         { data: { credit_balance: 150, credit_granted: 150, cash_paid: 150, next_expiry: "2026-08-05" } },
       ]),
+      bill_payments: seqTable([{ data: null, count: 0 }]),
     }
     vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
 
@@ -292,6 +296,75 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
       expect(r.error).toContain("ยอด 150 ฿")
       expect(r.error).not.toContain("450")
     }
+  })
+})
+
+describe("updateSale — บิลที่มีบรรทัดรับเงินแล้ว ช่องทางยึดตามฐานข้อมูล ไม่ใช่ฟอร์ม", () => {
+  // เคสจริง 14/10/2569 (บิลพั้นซ์): ผู้จัดการกด "แก้ช่องทาง" ที่บรรทัดเป็นบัตรเครดิต
+  // แล้วกดบันทึกฟอร์มใหญ่ที่เปิดค้างไว้ต่อทันที — hidden input พกค่า QR เก่าตอนเปิดกล่อง
+  // มาเขียนทับหัวบิลกลับ สองตารางเลยไม่ตรงกัน (ด่าน tracked_bill_method_mismatch จับได้)
+  it("ฟอร์มส่ง QR แต่บิลมีบรรทัดรับเงิน — หัวบิลต้องคงบัตรเครดิตตามฐานข้อมูล", async () => {
+    const captured: { update: unknown[] } = { update: [] }
+    const tables = {
+      sales: seqTable(
+        [
+          { data: { sale_date: "2026-08-10", credit_used: 0, customer_id: null,
+                    updated_at: "v1", payment_method: "บัตรเครดิต", bill_id: null } },
+          { data: [{ id: SALE }] },
+        ],
+        captured
+      ),
+      bill_payments: seqTable([{ data: null, count: 1 }]),
+      services: seqTable([{ data: { name: "นวดน้ำมันอุ่น", price: 1090, commission: 300, duration_min: 90 } }]),
+      queue_entries: seqTable([{ data: null }]),
+      point_transactions: seqTable([{ data: null }]),
+      v_point_balances: seqTable([{ data: { balance: 0 } }]),
+    }
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
+
+    const r = await updateSale(SALE, baseFormData({
+      updated_at: "v1",
+      therapist_id: "th1",
+      service_id: "svc1",
+      payment_method: "QR Code", // ค่าค้างจากตอนเปิดกล่อง — ต้องถูกเมิน
+      discount: "300",
+    }))
+
+    expect(r.ok).toBe(true)
+    const patch = captured.update[0] as { payment_method: string }
+    expect(patch.payment_method).toBe("บัตรเครดิต")
+  })
+
+  it("บิลไม่มีบรรทัดรับเงิน (เก่า/Gowabi) — ช่องทางจากฟอร์มยังใช้ได้ตามเดิม", async () => {
+    const captured: { update: unknown[] } = { update: [] }
+    const tables = {
+      sales: seqTable(
+        [
+          { data: { sale_date: "2026-08-10", credit_used: 0, customer_id: null,
+                    updated_at: "v1", payment_method: "เงินสด", bill_id: null } },
+          { data: [{ id: SALE }] },
+        ],
+        captured
+      ),
+      bill_payments: seqTable([{ data: null, count: 0 }]),
+      services: seqTable([{ data: { name: "นวดไทย", price: 500, commission: 100, duration_min: 60 } }]),
+      queue_entries: seqTable([{ data: null }]),
+      point_transactions: seqTable([{ data: null }]),
+      v_point_balances: seqTable([{ data: { balance: 0 } }]),
+    }
+    vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
+
+    const r = await updateSale(SALE, baseFormData({
+      updated_at: "v1",
+      therapist_id: "th1",
+      service_id: "svc1",
+      payment_method: "QR Code",
+      discount: "0",
+    }))
+
+    expect(r.ok).toBe(true)
+    const patch = captured.update[0] as { payment_method: string }
+    expect(patch.payment_method).toBe("QR Code")
   })
 })
 
