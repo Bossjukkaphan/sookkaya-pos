@@ -106,167 +106,68 @@ type PaymentRow = { id: string; bill_key: string; method: string; amount: number
  * supabase ปลอมสำหรับ updateBillPaymentMethod — ลำดับการเรียกคงที่:
  *   1) bill_payments  select บรรทัดตาม id (.maybeSingle)
  *   2) sales          select บิลของ bill_key เพื่อเอา sale_date (.limit .maybeSingle)
- *   3) bill_payments  update บรรทัดนั้น (.select .maybeSingle)
- *   4) bill_payments  select บรรทัดทั้งหมดของบิล (await ตรง ๆ) — ใช้หาวิธีหลักใหม่
- *   5) sales          update ทุกแถวของบิล (.or)
- * ใช้ตัวนับครั้งที่เรียกแยกพฤติกรรม แทนการเดาจาก field ที่ eq() กรอง
+ *   3) rpc("update_bill_payment_method") — ทรานแซกชันเดียว: แก้บรรทัด + sync ป้ายหัวบิล
+ * กติกาวิธีหลัก (บรรทัดยอดสูงสุด) และการอัปเดตครบทุกแถวของบิลชุด ย้ายไปอยู่ใน SQL
+ * ของ RPC แล้ว (migration 20261014060000) — เทสต์ฝั่งนี้คุมแค่ด่านก่อนเรียกกับการแปล error
  */
 function fakeMethodSupabase(cfg: {
   line: PaymentRow | null
   saleDate: string | null
-  /** บรรทัดทั้งหมดของบิล "หลังแก้แล้ว" ที่ขั้นที่ 4 จะคืนกลับมา */
-  linesAfter: { method: string; amount: number }[]
-  /** ขั้นที่ 4 (bill_payments select ทั้งบิล) จะคืน error นี้แทน data ถ้าใส่มา — จำลอง re-read ล้มเหลว */
-  linesAfterError?: { message: string }
-  /** ขั้นที่ 5 (sales update .or) จะคืน error นี้แทน null ถ้าใส่มา */
-  saleUpdateError?: { message: string }
-  /** แถวที่ .select("id") ของขั้นที่ 5 คืนกลับมา — ค่าเริ่มต้นคือ 1 แถว (อัปเดตสำเร็จ), ใส่ [] เพื่อจำลองอัปเดตไม่โดนแถวไหนเลย */
-  saleUpdateRows?: { id: string }[]
+  /** error ที่ rpc คืน — ไม่ใส่ = สำเร็จ */
+  rpcError?: { message: string }
 }) {
-  const patches: Record<string, unknown>[] = []
-  const salePatches: Record<string, unknown>[] = []
-  const saleFilters: string[] = []
-  let billPaymentsCalls = 0
-  let salesCalls = 0
+  const rpc = vi.fn(async () => ({ error: cfg.rpcError ?? null }))
 
   const from = vi.fn((table: string) => {
     if (table === "bill_payments") {
-      billPaymentsCalls++
-      const n = billPaymentsCalls
-      if (n === 1) {
-        return {
-          select: vi.fn(() => ({
-            eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: cfg.line })) })),
-          })),
-        }
-      }
-      if (n === 2) {
-        return {
-          update: vi.fn((patch: Record<string, unknown>) => {
-            patches.push(patch)
-            return {
-              eq: vi.fn(() => ({
-                select: vi.fn(() => ({
-                  maybeSingle: vi.fn(async () => ({
-                    data: cfg.line ? { id: cfg.line.id } : null,
-                    error: null,
-                  })),
-                })),
-              })),
-            }
-          }),
-        }
-      }
       return {
         select: vi.fn(() => ({
-          eq: vi.fn(async () => ({
-            data: cfg.linesAfterError ? null : cfg.linesAfter,
-            error: cfg.linesAfterError ?? null,
-          })),
+          eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: cfg.line })) })),
         })),
       }
     }
     if (table === "sales") {
-      salesCalls++
-      if (salesCalls === 1) {
-        return {
-          select: vi.fn(() => ({
-            or: vi.fn(() => ({
-              limit: vi.fn(() => ({
-                maybeSingle: vi.fn(async () => ({
-                  data: cfg.saleDate ? { sale_date: cfg.saleDate } : null,
-                })),
+      return {
+        select: vi.fn(() => ({
+          or: vi.fn(() => ({
+            limit: vi.fn(() => ({
+              maybeSingle: vi.fn(async () => ({
+                data: cfg.saleDate ? { sale_date: cfg.saleDate } : null,
               })),
             })),
           })),
-        }
-      }
-      return {
-        update: vi.fn((patch: Record<string, unknown>) => {
-          salePatches.push(patch)
-          return {
-            or: vi.fn((filter: string) => {
-              saleFilters.push(filter)
-              return {
-                select: vi.fn(async () => ({
-                  data: cfg.saleUpdateError ? null : (cfg.saleUpdateRows ?? [{ id: "s1" }]),
-                  error: cfg.saleUpdateError ?? null,
-                })),
-              }
-            }),
-          }
-        }),
+        })),
       }
     }
     throw new Error(`ตารางที่ไม่คาดคิด: ${table}`)
   })
 
-  return { client: { from }, patches, salePatches, saleFilters }
+  return { client: { from, rpc }, rpc }
 }
 
 const LINE = { id: "line-1", bill_key: BILL, method: "บัตรเครดิต", amount: 1290 }
 
 describe("updateBillPaymentMethod", () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it("แก้บิลบรรทัดเดียว — เปลี่ยนทั้งบรรทัดชำระและวิธีหลักของบิล", async () => {
-    const fake = fakeMethodSupabase({
-      line: LINE,
-      saleDate: "2026-08-14",
-      linesAfter: [{ method: "E-Wallet", amount: 1290 }],
-    })
+  it("ส่งงานทั้งหมดเข้า RPC ก้อนเดียว พร้อมชื่อคนแก้", async () => {
+    const fake = fakeMethodSupabase({ line: LINE, saleDate: "2026-08-14" })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
     const r = await updateBillPaymentMethod("line-1", "E-Wallet")
 
     expect(r).toEqual({ ok: true })
-    expect(fake.patches[0].method).toBe("E-Wallet")
-    expect(fake.salePatches[0].payment_method).toBe("E-Wallet")
-  })
-
-  it("เขียนลงบรรทัดชำระเฉพาะ 3 คีย์ ห้ามแตะยอดเงินหรือวันเงินเข้า", async () => {
-    const fake = fakeMethodSupabase({
-      line: LINE,
-      saleDate: "2026-08-14",
-      linesAfter: [{ method: "เงินสด", amount: 1290 }],
+    expect(fake.rpc).toHaveBeenCalledWith("update_bill_payment_method", {
+      p_payment_id: "line-1",
+      p_method: "E-Wallet",
+      p_edited_by: "Boss",
     })
-    vi.mocked(createClient).mockResolvedValue(fake.client as never)
-
-    await updateBillPaymentMethod("line-1", "เงินสด")
-
-    // whitelist ชุดคีย์ ไม่ใช่ blacklist — คอลัมน์ใหม่ที่ยังไม่มีในลิสต์ต้องทำให้เทสต์แดง
-    expect(Object.keys(fake.patches[0]).sort()).toEqual([
-      "edited_at",
-      "edited_by",
-      "method",
-    ])
   })
 
-  it("อัปเดตบรรทัดชำระสำเร็จ แต่อัปเดตป้ายช่องทางของบิลไม่สำเร็จ — ต้องคืน error ให้ลองใหม่", async () => {
-    // บรรทัดชำระเปลี่ยนไปแล้วแต่ sales.payment_method ยังไม่ตาม จนกว่าจะกดซ้ำ
-    // ต้องไม่คืน ok: true ทั้งที่สองตารางไม่ตรงกัน ไม่งั้น tracked_bill_method_mismatch จะ FAIL แบบไม่มีใครรู้
+  it("RPC ล้ม — ต้องบอกชัดว่ายังไม่มีอะไรถูกเปลี่ยน (ทรานแซกชันย้อนกลับทั้งก้อน)", async () => {
+    // ต่างจากโค้ดเดิมที่เขียนสองจังหวะ: จังหวะสองล้มแล้วบรรทัดค้างเปลี่ยนไปแล้ว ต้องสั่ง "กดซ้ำ"
     const fake = fakeMethodSupabase({
       line: LINE,
       saleDate: "2026-08-14",
-      linesAfter: [{ method: "E-Wallet", amount: 1290 }],
-      saleUpdateError: { message: "network error" },
-    })
-    vi.mocked(createClient).mockResolvedValue(fake.client as never)
-
-    const r = await updateBillPaymentMethod("line-1", "E-Wallet")
-
-    expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("กรุณากดใหม่อีกครั้ง")
-  })
-
-  it("บรรทัดชำระแก้สำเร็จ แต่อ่านบรรทัดทั้งบิลกลับมาล้มเหลว — ต้องไม่ขึ้นว่าสำเร็จ", async () => {
-    // ถ้าเผลอปล่อยผ่าน (เหมือนโค้ดเดิมที่ทิ้ง error ของขั้นนี้) allLines จะกลายเป็น []
-    // primaryMethod คืน null, if (primary) ข้ามทั้งบล็อก แล้วฟังก์ชันคืน ok:true ทั้งที่สองตารางไม่ตรงกันแล้ว
-    const fake = fakeMethodSupabase({
-      line: LINE,
-      saleDate: "2026-08-14",
-      linesAfter: [],
-      linesAfterError: { message: "connection reset" },
+      rpcError: { message: "network error" },
     })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
@@ -274,125 +175,80 @@ describe("updateBillPaymentMethod", () => {
 
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toContain("connection reset")
-      expect(r.error).toContain("กรุณากดใหม่อีกครั้ง")
+      expect(r.error).toContain("ยังไม่มีอะไรถูกเปลี่ยน")
+      expect(r.error).toContain("network error")
     }
-    // sales ต้องไม่ถูกแตะเลยเมื่ออ่านบรรทัดทั้งบิลไม่สำเร็จ
-    expect(fake.salePatches).toHaveLength(0)
   })
 
-  it("อัปเดตป้ายช่องทางของบิลใน sales ไม่โดนแถวไหนเลย (0 แถว, ไม่มี error) — ต้องถือเป็น error", async () => {
-    // Supabase REST คืน 204 ไม่มี error เมื่ออัปเดตไม่โดนแถว — ถ้าไม่ .select() กลับมาเช็ค
-    // จะดูเหมือนสำเร็จทั้งที่ sales.payment_method ไม่ขยับ และสองตารางไม่ตรงกันแล้ว
+  it("RLS ปฏิเสธเงียบที่บรรทัดชำระ (LINE_NOT_UPDATED) — ข้อความอ่านรู้เรื่อง", async () => {
     const fake = fakeMethodSupabase({
       line: LINE,
       saleDate: "2026-08-14",
-      linesAfter: [{ method: "E-Wallet", amount: 1290 }],
-      saleUpdateRows: [],
+      rpcError: { message: "LINE_NOT_UPDATED" },
     })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
-    const r = await updateBillPaymentMethod("line-1", "E-Wallet")
+    const r = await updateBillPaymentMethod("line-1", "เงินสด")
 
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("กรุณากดใหม่อีกครั้ง")
+    if (!r.ok) expect(r.error).toContain("สิทธิ์ไม่พอหรือบรรทัดนี้ถูกลบไปแล้ว")
   })
 
-  it("บิลชุดหลายแถว — ต้องอัปเดต payment_method ครบทุกแถวของบิล ไม่ใช่แถวเดียว", async () => {
-    // บิลชุดคือหลายรายการรวมบิลเดียว ผูกกันด้วย sales.bill_id
-    // ถ้าอัปเดตแค่แถวเดียว ข้อตรวจ tracked_bill_method_mismatch จะ FAIL
-    // ตัวกรองต้องครอบทั้ง bill_id และ id เพราะแถวแรกของบิลใช้ id ตัวเองเป็น bill_key
+  it("อัปเดตแถวบิลไม่โดน (SALE_NOT_UPDATED) — บรรทัดต้องถูกย้อนกลับด้วย ไม่ใช่ค้างครึ่งเดียว", async () => {
     const fake = fakeMethodSupabase({
       line: LINE,
       saleDate: "2026-08-14",
-      linesAfter: [{ method: "E-Wallet", amount: 1290 }],
+      rpcError: { message: "SALE_NOT_UPDATED" },
     })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
-    await updateBillPaymentMethod("line-1", "E-Wallet")
+    const r = await updateBillPaymentMethod("line-1", "เงินสด")
 
-    expect(fake.saleFilters).toHaveLength(1)
-    expect(fake.saleFilters[0]).toBe(`bill_id.eq.${BILL},id.eq.${BILL}`)
-  })
-
-  it("บิลแบ่งจ่าย 2 บรรทัด แก้บรรทัดเล็ก วิธีหลักของบิลต้องไม่เปลี่ยน", async () => {
-    // บิลจริง: บัตร 650 + QR 240 — แก้บรรทัด 240 เป็นเงินสด วิธีหลักยังต้องเป็นบัตร
-    const fake = fakeMethodSupabase({
-      line: { id: "line-small", bill_key: BILL, method: "QR Code", amount: 240 },
-      saleDate: "2026-08-14",
-      linesAfter: [
-        { method: "บัตรเครดิต", amount: 650 },
-        { method: "เงินสด", amount: 240 },
-      ],
-    })
-    vi.mocked(createClient).mockResolvedValue(fake.client as never)
-
-    await updateBillPaymentMethod("line-small", "เงินสด")
-
-    expect(fake.patches[0].method).toBe("เงินสด")
-    expect(fake.salePatches[0].payment_method).toBe("บัตรเครดิต")
-  })
-
-  it("บิลแบ่งจ่าย 2 บรรทัด แก้บรรทัดใหญ่ วิธีหลักของบิลต้องเปลี่ยนตาม", async () => {
-    const fake = fakeMethodSupabase({
-      line: { id: "line-big", bill_key: BILL, method: "บัตรเครดิต", amount: 650 },
-      saleDate: "2026-08-14",
-      linesAfter: [
-        { method: "E-Wallet", amount: 650 },
-        { method: "QR Code", amount: 240 },
-      ],
-    })
-    vi.mocked(createClient).mockResolvedValue(fake.client as never)
-
-    await updateBillPaymentMethod("line-big", "E-Wallet")
-
-    expect(fake.salePatches[0].payment_method).toBe("E-Wallet")
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("ยังไม่มีอะไรถูกเปลี่ยน")
   })
 
   it("ช่องทางที่ไม่รู้จักถูกปฏิเสธก่อนแตะฐานข้อมูล", async () => {
-    const fake = fakeMethodSupabase({ line: LINE, saleDate: "2026-08-14", linesAfter: [] })
+    const fake = fakeMethodSupabase({ line: LINE, saleDate: "2026-08-14" })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
     const r = await updateBillPaymentMethod("line-1", "Gowabi")
 
     expect(r.ok).toBe(false)
     expect(fake.client.from).not.toHaveBeenCalled()
+    expect(fake.rpc).not.toHaveBeenCalled()
   })
 
-  it("ไม่พบบรรทัดชำระ — คืน error ไม่เขียนอะไร", async () => {
-    const fake = fakeMethodSupabase({ line: null, saleDate: "2026-08-14", linesAfter: [] })
+  it("ไม่พบบรรทัดชำระ — คืน error ไม่เรียก RPC", async () => {
+    const fake = fakeMethodSupabase({ line: null, saleDate: "2026-08-14" })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
     const r = await updateBillPaymentMethod("ไม่มีจริง", "เงินสด")
 
     expect(r).toEqual({ ok: false, error: "ไม่พบบรรทัดชำระนี้" })
-    expect(fake.patches).toHaveLength(0)
+    expect(fake.rpc).not.toHaveBeenCalled()
   })
 
-  it("บิลของสองเดือนก่อน — ปิดงบแล้ว แก้ไม่ได้", async () => {
+  it("บิลของสองเดือนก่อน — ปิดงบแล้ว แก้ไม่ได้ และไม่เรียก RPC", async () => {
     // วันนี้ตรึงไว้ 2026-08-14 · บิลเดือน มิ.ย. ห่างสองเดือน
-    const fake = fakeMethodSupabase({ line: LINE, saleDate: "2026-06-20", linesAfter: [] })
+    const fake = fakeMethodSupabase({ line: LINE, saleDate: "2026-06-20" })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
     const r = await updateBillPaymentMethod("line-1", "เงินสด")
 
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.error).toContain("2026-06")
-    expect(fake.patches).toHaveLength(0)
+    expect(fake.rpc).not.toHaveBeenCalled()
   })
 
   it("บิลของเดือนก่อนหน้า แม้พ้นวันที่ 3 ไปแล้วก็ยังแก้ได้", async () => {
     // วันนี้ 14 ส.ค. — ถ้าเผลอไปเรียก canEditExpenseOn เทสต์ข้อนี้จะแดงทันที
-    const fake = fakeMethodSupabase({
-      line: LINE,
-      saleDate: "2026-07-20",
-      linesAfter: [{ method: "เงินสด", amount: 1290 }],
-    })
+    const fake = fakeMethodSupabase({ line: LINE, saleDate: "2026-07-20" })
     vi.mocked(createClient).mockResolvedValue(fake.client as never)
 
     const r = await updateBillPaymentMethod("line-1", "เงินสด")
 
     expect(r).toEqual({ ok: true })
-    expect(fake.patches).toHaveLength(1)
+    expect(fake.rpc).toHaveBeenCalledTimes(1)
   })
 })
