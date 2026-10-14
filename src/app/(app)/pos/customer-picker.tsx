@@ -7,6 +7,7 @@ import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
 import { isCreditExpiredOn, isCreditFrozen } from "@/lib/member-credit"
 import { ilikeOr } from "@/lib/search"
+import { SimilarPhoneHint } from "@/components/similar-phone-hint"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
@@ -179,6 +180,16 @@ export function CustomerPicker({
           </ul>
         )}
       </div>
+
+      {/* พิมพ์เบอร์แล้วไม่เด้งอะไร = จุดที่พนักงานจะสร้างลูกค้าซ้ำ — เตือนตรงนี้ก่อน */}
+      <SimilarPhoneHint
+        term={customerName}
+        show={canSearch && visibleMatches.length === 0}
+        onPick={(c) => {
+          onPick(c)
+          setMatches([])
+        }}
+      />
 
       {requireMember && !customerId && (
         <p className="text-sm text-amber-700">
