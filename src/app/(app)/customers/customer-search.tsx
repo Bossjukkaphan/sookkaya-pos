@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 
 import { createClient } from "@/lib/supabase/client"
 import { ilikeOr } from "@/lib/search"
+import { SimilarPhoneHint } from "@/components/similar-phone-hint"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -159,6 +160,17 @@ export function CustomerSearch({
             ))}
           </ul>
         )}
+        {/* ค้นด้วยเบอร์แล้วไม่เจอ — บอกว่ามีเบอร์ใกล้เคียง (เบอร์ในระบบอาจพิมพ์ผิดไว้) */}
+        <div className="absolute z-20 mt-1 w-full">
+          <SimilarPhoneHint
+            term={term}
+            show={open && canSearch && visibleMatches.length === 0}
+            onPick={(c) => {
+              setOpen(false)
+              router.push(`/customers/${c.id}`)
+            }}
+          />
+        </div>
       </div>
       <Button type="submit" className="h-11">
         ค้นหา

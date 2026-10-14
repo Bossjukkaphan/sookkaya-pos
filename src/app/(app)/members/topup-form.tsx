@@ -9,6 +9,7 @@ import { createClient } from "@/lib/supabase/client"
 import { MEMBER_TIERS, REAL_MONEY_METHODS, formatBaht } from "@/lib/constants"
 import { ilikeOr } from "@/lib/search"
 import { addMonths, formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { SimilarPhoneHint } from "@/components/similar-phone-hint"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -139,6 +140,17 @@ export function TopupForm() {
                 ))}
               </ul>
             )}
+            {/* พิมพ์เบอร์แล้วไม่เจอ — เตือนว่ามีเบอร์ใกล้เคียง ก่อนจะไปเติมให้ผิดคน */}
+            <div className="mt-2">
+              <SimilarPhoneHint
+                term={search}
+                show={canSearch && visibleMatches.length === 0}
+                onPick={(c) => {
+                  setCustomer(c)
+                  setMatches([])
+                }}
+              />
+            </div>
           </div>
         )}
       </div>
