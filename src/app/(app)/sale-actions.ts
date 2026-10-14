@@ -672,7 +672,7 @@ export async function updateSale(
 
   const { data: existing } = await supabase
     .from("sales")
-    .select("sale_date, credit_used, customer_id, updated_at")
+    .select("sale_date, credit_used, customer_id, updated_at, payment_method, bill_id")
     .eq("id", id)
     .single()
 
@@ -704,6 +704,17 @@ export async function updateSale(
   // ปกติเป็นค่าคงที่ตลอดฟังก์ชัน — แต่ normalize เป็น Member Credit ได้ทีหลังถ้าแบ่งจ่ายตัดเครดิตเต็มบิลพอดี
   // (ดูจุด normalize ด้านล่างหลัง computeSaleAmounts)
   let paymentMethod = String(formData.get("payment_method") ?? "")
+
+  // บิลที่มีบรรทัดรับเงินแล้ว: ช่องทางจริงเป็นของบรรทัด (bill_payments) ไม่ใช่ของฟอร์ม —
+  // ปุ่มช่องทางในกล่องแก้ไขถูกล็อกไว้ก็จริง แต่ hidden input ยังพกค่าที่จำตอนเปิดกล่องมาด้วย
+  // เคสจริง 14/10/2569 (บิลพั้นซ์): ผู้จัดการกด "แก้ช่องทาง" ที่บรรทัดเป็นบัตรเครดิต แล้วกดบันทึก
+  // ฟอร์มใหญ่ต่อใน 2 วินาที ค่า QR เก่าจากฟอร์มเขียนทับหัวบิลกลับ — จึงยึดค่าจริงในฐานข้อมูลเสมอ
+  const billKeyForLines = existing.bill_id ?? id
+  const { count: paymentLineCount } = await supabase
+    .from("bill_payments")
+    .select("id", { count: "exact", head: true })
+    .eq("bill_key", billKeyForLines)
+  if ((paymentLineCount ?? 0) > 0) paymentMethod = String(existing.payment_method)
 
   if (!therapistId) return { ok: false, error: "กรุณาเลือกหมอนวด" }
   if (!serviceId) return { ok: false, error: "กรุณาเลือกเมนูบริการ" }
