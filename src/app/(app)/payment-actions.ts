@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
-import { PAYMENT_LINE_METHODS, primaryMethod } from "@/lib/payments"
+import { PAYMENT_LINE_METHODS } from "@/lib/payments"
 import { todayInShopTz } from "@/lib/datetime"
 import { REAL_MONEY_METHODS } from "@/lib/constants"
 import { canEditPaymentMethodOn } from "@/lib/accounting-window"
@@ -65,6 +65,10 @@ export async function deleteBillPayment(
  * ตัวที่ทำให้ตามรอยได้คือ edited_by / edited_at
  *
  * ห้ามแตะ amount / received_date / received_at / bill_key — เงินไม่ขยับ วันไม่ขยับ
+ *
+ * การเขียนทั้งสองตารางรวมเป็นทรานแซกชันเดียวใน RPC `update_bill_payment_method`
+ * (migration 20261014060000) — เดิมเขียนสองจังหวะแยกกัน ถ้าจังหวะ sync หัวบิลล้ม
+ * สองตารางจะค้างไม่ตรงกันจนกว่าพนักงานจะกดซ้ำ ซึ่งเกิดจริงกับบิล 2 ใบเมื่อ 13-14/10/2569
  */
 export async function updateBillPaymentMethod(
   paymentId: string,
@@ -103,67 +107,22 @@ export async function updateBillPaymentMethod(
 
   const staff = await getMyProfile()
   const editedBy = staff?.full_name ?? null
-  const editedAt = new Date().toISOString()
 
-  const { data: updated, error } = await supabase
-    .from("bill_payments")
-    .update({ method, edited_by: editedBy, edited_at: editedAt })
-    .eq("id", paymentId)
-    .select("id")
-    .maybeSingle()
-  if (error) return { ok: false, error: error.message }
-  // อัปเดต 0 แถวแต่ไม่มี error = RLS ปฏิเสธเงียบ ถ้าไม่ดักตรงนี้หน้าจอจะขึ้นว่าสำเร็จทั้งที่ไม่มีอะไรเปลี่ยน
-  if (!updated) return { ok: false, error: "แก้ไม่สำเร็จ — สิทธิ์ไม่พอหรือบรรทัดนี้ถูกลบไปแล้ว" }
-
-  // วิธีหลักของบิล = วิธีของบรรทัดที่ยอดสูงสุด — อ่านสดหลังแก้แล้วให้ primaryMethod ตัดสิน
-  // (ห้ามเดาจากบรรทัดที่เพิ่งแก้ บิลแบ่งจ่ายอาจมีบรรทัดอื่นที่ใหญ่กว่า)
-  //
-  // จุดนี้ bill_payments เขียนสำเร็จไปแล้ว — ถ้าขั้นตอนข้างล่างพลาด สองตารางจะไม่ตรงกัน
-  // (tracked_bill_method_mismatch เฝ้าอยู่) ทุก error จากนี้จึงต้องบอกพนักงานว่าบรรทัดเปลี่ยนแล้ว
-  // แต่ป้ายช่องทางของบิลยังไม่ตาม และกดปุ่มซ้ำได้ปลอดภัย (ฟังก์ชันนี้เขียนค่าเดิมซ้ำได้ไม่เสียหาย)
-  const { data: allLines, error: linesError } = await supabase
-    .from("bill_payments")
-    .select("method, amount")
-    .eq("bill_key", billKey)
-  if (linesError)
-    return {
-      ok: false,
-      error: `เปลี่ยนช่องทางของบรรทัดแล้ว แต่อ่านบรรทัดชำระของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง (${linesError.message})`,
-    }
-  // บรรทัดที่เพิ่งแก้เป็นของบิลนี้แน่ ๆ ดังนั้น allLines ว่างเปล่าเป็นไปไม่ได้ — ถ้าว่างคือความผิดปกติ ไม่ใช่บิลไม่มีบรรทัด
-  if (!allLines || allLines.length === 0)
-    return {
-      ok: false,
-      error: "เปลี่ยนช่องทางของบรรทัดแล้ว แต่หาบรรทัดชำระของบิลนี้ไม่เจอ กรุณากดใหม่อีกครั้ง",
-    }
-  const lines = allLines.map((l) => ({
-    method: String(l.method),
-    amount: Number(l.amount),
-  }))
-  const primary = primaryMethod(lines)
-  // มีอย่างน้อยหนึ่งบรรทัดแล้ว primaryMethod ต้องตัดสินได้เสมอ — null ที่นี่คือ error ไม่ใช่กรณีข้ามได้
-  if (!primary)
-    return {
-      ok: false,
-      error: "เปลี่ยนช่องทางของบรรทัดแล้ว แต่คำนวณวิธีหลักของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง",
-    }
-
-  const { data: saleUpdated, error: saleError } = await supabase
-    .from("sales")
-    .update({ payment_method: primary, edited_by: editedBy })
-    .or(`bill_id.eq.${billKey},id.eq.${billKey}`)
-    .select("id")
-  if (saleError)
-    return {
-      ok: false,
-      error: `เปลี่ยนช่องทางของบรรทัดแล้ว แต่อัปเดตป้ายช่องทางของบิลไม่สำเร็จ กรุณากดใหม่อีกครั้ง (${saleError.message})`,
-    }
-  // อัปเดต 0 แถวแต่ไม่มี error = RLS ปฏิเสธเงียบ เหมือนกับด่านที่กันไว้แล้วตอนแก้ bill_payments ข้างบน
-  if (!saleUpdated || saleUpdated.length === 0)
-    return {
-      ok: false,
-      error: "เปลี่ยนช่องทางของบรรทัดแล้ว แต่ไม่พบแถวของบิลนี้ใน sales ให้อัปเดต กรุณากดใหม่อีกครั้ง",
-    }
+  // ทรานแซกชันเดียว: แก้บรรทัด + คำนวณวิธีหลัก + อัปเดตทุกแถวของบิล — ล้มตรงไหนย้อนกลับทั้งหมด
+  // (วิธีหลัก = บรรทัดยอดสูงสุด กติกาเดียวกับ primaryMethod ใน lib/payments.ts)
+  const { error } = await supabase.rpc("update_bill_payment_method", {
+    p_payment_id: paymentId,
+    p_method: method,
+    p_edited_by: editedBy,
+  })
+  if (error) {
+    // RLS ปฏิเสธเงียบถูกแปลงเป็น exception ในฟังก์ชัน — ไม่มีสถานะครึ่งเดียวให้ต้อง "กดซ้ำ" อีก
+    if (error.message.includes("LINE_NOT_UPDATED"))
+      return { ok: false, error: "แก้ไม่สำเร็จ — สิทธิ์ไม่พอหรือบรรทัดนี้ถูกลบไปแล้ว (ยังไม่มีอะไรถูกเปลี่ยน)" }
+    if (error.message.includes("SALE_NOT_UPDATED"))
+      return { ok: false, error: "แก้ไม่สำเร็จ — ไม่พบแถวของบิลนี้ให้อัปเดตป้ายช่องทาง (ยังไม่มีอะไรถูกเปลี่ยน)" }
+    return { ok: false, error: `แก้ไม่สำเร็จ ยังไม่มีอะไรถูกเปลี่ยน ลองใหม่อีกครั้ง (${error.message})` }
+  }
 
   revalidatePath("/today")
   revalidatePath("/reports")
