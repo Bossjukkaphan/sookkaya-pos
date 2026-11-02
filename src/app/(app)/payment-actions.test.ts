@@ -10,7 +10,7 @@ vi.mock("@/lib/datetime", () => ({ todayInShopTz: vi.fn(() => "2026-08-14") }))
 
 import { getMyProfile } from "@/lib/auth"
 import { createClient } from "@/lib/supabase/server"
-import { addBillPayment, updateBillPaymentMethod } from "./payment-actions"
+import { addBillPayment, updateBillPaymentAmount, updateBillPaymentMethod } from "./payment-actions"
 
 const BILL = "ba0e5178-002d-47f8-97ae-fd3dd1fc7b23"
 
@@ -250,5 +250,136 @@ describe("updateBillPaymentMethod", () => {
 
     expect(r).toEqual({ ok: true })
     expect(fake.rpc).toHaveBeenCalledTimes(1)
+  })
+})
+
+/**
+ * supabase ปลอมสำหรับ updateBillPaymentAmount — ลำดับการเรียกคงที่:
+ *   1) bill_payments select บรรทัดตาม id (.maybeSingle)
+ *   2) v_bill_due    select ยอดค้างสดของบิล (.maybeSingle)
+ *   3) rpc("update_bill_payment_amount") — แก้ยอด + ต่อ note + sync ป้ายหัวบิล
+ */
+function fakeAmountSupabase(cfg: {
+  line: { id: string; bill_key: string; amount: number; received_date: string } | null
+  due: number | null
+  rpcError?: { message: string }
+}) {
+  const rpc = vi.fn(async () => ({ error: cfg.rpcError ?? null }))
+  const single = (data: unknown) => ({
+    select: vi.fn(() => ({
+      eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data })) })),
+    })),
+  })
+  const from = vi.fn((table: string) => {
+    if (table === "bill_payments") return single(cfg.line)
+    if (table === "v_bill_due") return single(cfg.due === null ? null : { due: cfg.due })
+    throw new Error(`ตารางที่ไม่คาดคิด: ${table}`)
+  })
+  return { client: { from, rpc }, rpc }
+}
+
+// บิลแบบ SK-20261018-005: บิล 650 รับ QR 990 → เกินรับ 340 (due = -340)
+const OVERPAID_LINE = { id: "line-9", bill_key: BILL, amount: 990, received_date: "2026-08-02" }
+
+describe("updateBillPaymentAmount", () => {
+  beforeEach(() => {
+    vi.mocked(getMyProfile).mockResolvedValue({ full_name: "Boss", role: "manager" } as never)
+  })
+
+  it("โอนคืนลูกค้าแล้ว — ตัดยอดลงให้บิลรับครบ ส่งสาเหตุเป็นข้อความไปต่อท้าย note", async () => {
+    const fake = fakeAmountSupabase({ line: OVERPAID_LINE, due: -340 })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentAmount("line-9", 650, "refunded")
+
+    expect(r).toEqual({ ok: true, due: 0 })
+    expect(fake.rpc).toHaveBeenCalledWith("update_bill_payment_amount", {
+      p_payment_id: "line-9",
+      p_amount: 650,
+      p_reason: "โอนคืนลูกค้าแล้ว",
+      p_edited_by: "Boss",
+    })
+  })
+
+  it("พนักงานทั่วไปแก้ยอดไม่ได้ ไม่แตะฐานข้อมูล", async () => {
+    vi.mocked(getMyProfile).mockResolvedValue({ full_name: "น้อง", role: "staff" } as never)
+    const fake = fakeAmountSupabase({ line: OVERPAID_LINE, due: -340 })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentAmount("line-9", 650, "typo")
+
+    expect(r.ok).toBe(false)
+    expect(fake.client.from).not.toHaveBeenCalled()
+    expect(fake.rpc).not.toHaveBeenCalled()
+  })
+
+  it("สาเหตุที่ไม่รู้จักถูกปฏิเสธ — เคสลูกค้าเก็บไว้ใช้ต้องไปออกใบเครดิต", async () => {
+    const fake = fakeAmountSupabase({ line: OVERPAID_LINE, due: -340 })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentAmount("line-9", 650, "prepaid" as never)
+
+    expect(r.ok).toBe(false)
+    expect(fake.rpc).not.toHaveBeenCalled()
+  })
+
+  it("ยอด 0 หรือติดลบถูกปฏิเสธ — เงินไม่เข้าเลยต้องลบบรรทัด", async () => {
+    const fake = fakeAmountSupabase({ line: OVERPAID_LINE, due: -340 })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    expect((await updateBillPaymentAmount("line-9", 0, "typo")).ok).toBe(false)
+    expect((await updateBillPaymentAmount("line-9", -10, "typo")).ok).toBe(false)
+    expect(fake.rpc).not.toHaveBeenCalled()
+  })
+
+  it("เงินเข้าเดือนก่อนแต่พ้นวันที่ 3 แล้ว — ปิดงบ แก้ยอดไม่ได้ (ต่างจากแก้ช่องทาง)", async () => {
+    // วันนี้ตรึง 14 ส.ค. · เงินเข้า 20 ก.ค. → ยอดเงินเข้า ก.ค. ห้ามขยับแล้ว
+    const fake = fakeAmountSupabase({
+      line: { ...OVERPAID_LINE, received_date: "2026-07-20" },
+      due: -340,
+    })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentAmount("line-9", 650, "typo")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("2026-07")
+    expect(fake.rpc).not.toHaveBeenCalled()
+  })
+
+  it("แก้ขึ้นจนบิลเกินรับ — ปฏิเสธ บอกยอดสูงสุดที่ใส่ได้", async () => {
+    // บิล 650 บรรทัด 500 ค้างรับ 150 → ใส่ได้ไม่เกิน 650
+    const fake = fakeAmountSupabase({ line: { ...OVERPAID_LINE, amount: 500 }, due: 150 })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentAmount("line-9", 700, "typo")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("650")
+    expect(fake.rpc).not.toHaveBeenCalled()
+  })
+
+  it("แก้ลงแล้วบิลยังเกินรับอยู่บ้างก็ยอม — สะท้อนเงินที่เข้าจริง", async () => {
+    // ลูกค้าโอน 990 บิล 650 ร้านคืนให้แค่ 200 → เงินเข้าจริง 790 ยังเกิน 140 (ไปเก็บเป็นเครดิตต่อได้)
+    const fake = fakeAmountSupabase({ line: OVERPAID_LINE, due: -340 })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentAmount("line-9", 790, "refunded")
+
+    expect(r).toEqual({ ok: true, due: -140 })
+  })
+
+  it("RPC ล้ม — บอกชัดว่ายังไม่มีอะไรถูกเปลี่ยน", async () => {
+    const fake = fakeAmountSupabase({
+      line: OVERPAID_LINE,
+      due: -340,
+      rpcError: { message: "network error" },
+    })
+    vi.mocked(createClient).mockResolvedValue(fake.client as never)
+
+    const r = await updateBillPaymentAmount("line-9", 650, "typo")
+
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toContain("ยังไม่มีอะไรถูกเปลี่ยน")
   })
 })

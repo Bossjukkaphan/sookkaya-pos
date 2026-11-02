@@ -14,6 +14,8 @@ import { PAY_COLOR, PAY_COLOR_DEFAULT } from "@/lib/payment-colors"
 import { formatThaiDate } from "@/lib/datetime"
 import { DueChip } from "../due-badge"
 import { CollectDueDialog } from "../collect-due-dialog"
+import { KeepCreditDialog } from "../keep-credit-dialog"
+import { MIN_OVERPAY_CREDIT } from "@/lib/overpay-credit"
 import type { BillPaymentLine } from "../today/edit-sale-dialog"
 import {
   Dialog,
@@ -248,6 +250,22 @@ export function BillRow({
                 )}
                 {due > 0.001 && (
                   <CollectDueDialog billKey={billKey} due={due} onDone={() => router.refresh()} />
+                )}
+                {due < -0.001 && (
+                  <div className="space-y-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">
+                    <p>
+                      รับเงินเกินยอดบิล — เช็กสลิปก่อน: คีย์ยอดผิดหรือโอนคืนลูกค้าแล้ว ให้ผู้จัดการเปิดบิลในหน้า
+                      &quot;วันนี้&quot; (เลือกวันที่ของบิล) กดดินสอ แล้วกด &quot;แก้ยอด&quot; ที่บรรทัดรับเงิน
+                    </p>
+                    {/* ลูกค้าเก็บไว้ใช้ครั้งหน้า — กล่องนี้ถามสาเหตุก่อนเสมอ สิทธิ์จริงเช็คที่ server */}
+                    {-due >= MIN_OVERPAY_CREDIT && (
+                      <KeepCreditDialog
+                        billKey={billKey}
+                        overpay={Math.round(-due * 100) / 100}
+                        onDone={() => router.refresh()}
+                      />
+                    )}
+                  </div>
                 )}
               </div>
             )}

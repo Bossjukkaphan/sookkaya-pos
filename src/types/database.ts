@@ -1805,6 +1805,15 @@ export type Database = {
         Args: { url_secret_name: string }
         Returns: undefined
       }
+      update_bill_payment_amount: {
+        Args: {
+          p_payment_id: string
+          p_amount: number
+          p_reason: string
+          p_edited_by: string | null
+        }
+        Returns: number
+      }
       update_bill_payment_method: {
         Args: { p_payment_id: string; p_method: string; p_edited_by: string | null }
         Returns: undefined
