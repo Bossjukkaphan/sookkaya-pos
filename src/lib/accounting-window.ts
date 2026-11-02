@@ -16,6 +16,8 @@
  *   canEditExpenseOn        — รายจ่าย · เดือนก่อนถึงวันที่ 3 ของเดือนถัดไป (ยอดเดือนขยับจริง)
  *   canEditPaymentMethodOn  — ช่องทางชำระของบิลขาย · เดือนก่อนตลอดเดือน ไม่มีวันตัด
  *                             (ย้ายแค่ป้ายช่องทาง ยอดรวมไม่ขยับ จึงผ่อนได้)
+ *   canEditPaymentAmountOn  — ยอดเงินของบรรทัดรับเงิน · กติกาเดียวกับรายจ่าย
+ *                             (ยอดเงินเข้าของเดือนขยับจริง)
  *
  * ส่วนที่ไม่ได้ใช้ไฟล์นี้: การแก้/ลบบิลขายเรื่องอื่น (updateSale/deleteSale) จำกัดเฉพาะ
  * เดือนปัจจุบัน · ใบเติมเงินสมาชิกแก้ช่องทางย้อนหลังได้ไม่จำกัดเดือน (Boss ตัดสิน 14 ส.ค. 2026
@@ -69,4 +71,14 @@ export function canEditPaymentMethodOn(recordDate: string, today: string): boole
   const gap = monthsBetween(monthOf(today), monthOf(recordDate))
   // เดือนเดียวกัน (0) หรือเดือนก่อนหน้าพอดี (1) — ติดลบคืออนาคต ห้ามเสมอ
   return gap === 0 || gap === 1
+}
+
+/**
+ * แก้ "ยอดเงิน" ของบรรทัดรับเงินที่รับวันที่ `receivedDate` ได้ไหม ถ้าวันนี้คือ `today`
+ *
+ * กติกาเดียวกับรายจ่าย ไม่ใช่กติกาช่องทาง เพราะการแก้ยอดทำให้เงินเข้าของเดือนนั้นขยับจริง
+ * งบที่ปิดไปแล้วต้องไม่เปลี่ยน — ตัดสินจากวันรับเงิน (เดือนที่ยอดจะขยับ) ไม่ใช่วันของบิล
+ */
+export function canEditPaymentAmountOn(receivedDate: string, today: string): boolean {
+  return canEditExpenseOn(receivedDate, today)
 }

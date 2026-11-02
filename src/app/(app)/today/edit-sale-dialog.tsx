@@ -6,7 +6,8 @@ import { Pencil } from "lucide-react"
 import { toast } from "sonner"
 
 import { updateSale } from "../sale-actions"
-import { deleteBillPayment, updateBillPaymentMethod } from "../payment-actions"
+import { deleteBillPayment, updateBillPaymentAmount, updateBillPaymentMethod } from "../payment-actions"
+import { PAYMENT_AMOUNT_EDIT_REASONS, type PaymentAmountEditReason } from "@/lib/payments"
 import { CollectDueDialog } from "../collect-due-dialog"
 import { CustomerPicker } from "../pos/customer-picker"
 import { computeSaleAmounts } from "@/lib/sale-math"
@@ -340,6 +341,23 @@ function EditSaleForm({
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
+
+    // ลดราคาบิลที่รับเงินไปแล้ว → เงินที่รับไว้ไม่ลดตามเอง (ระบบไม่รู้ว่าลูกค้าโอนมาเท่าไหร่จริง)
+    // ต้องเตือนก่อนบันทึก ไม่งั้นบิลค้างเกินรับเงียบ ๆ แบบ 4 ใบเดือน ต.ค. 2569 ที่ไม่มีใครรู้
+    if (payments.length > 0) {
+      const cashBefore = sale.net_amount - (sale.credit_used ?? 0)
+      const cashAfter = preview.netAmount - preview.creditUsed
+      const dueAfter = Math.round((due + cashAfter - cashBefore) * 100) / 100
+      if (dueAfter < -0.005 && dueAfter < due - 0.005) {
+        const ok = window.confirm(
+          `บิลนี้รับเงินไปแล้ว — แก้แล้วจะ "เกินรับ ${formatBaht(Math.abs(dueAfter))} ฿"\n\n` +
+            `หลังบันทึกต้องจัดการเงินส่วนเกินด้วย:\n` +
+            `• คีย์ยอดผิด / โอนคืนลูกค้าแล้ว → ผู้จัดการกด "แก้ยอด" ที่บรรทัดรับเงิน\n` +
+            `• ลูกค้าเก็บไว้ใช้ครั้งหน้า → กด "เก็บเป็นเครดิต" ที่ป้ายส้ม\n\nบันทึกต่อไหม?`
+        )
+        if (!ok) return
+      }
+    }
 
     startTransition(async () => {
       const result = await updateSale(sale.id, formData)
@@ -742,6 +760,37 @@ function BillPaymentLinesBox({
   const [paymentPending, startPaymentTransition] = useTransition()
   // แผงเลือกช่องทางกางทีละบรรทัด — เก็บ id เดียว การกางบรรทัดใหม่จึงปิดบรรทัดเก่าเอง
   const [editingPaymentId, setEditingPaymentId] = useState<string | null>(null)
+  // แผงแก้ยอดเงิน (เฉพาะหัวหน้า) — แยกจากแผงช่องทาง กางได้ทีละบรรทัดเหมือนกัน
+  const [amountEditId, setAmountEditId] = useState<string | null>(null)
+  const [amountValue, setAmountValue] = useState("")
+  const [amountReason, setAmountReason] = useState<PaymentAmountEditReason | null>(null)
+
+  function openAmountEdit(p: BillPaymentLine) {
+    if (amountEditId === p.id) {
+      setAmountEditId(null)
+      return
+    }
+    setEditingPaymentId(null)
+    setAmountEditId(p.id)
+    // เกินรับอยู่ → เสนอยอดที่ทำให้บิลรับพอดี (ตัดส่วนเกินออกจากบรรทัดนี้) · ไม่งั้นเริ่มจากยอดเดิม
+    setAmountValue(String(due < -0.001 ? Math.max(0, p.amount + due) : p.amount))
+    setAmountReason(null)
+  }
+
+  function handleChangeAmount(p: BillPaymentLine) {
+    if (!amountReason) return
+    const value = Number(amountValue)
+    startPaymentTransition(async () => {
+      const r = await updateBillPaymentAmount(p.id, value, amountReason)
+      if (r.ok) {
+        toast.success(`แก้ยอดเป็น ${formatBaht(value)} ฿ แล้ว — วันรับเงินยังเป็น ${p.received_date}`)
+        setAmountEditId(null)
+        router.refresh()
+      } else {
+        toast.error(r.error)
+      }
+    })
+  }
 
   function handleDeletePayment(p: BillPaymentLine) {
     if (!window.confirm(`ลบบรรทัดชำระ ${p.method} ${formatBaht(p.amount)} ฿?`)) return
@@ -816,12 +865,26 @@ function BillPaymentLinesBox({
                     size="sm"
                     className="h-7 px-2 text-xs text-slate-500"
                     disabled={paymentPending}
-                    onClick={() =>
+                    onClick={() => {
+                      setAmountEditId(null)
                       setEditingPaymentId(editingPaymentId === p.id ? null : p.id)
-                    }
+                    }}
                   >
                     {editingPaymentId === p.id ? "ปิด" : "แก้ช่องทาง"}
                   </Button>
+                  {/* แก้ยอดขยับเงินเข้าจริง — สิทธิ์ระดับเดียวกับลบบรรทัด */}
+                  {canDeletePayments && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-slate-500"
+                      disabled={paymentPending}
+                      onClick={() => openAmountEdit(p)}
+                    >
+                      {amountEditId === p.id ? "ปิด" : "แก้ยอด"}
+                    </Button>
+                  )}
                   {canDeletePayments && (
                     <Button
                       type="button"
@@ -838,6 +901,51 @@ function BillPaymentLinesBox({
                   )}
                 </span>
               </div>
+              {amountEditId === p.id && (
+                <div className="space-y-2 border-t pt-2">
+                  <p className="text-xs text-slate-500">
+                    ใส่ยอดที่เข้าบัญชีร้านจริง วันรับเงินยังเป็น {p.received_date} เหมือนเดิม
+                    — ถ้าลูกค้าจ่ายเกินแล้วอยากเก็บไว้ใช้ครั้งหน้า ให้กด &quot;เก็บเป็นเครดิต&quot; แทน
+                  </p>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    min={0}
+                    step="0.01"
+                    value={amountValue}
+                    onChange={(e) => setAmountValue(e.target.value)}
+                    aria-label="ยอดเงินที่เข้าจริง"
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    {(Object.keys(PAYMENT_AMOUNT_EDIT_REASONS) as PaymentAmountEditReason[]).map(
+                      (key) => (
+                        <Button
+                          key={key}
+                          type="button"
+                          size="sm"
+                          variant={amountReason === key ? "default" : "outline"}
+                          className="h-8 text-xs"
+                          disabled={paymentPending}
+                          onClick={() => setAmountReason(key)}
+                        >
+                          {PAYMENT_AMOUNT_EDIT_REASONS[key]}
+                        </Button>
+                      )
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="w-full"
+                    disabled={
+                      paymentPending || !amountReason || !(Number(amountValue) > 0)
+                    }
+                    onClick={() => handleChangeAmount(p)}
+                  >
+                    {paymentPending ? "กำลังบันทึก..." : "บันทึกยอดใหม่"}
+                  </Button>
+                </div>
+              )}
               {editingPaymentId === p.id && (
                 <div className="flex flex-wrap gap-1.5 border-t pt-1.5">
                   {REAL_MONEY_METHODS.map((m) => (
@@ -862,7 +970,13 @@ function BillPaymentLinesBox({
       {due > 0.001 && (
         <CollectDueDialog billKey={billKey} due={due} onDone={() => router.refresh()} />
       )}
-      {payments.length > 0 && due <= 0.001 && (
+      {payments.length > 0 && due < -0.001 && (
+        <p className="rounded-md bg-amber-50 p-2 text-xs text-amber-900">
+          รับเงินเกินยอดบิล {formatBaht(Math.abs(due))} ฿ — เช็กสลิปก่อน: คีย์ยอดผิดหรือโอนคืนลูกค้าแล้ว
+          ให้ผู้จัดการกด &quot;แก้ยอด&quot; · ลูกค้าเก็บไว้ใช้ครั้งหน้า กด &quot;เก็บเป็นเครดิต&quot; ที่ป้ายส้มของบิล
+        </p>
+      )}
+      {payments.length > 0 && Math.abs(due) <= 0.001 && (
         <p className="text-xs text-slate-500">
           ชำระเงินครบแล้ว — คีย์ช่องทางผิดกด &quot;แก้ช่องทาง&quot; ที่บรรทัดได้เลย
           ไม่ต้องลบ (ยอดเงินและวันที่รับเงินไม่เปลี่ยน)

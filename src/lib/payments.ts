@@ -52,3 +52,13 @@ export function primaryMethod(lines: PaymentLine[]): string | null {
 export function dueAmount(mustCollect: number, lines: PaymentLine[]): number {
   return round2(mustCollect - lines.reduce((s, l) => s + l.amount, 0))
 }
+
+/**
+ * สาเหตุที่ยอมให้แก้ยอดเงินของบรรทัดรับเงิน (updateBillPaymentAmount) — ค่าเป็นข้อความที่ต่อท้าย note
+ * ไม่มี "ลูกค้าเก็บไว้ใช้ครั้งหน้า" เพราะเคสนั้นต้องออกใบเครดิต (keepOverpayAsCredit) ไม่ใช่ตัดยอดทิ้ง
+ */
+export const PAYMENT_AMOUNT_EDIT_REASONS = {
+  typo: "คีย์ยอดผิด",
+  refunded: "โอนคืนลูกค้าแล้ว",
+} as const
+export type PaymentAmountEditReason = keyof typeof PAYMENT_AMOUNT_EDIT_REASONS

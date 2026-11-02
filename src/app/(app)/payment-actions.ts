@@ -6,7 +6,8 @@ import { getMyProfile } from "@/lib/auth"
 import { PAYMENT_LINE_METHODS } from "@/lib/payments"
 import { todayInShopTz } from "@/lib/datetime"
 import { REAL_MONEY_METHODS } from "@/lib/constants"
-import { canEditPaymentMethodOn } from "@/lib/accounting-window"
+import { canEditPaymentAmountOn, canEditPaymentMethodOn } from "@/lib/accounting-window"
+import { PAYMENT_AMOUNT_EDIT_REASONS, type PaymentAmountEditReason } from "@/lib/payments"
 
 /** เก็บเงินเพิ่มเข้าบิล (บิลค้างรับ/ต่อเวลา) — กันเกินยอดค้างด้วยการอ่าน due สดจาก view */
 export async function addBillPayment(
@@ -130,4 +131,77 @@ export async function updateBillPaymentMethod(
   revalidatePath("/queue")
   revalidatePath("/overview")
   return { ok: true }
+}
+
+/**
+ * แก้ยอดเงินของบรรทัดรับเงินหนึ่งบรรทัด — วันรับเงินคงเดิม (ต่างจากลบแล้วเก็บเพิ่มใหม่ที่ลงเป็นวันนี้)
+ *
+ * ใช้เมื่อเงินที่เข้าจริงไม่ตรงกับบรรทัด: คีย์ยอดผิด หรือโอนคืนลูกค้าไปแล้ว
+ * ลูกค้าจ่ายเกินแล้วอยากเก็บไว้ใช้ครั้งหน้า ไม่ใช่ที่นี่ — ใช้ keepOverpayAsCredit
+ *
+ * เฉพาะ admin/manager · เดือนที่ปิดงบแล้วแก้ไม่ได้ (canEditPaymentAmountOn ตัดสินจากวันรับเงิน)
+ * ยอดใหม่ห้ามทำให้บิลเกินรับเพิ่ม — ถ้าเงินเข้าจริงมากกว่ายอดบิล ทางที่ถูกคือเก็บเป็นเครดิต
+ * ตัวแก้ + sync ป้ายช่องทางหัวบิลอยู่ใน RPC `update_bill_payment_amount` (ทรานแซกชันเดียว)
+ */
+export async function updateBillPaymentAmount(
+  paymentId: string,
+  amount: number,
+  reason: PaymentAmountEditReason
+): Promise<{ ok: true; due: number } | { ok: false; error: string }> {
+  const reasonLabel = PAYMENT_AMOUNT_EDIT_REASONS[reason]
+  if (!reasonLabel) return { ok: false, error: "ต้องเลือกสาเหตุก่อน" }
+  if (!Number.isFinite(amount) || amount <= 0)
+    return { ok: false, error: "ยอดต้องมากกว่า 0 — ถ้าเงินไม่ได้เข้าเลยให้ลบบรรทัดแทน" }
+  const newAmount = Math.round(amount * 100) / 100
+
+  const profile = await getMyProfile()
+  if (!profile || !["admin", "manager"].includes(profile.role ?? ""))
+    return { ok: false, error: "เฉพาะผู้จัดการขึ้นไปแก้ยอดเงินได้" }
+
+  const supabase = await createClient()
+  const { data: line } = await supabase
+    .from("bill_payments")
+    .select("id, bill_key, amount, received_date")
+    .eq("id", paymentId)
+    .maybeSingle()
+  if (!line) return { ok: false, error: "ไม่พบบรรทัดชำระนี้" }
+
+  const receivedDate = String(line.received_date)
+  if (!canEditPaymentAmountOn(receivedDate, todayInShopTz()))
+    return {
+      ok: false,
+      error: `เงินเข้าเดือน ${receivedDate.slice(0, 7)} ปิดงบแล้ว — แก้ยอดไม่ได้ ติดต่อเจ้าของร้าน`,
+    }
+
+  const oldAmount = Number(line.amount)
+  if (Math.abs(newAmount - oldAmount) < 0.005) return { ok: false, error: "ยอดใหม่เท่ากับยอดเดิม" }
+
+  // อ่าน due สดเสมอ — ห้ามเชื่อค่าที่หน้าจอส่งมา
+  const { data: bill } = await supabase
+    .from("v_bill_due").select("due").eq("bill_key", String(line.bill_key)).maybeSingle()
+  if (!bill) return { ok: false, error: "ไม่พบบิลนี้ในระบบบรรทัดชำระ" }
+  const newDue = Math.round((Number(bill.due) + oldAmount - newAmount) * 100) / 100
+  if (newAmount > oldAmount && newDue < -0.005)
+    return { ok: false, error: `ยอดใหม่ทำให้บิลเกินรับ ${Math.abs(newDue)} บาท — ใส่ได้ไม่เกิน ${oldAmount + Number(bill.due)} บาท` }
+
+  const { error } = await supabase.rpc("update_bill_payment_amount", {
+    p_payment_id: paymentId,
+    p_amount: newAmount,
+    p_reason: reasonLabel,
+    p_edited_by: profile.full_name ?? null,
+  })
+  if (error) {
+    if (error.message.includes("NOT_MANAGER"))
+      return { ok: false, error: "เฉพาะผู้จัดการขึ้นไปแก้ยอดเงินได้" }
+    if (error.message.includes("LINE_NOT_UPDATED"))
+      return { ok: false, error: "แก้ไม่สำเร็จ — บรรทัดนี้ถูกลบไปแล้ว (ยังไม่มีอะไรถูกเปลี่ยน)" }
+    return { ok: false, error: `แก้ไม่สำเร็จ ยังไม่มีอะไรถูกเปลี่ยน ลองใหม่อีกครั้ง (${error.message})` }
+  }
+
+  revalidatePath("/today")
+  revalidatePath("/reports")
+  revalidatePath("/history")
+  revalidatePath("/queue")
+  revalidatePath("/overview")
+  return { ok: true, due: newDue }
 }
