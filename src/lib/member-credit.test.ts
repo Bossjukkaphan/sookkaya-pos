@@ -52,7 +52,8 @@ describe("checkCreditSpend", () => {
     if (r.ok) return
     expect(r.reason).toBe("expired")
     expect(r.message).toContain("2300")
-    expect(r.message).toContain("เติม")
+    // กติกาแยกก้อน: ทางออกคือยืดอายุใบหรือซื้อแพ็กเกจใหม่ (เติมใหม่ไม่ฟื้นใบเก่าแล้ว)
+    expect(r.message).toContain("ยืดอายุ")
   })
 
   it("ไม่เคยเติมเงินเลย ถือว่าใช้ไม่ได้", () => {

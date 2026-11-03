@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { CustomerForm } from "../customer-form"
 import { PointsAdjust } from "../points-adjust"
 import { MergeCustomers } from "../merge-customers"
+import { TopupManager, type TopupView } from "../topup-manager"
 
 export default async function CustomerDetailPage({
   params,
@@ -63,6 +64,68 @@ export default async function CustomerDetailPage({
       .order("created_at", { ascending: false })
       .limit(10),
   ])
+
+  // แพ็กเกจเครดิตรายใบ (ระบบแยกก้อนตามใบเติม) + การใช้ + ประวัติการแก้ไข
+  const { data: topupRows } = await supabase
+    .from("v_topup_balances")
+    .select("topup_id, tier, topup_date, expiry_date, credit_added, remaining, is_active, status")
+    .eq("customer_id", id)
+    .order("topup_date", { ascending: false })
+  const topupIds = (topupRows ?? []).map((t) => String(t.topup_id))
+  const [{ data: allocRows }, { data: editRows }] = topupIds.length
+    ? await Promise.all([
+        supabase
+          .from("sale_credit_allocations")
+          .select("topup_id, sale_id, amount")
+          .in("topup_id", topupIds),
+        supabase
+          .from("member_topup_edits")
+          .select("topup_id, field, old_value, new_value, edited_by, created_at")
+          .in("topup_id", topupIds)
+          .order("created_at", { ascending: false }),
+      ])
+    : [{ data: [] }, { data: [] }]
+  const usageSaleIds = [...new Set((allocRows ?? []).map((a) => a.sale_id))]
+  const { data: usageSales } = usageSaleIds.length
+    ? await supabase
+        .from("sales")
+        .select("id, sale_date, sale_time, receipt_no, service_name, net_amount")
+        .in("id", usageSaleIds)
+    : { data: [] }
+  const saleById = new Map((usageSales ?? []).map((x) => [x.id, x]))
+  const topupViews: TopupView[] = (topupRows ?? []).map((t) => ({
+    topupId: String(t.topup_id),
+    tier: String(t.tier ?? ""),
+    topupDate: String(t.topup_date ?? ""),
+    expiryDate: String(t.expiry_date ?? ""),
+    creditAdded: Number(t.credit_added ?? 0),
+    remaining: Number(t.remaining ?? 0),
+    isActive: Boolean(t.is_active),
+    status: String(t.status ?? "active"),
+    usage: (allocRows ?? [])
+      .filter((a) => a.topup_id === t.topup_id)
+      .map((a) => {
+        const sale = saleById.get(a.sale_id)
+        return {
+          saleDate: String(sale?.sale_date ?? ""),
+          saleTime: sale?.sale_time ?? null,
+          receiptNo: sale?.receipt_no ?? null,
+          serviceName: sale?.service_name ?? null,
+          billNet: Number(sale?.net_amount ?? 0),
+          amount: Number(a.amount),
+        }
+      })
+      .sort((a, b) => b.saleDate.localeCompare(a.saleDate)),
+    edits: (editRows ?? [])
+      .filter((e) => e.topup_id === t.topup_id)
+      .map((e) => ({
+        field: String(e.field),
+        oldValue: e.old_value,
+        newValue: e.new_value,
+        editedBy: e.edited_by,
+        createdAt: String(e.created_at),
+      })),
+  }))
 
   if (!customer) notFound()
 
@@ -160,7 +223,8 @@ export default async function CustomerDetailPage({
             )}
             {isCreditFrozen(credit, Boolean(balance?.credit_expired)) && (
               <p className="text-sm font-medium text-amber-700">
-                หมดอายุแล้ว — เติมเพิ่มเพื่อปลดล็อก {formatBaht(credit)} ฿
+                ไม่มีใบที่ใช้ได้ — ยอด {formatBaht(credit)} ฿ อยู่ในใบหมดอายุ/ปิดใช้งาน
+                (ยืดอายุใบได้จากตารางแพ็กเกจด้านล่าง)
               </p>
             )}
           </CardContent>
@@ -175,6 +239,9 @@ export default async function CustomerDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {/* แพ็กเกจเครดิตรายใบ — ตาราง/แก้ไข/การใช้/ประวัติ ตามระบบแยกก้อน (2026-11-03) */}
+      <TopupManager topups={topupViews} />
 
       {/* แต้มสะสม */}
       <Card className="border-violet-200">

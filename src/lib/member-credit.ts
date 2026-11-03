@@ -98,7 +98,7 @@ export function checkCreditSpend(input: CreditSpendInput): CreditSpendResult {
       message:
         expiry === null
           ? "ลูกค้ายังไม่เคยซื้อแพ็กเกจสมาชิก จึงยังไม่มีเครดิตให้ตัด"
-          : `เครดิตหมดอายุเมื่อ ${expiry} — ยอด ${balance} ฿ ยังอยู่ครบ เติมแพ็กเกจใหม่แล้วใช้ได้ทันที`,
+          : `เครดิตหมดอายุเมื่อ ${expiry} — ยอด ${balance} ฿ ยังอยู่ (ผู้จัดการยืดอายุใบได้ หรือซื้อแพ็กเกจใหม่)`,
     }
   }
 

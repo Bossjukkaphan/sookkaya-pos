@@ -284,21 +284,31 @@ export default function ProfilePage() {
         </div>
         {member.tier || member.creditBalance > 0 ? (
           <>
-            <p className="mt-3 text-sm opacity-80">เครดิตคงเหลือ</p>
-            <p className="text-4xl font-bold">{formatBaht(member.creditBalance)}฿</p>
-            {/* หมดอายุแล้วห้ามใช้คำว่า "ใช้ได้ถึง" เพราะทำให้อ่านผิดว่ายังใช้ตัดได้ —
-                ต้องบอกยอดที่แช่แข็งเป็นตัวเลขชัดเจน ไม่ใช่แค่บอกว่าหมดอายุเฉยๆ */}
-            {isCreditFrozen(member.creditBalance, member.creditExpired) ? (
+            <p className="mt-3 text-sm opacity-80">เครดิตที่ใช้ได้</p>
+            {/* ระบบแยกก้อนตามใบเติม: ตัวใหญ่ = ยอดที่ตัดได้จริงวันนี้ · ใบหมดอายุแสดงแยกด้านล่าง */}
+            <p className="text-4xl font-bold">{formatBaht(member.usableBalance)}฿</p>
+            {member.packages.length > 0 && (
+              <div className="mt-2 space-y-1 text-xs">
+                {member.packages.map((pk, i) => (
+                  <p
+                    key={i}
+                    className={pk.status === "active" ? "opacity-90" : "opacity-60"}
+                  >
+                    🏅 {pk.tier} · เหลือ {formatBaht(pk.remaining)}฿ ·{" "}
+                    {pk.status === "active"
+                      ? `ใช้ได้ถึง ${formatThaiDate(pk.expiryDate)}`
+                      : pk.status === "inactive"
+                        ? "ปิดใช้งานชั่วคราว"
+                        : `หมดอายุ ${formatThaiDate(pk.expiryDate)} — สอบถามต่ออายุที่ร้านได้ค่ะ`}
+                  </p>
+                ))}
+              </div>
+            )}
+            {isCreditFrozen(member.creditBalance, member.creditExpired) && (
               <p className="mt-1 text-xs font-semibold text-amber-200">
-                หมดอายุแล้ว — เครดิต {formatBaht(member.creditBalance)}฿ ยังอยู่ครบ
-                เติมแพ็กเกจใหม่แล้วใช้ได้ทันที
+                ยอด {formatBaht(member.creditBalance)}฿ อยู่ในแพ็กเกจที่หมดอายุ —
+                สอบถามต่ออายุ หรือซื้อแพ็กเกจใหม่ที่ร้านได้ค่ะ
               </p>
-            ) : (
-              member.nextExpiry && (
-                <p className="mt-1 text-xs opacity-80">
-                  ใช้ได้ถึง {formatThaiDate(member.nextExpiry)}
-                </p>
-              )
             )}
           </>
         ) : (

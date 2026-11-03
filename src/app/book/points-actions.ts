@@ -314,8 +314,18 @@ export type MyProfileData =
         tier: string | null
         creditBalance: number
         nextExpiry: string | null
-        /** เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) — งานที่ 1 */
+        /** เครดิตแช่แข็ง (ไม่มีใบที่ใช้ได้ แต่ยอดยังอยู่) — งานที่ 1 */
         creditExpired: boolean
+        /** ยอดที่ใช้ได้จริงวันนี้ (เฉพาะใบที่ยังไม่หมดอายุ) — ระบบแยกก้อนตามใบเติม */
+        usableBalance: number
+        /** แพ็กเกจรายใบ เรียงใกล้หมดอายุก่อน */
+        packages: {
+          tier: string
+          expiryDate: string
+          remaining: number
+          /** active | expired | depleted | inactive */
+          status: string
+        }[]
       }
       visits: number
       usage: UsageBill[]
@@ -352,7 +362,7 @@ export async function getMyProfile(idToken: string): Promise<MyProfileData> {
     await Promise.all([
       db
         .from("member_balances")
-        .select("credit_balance, next_expiry, credit_expired")
+        .select("credit_balance, usable_balance, next_expiry, credit_expired")
         .eq("customer_id", customerId)
         .maybeSingle(),
       db
@@ -373,6 +383,14 @@ export async function getMyProfile(idToken: string): Promise<MyProfileData> {
         .limit(80),
       db.from("v_customer_ltv").select("visits").eq("customer_id", customerId).maybeSingle(),
     ])
+
+  // แพ็กเกจรายใบ — ลูกค้าเห็นเองว่าใบไหนเหลือเท่าไหร่ หมดอายุเมื่อไหร่ (ใบหมดอายุโชว์จาง)
+  const { data: topupRows } = await db
+    .from("v_topup_balances")
+    .select("tier, expiry_date, remaining, status")
+    .eq("customer_id", customerId)
+    .gt("remaining", 0)
+    .order("expiry_date")
 
   // บิลชุด (bill_id เดียวกันหลายรายการ) รวมเป็นใบเดียวให้ลูกค้าอ่านง่าย
   const bills = new Map<string, UsageBill>()
@@ -416,6 +434,13 @@ export async function getMyProfile(idToken: string): Promise<MyProfileData> {
       creditBalance: balance?.credit_balance ?? 0,
       nextExpiry: balance?.next_expiry ?? null,
       creditExpired: balance?.credit_expired ?? false,
+      usableBalance: balance?.usable_balance ?? 0,
+      packages: (topupRows ?? []).map((t) => ({
+        tier: String(t.tier ?? ""),
+        expiryDate: String(t.expiry_date ?? ""),
+        remaining: Number(t.remaining ?? 0),
+        status: String(t.status ?? "active"),
+      })),
     },
     visits: ltv?.visits ?? 0,
     usage: [...bills.values()].slice(0, 30),
