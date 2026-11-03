@@ -1,0 +1,7 @@
+-- (applied ตรงบน production 2026-11-03 ผ่าน apply_migration — เก็บไฟล์ไว้เป็นบันทึก)
+-- เครดิตสมาชิกเปลี่ยนจาก "กระปุกเดียวหมดอายุพร้อมกัน" → "แยกก้อนตามใบเติม"
+-- ดูเนื้อ SQL เต็มใน migration history ของ Supabase (ชื่อ per_topup_credit_buckets)
+-- สาระ: member_topups.is_active · ตาราง sale_credit_allocations / member_topup_adjustments /
+-- member_topup_edits · backfill จับคู่บิลเครดิต 755 ใบ (ตรวจแล้วตรง 599,680฿ เป๊ะ) ·
+-- view ใหม่ v_topup_balances · member_balances เพิ่ม usable_balance (next_expiry =
+-- วันไกลสุดของใบที่ยังใช้ได้ → สูตร credit_expired เดิมของทุกหน้าจอยังถูกต้อง)

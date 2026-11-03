@@ -523,6 +523,87 @@ export type Database = {
         }
         Relationships: []
       }
+      sale_credit_allocations: {
+        Row: {
+          id: string
+          sale_id: string
+          topup_id: string
+          amount: number
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          sale_id: string
+          topup_id: string
+          amount: number
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          sale_id?: string
+          topup_id?: string
+          amount?: number
+          created_at?: string
+        }
+        Relationships: []
+      }
+      member_topup_adjustments: {
+        Row: {
+          id: string
+          topup_id: string
+          delta: number
+          reason: string | null
+          edited_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          topup_id: string
+          delta: number
+          reason?: string | null
+          edited_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          topup_id?: string
+          delta?: number
+          reason?: string | null
+          edited_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      member_topup_edits: {
+        Row: {
+          id: string
+          topup_id: string
+          field: string
+          old_value: string | null
+          new_value: string | null
+          edited_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          topup_id: string
+          field: string
+          old_value?: string | null
+          new_value?: string | null
+          edited_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          topup_id?: string
+          field?: string
+          old_value?: string | null
+          new_value?: string | null
+          edited_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
       member_topups: {
         Row: {
           bonus_added: number
@@ -533,6 +614,7 @@ export type Database = {
           edited_at: string | null
           edited_by: string | null
           expiry_date: string
+          is_active: boolean
           id: string
           notes: string | null
           payment_method: string
@@ -548,6 +630,7 @@ export type Database = {
           edited_at?: string | null
           edited_by?: string | null
           expiry_date: string
+          is_active?: boolean
           id?: string
           notes?: string | null
           payment_method: string
@@ -563,6 +646,7 @@ export type Database = {
           edited_at?: string | null
           edited_by?: string | null
           expiry_date?: string
+          is_active?: boolean
           id?: string
           notes?: string | null
           payment_method?: string
@@ -1542,6 +1626,7 @@ export type Database = {
       member_balances: {
         Row: {
           bonus_granted: number | null
+          usable_balance: number | null
           cash_paid: number | null
           created_at: string | null
           credit_balance: number | null
@@ -1553,6 +1638,27 @@ export type Database = {
           next_expiry: string | null
           nickname: string | null
           phone: string | null
+        }
+        Relationships: []
+      }
+      v_topup_balances: {
+        Row: {
+          topup_id: string | null
+          customer_id: string | null
+          tier: string | null
+          topup_date: string | null
+          expiry_date: string | null
+          payment_method: string | null
+          notes: string | null
+          is_active: boolean | null
+          credit_added: number | null
+          bonus_added: number | null
+          cash_received: number | null
+          remaining: number | null
+          used_total: number | null
+          adjusted_total: number | null
+          recognize_ratio: number | null
+          status: string | null
         }
         Relationships: []
       }

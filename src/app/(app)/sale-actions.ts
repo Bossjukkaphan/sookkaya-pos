@@ -12,7 +12,14 @@ import {
   PRIVATE_ROOM_FEE,
 } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
-import { checkCreditSpend } from "@/lib/member-credit"
+import {
+  planCreditSplit,
+  usableCreditOn,
+  validateSplit,
+  weightedRecognizeRatio,
+  type SplitPart,
+  type TopupBucket,
+} from "@/lib/topup-credit"
 import { parsePaymentLines, primaryMethod } from "@/lib/payments"
 import { pointExpiryDate, pointsForSale } from "@/lib/points"
 import { bedSegments, queueMirrorFromSale } from "@/lib/queue"
@@ -94,6 +101,49 @@ function toNumber(value: FormDataEntryValue | null, fallback = 0): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : fallback
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** ใบเครดิตทุกใบของลูกค้า (จาก view ยอดรายใบ) — แปลงเป็นรูปที่ตรรกะแบ่งใบใช้ */
+async function loadTopupBuckets(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  customerId: string
+): Promise<TopupBucket[]> {
+  const { data } = await supabase
+    .from("v_topup_balances")
+    .select("topup_id, tier, topup_date, expiry_date, remaining, recognize_ratio, is_active")
+    .eq("customer_id", customerId)
+  return (data ?? []).map((r) => ({
+    topupId: String(r.topup_id),
+    tier: String(r.tier ?? ""),
+    topupDate: String(r.topup_date ?? ""),
+    expiryDate: String(r.expiry_date ?? ""),
+    remaining: Number(r.remaining ?? 0),
+    recognizeRatio: Number(r.recognize_ratio ?? 1),
+    isActive: Boolean(r.is_active),
+  }))
+}
+
+/** การแบ่งใบที่พนักงานแก้เองจากหน้า POS — JSON [{topupId, amount}] · null = ให้ระบบจัดอัตโนมัติ */
+function parseCreditSplit(formData: FormData): SplitPart[] | null {
+  const raw = String(formData.get("credit_split") ?? "").trim()
+  if (!raw) return null
+  try {
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return null
+    const parts: SplitPart[] = []
+    for (const x of arr) {
+      const topupId = String(x?.topupId ?? "")
+      const amount = Number(x?.amount)
+      if (!/^[0-9a-f-]{36}$/i.test(topupId) || !Number.isFinite(amount)) return null
+      parts.push({ topupId, amount })
+    }
+    return parts
+  } catch {
+    return null
+  }
+}
+
 
 /**
  * แต้มสะสมของบิล: ลบของเดิมแล้วใส่ใหม่ตามยอดปัจจุบัน — แก้บิลแล้วแต้มตามยอดใหม่เสมอ
@@ -238,37 +288,32 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
   let memberRatio: number | null = null
   // เครดิตคงเหลือหลังหักบิลนี้ — โชว์บนใบเสร็จให้ลูกค้าเห็นทันที (snapshot ณ ตอนขาย)
   let creditAfter: number | null = null
+  // เครดิตแบบแยกก้อนตามใบเติม (2026-11-03): บิลระบุชัดว่าตัดจากใบไหนบ้าง
+  // ระบบจัดให้อัตโนมัติ (ใกล้หมดอายุก่อน) · พนักงานส่ง credit_split มาแก้การแบ่งเองได้
+  let creditParts: SplitPart[] | null = null
   if (paymentMethod === MEMBER_CREDIT_METHOD || creditRequested > 0) {
     if (!customerId) {
       return { ok: false, error: "ชำระด้วยเครดิตสมาชิกต้องเลือกลูกค้าที่เป็นสมาชิก" }
     }
 
-    const { data: balance } = await supabase
-      .from("member_balances")
-      .select("credit_balance, credit_granted, cash_paid, next_expiry")
-      .eq("customer_id", customerId)
-      .single()
-
-    const granted = balance?.credit_granted ?? 0
-    memberRatio = granted > 0 ? (balance?.cash_paid ?? 0) / granted : 1
-
-    const credit = balance?.credit_balance ?? 0
+    const buckets = await loadTopupBuckets(supabase, customerId)
     // เครดิตเต็มบิลต้องพอทั้งบิล (เดิม) · แบ่งจ่ายต้องพอเท่าที่ขอตัด
     const wanted =
       paymentMethod === MEMBER_CREDIT_METHOD
         ? priceNormal - discountInput + roomFee
         : creditRequested
     // เทียบกับวันที่ของบิล ไม่ใช่วันนี้ — บิลที่ให้บริการตอนเครดิตยังไม่หมดอายุต้องคีย์ย้อนหลังได้
-    const spend = checkCreditSpend({
-      expiry: balance?.next_expiry ?? null,
-      onDate: saleDate,
-      balance: credit,
-      wanted,
-    })
-    if (!spend.ok) {
-      return { ok: false, error: spend.message }
+    const manual = parseCreditSplit(formData)
+    const split = manual
+      ? validateSplit({ parts: manual, buckets, amount: wanted, onDate: saleDate })
+      : planCreditSplit({ buckets, amount: wanted, onDate: saleDate })
+    if (!split.ok) {
+      return { ok: false, error: split.message }
     }
-    creditAfter = credit - wanted
+    creditParts = split.parts
+    // รายได้รับรู้ตามใบที่ตัดจริง — ใบโบนัสเยอะรับรู้น้อยตามเงินจริงของใบนั้น
+    memberRatio = weightedRecognizeRatio(split.parts, buckets)
+    creditAfter = round2(usableCreditOn(buckets, saleDate) - wanted)
   }
 
   const amounts = computeSaleAmounts({
@@ -401,6 +446,25 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
     .single()
 
   if (error) return { ok: false, error: `บันทึกไม่สำเร็จ: ${error.message}` }
+
+  // บันทึกว่าบิลนี้ตัดเครดิตจากใบไหนบ้าง — ต้องสำเร็จคู่กับบิลเสมอ
+  // ไม่งั้นยอดคงเหลือรายใบจะเกินจริง (บิลตัดเงินแต่ไม่มีใครรู้ว่าตัดใบไหน)
+  if (creditParts && creditParts.length > 0) {
+    const { error: allocError } = await supabase.from("sale_credit_allocations").insert(
+      creditParts.map((part) => ({
+        sale_id: inserted.id,
+        topup_id: part.topupId,
+        amount: part.amount,
+      }))
+    )
+    if (allocError) {
+      await supabase.from("sales").delete().eq("id", inserted.id)
+      return {
+        ok: false,
+        error: "บันทึกการแบ่งใบเครดิตไม่สำเร็จ — ยกเลิกบิลให้แล้ว ลองใหม่อีกครั้ง",
+      }
+    }
+  }
 
   // เขียนบรรทัดชำระครั้งเดียวต่อบิล — บิลชุด (bill_id ซ้ำกันหลายแถว) ให้แถวแรกของบิลเป็นผู้เขียน
   // แถวถัดไปของบิลเดียวกันเช็คแล้วพบบรรทัดของ bill_key นี้อยู่แล้ว จึงข้าม ไม่เขียนซ้ำ
@@ -750,27 +814,27 @@ export async function updateSale(
   let memberRatio: number | null = null
   // เครดิตคงเหลือหลังหักบิลนี้ — snapshot ใหม่ตามยอดที่แก้ (null = บิลนี้ไม่เกี่ยวกับเครดิตแล้ว)
   let creditAfter: number | null = null
+  // เครดิตแบบแยกก้อนตามใบเติม: แก้บิลคืนโควตาเดิมของแต่ละใบก่อนตัดใหม่
+  // (ตัดเท่าเดิม/น้อยลงบนใบเดิมไม่ใช่การใช้เครดิตใหม่ แม้ใบนั้นหมดอายุไปแล้ว — หลักเดิมของระบบ)
+  let creditParts: SplitPart[] | null = null
   if (paymentMethod === MEMBER_CREDIT_METHOD || creditRequested > 0) {
     if (!customerId) {
       return { ok: false, error: "ชำระด้วยเครดิตสมาชิกต้องเลือกลูกค้าที่เป็นสมาชิก" }
     }
 
-    const { data: balance } = await supabase
-      .from("member_balances")
-      .select("credit_balance, credit_granted, cash_paid, next_expiry")
-      .eq("customer_id", customerId)
-      .single()
-
-    const granted = balance?.credit_granted ?? 0
-    memberRatio = granted > 0 ? (balance?.cash_paid ?? 0) / granted : 1
-
-    // ยอดคงเหลือปัจจุบันหักรายการนี้ไปแล้ว การแก้จะคืนของเดิมก่อนตัดใหม่
-    // เพดานจึงเป็นคงเหลือ + ที่รายการนี้เคยตัด — แต่คืนได้เฉพาะเมื่อยังเป็นลูกค้าคนเดิม
+    const buckets = await loadTopupBuckets(supabase, customerId)
+    // โควตาเดิม: บิลนี้เคยตัดจากใบไหนเท่าไหร่ — คืนได้เฉพาะเมื่อยังเป็นลูกค้าคนเดิม
     const sameCustomer = existing.customer_id === customerId
-    const previouslyUsed = sameCustomer ? Number(existing.credit_used ?? 0) : 0
-    const customerBalance = Number(balance?.credit_balance ?? 0)
-    const headroom = customerBalance + previouslyUsed
-    const expiry = balance?.next_expiry ?? null
+    const already = new Map<string, number>()
+    if (sameCustomer) {
+      const { data: oldAlloc } = await supabase
+        .from("sale_credit_allocations")
+        .select("topup_id, amount")
+        .eq("sale_id", id)
+      for (const a of oldAlloc ?? []) {
+        already.set(a.topup_id, round2((already.get(a.topup_id) ?? 0) + Number(a.amount)))
+      }
+    }
 
     const wanted =
       paymentMethod === MEMBER_CREDIT_METHOD
@@ -778,32 +842,20 @@ export async function updateSale(
           discountInput +
           (formData.get("private_room") === "on" ? PRIVATE_ROOM_FEE : 0)
         : creditRequested
-    // ใช้ sale_date ของบิลเดิม และส่ง previouslyUsed เพื่อให้แก้บิลเก่าของลูกค้าที่หมดอายุได้
-    // ตราบใดที่ไม่เพิ่มยอดตัด — ถ้าบล็อกทุกกรณี พนักงานจะแก้บิลที่คีย์ผิดไม่ได้เลย
-    const spend = checkCreditSpend({
-      expiry,
+    // ใช้ sale_date ของบิลเดิม — บิลเก่าที่ให้บริการตอนใบยังไม่หมดอายุต้องแก้ได้
+    const split = planCreditSplit({
+      buckets,
+      amount: wanted,
       onDate: existing.sale_date,
-      balance: headroom,
-      wanted,
-      alreadyUsedOnThisBill: previouslyUsed,
+      already,
     })
-    if (!spend.ok) {
-      // "insufficient" ใช้ headroom ของบิลนี้ตรงตามที่เป็นจริง (เพดานที่แก้ได้)
-      // "expired" ต้องพูดยอดจริงในกระปุกลูกค้า (customerBalance) ไม่ใช่ headroom — headroom บวก
-      // previouslyUsed (เครดิตที่บิลนี้เคยตัดไปแล้ว) เข้าไปด้วย ซึ่งไม่ใช่เงินที่ลูกค้ายังมีอยู่จริง
-      // ข้อความนี้พนักงานอ่านให้ลูกค้าฟังหน้าเคาน์เตอร์ ถ้าบอกยอดเกินจริงจะเป็นการสัญญาเงินที่ไม่มี
-      const message =
-        spend.reason === "insufficient"
-          ? `เครดิตคงเหลือไม่พอ (แก้เป็นได้สูงสุด ${headroom} บาท ต้องใช้ ${wanted} บาท)`
-          : expiry !== null
-            ? `เครดิตหมดอายุเมื่อ ${expiry} — ยอด ${customerBalance} ฿ ยังอยู่ครบ เติมแพ็กเกจใหม่แล้วใช้ได้ทันที`
-            : spend.message
-      return {
-        ok: false,
-        error: message,
-      }
+    if (!split.ok) {
+      return { ok: false, error: split.message }
     }
-    creditAfter = headroom - wanted
+    creditParts = split.parts
+    memberRatio = weightedRecognizeRatio(split.parts, buckets)
+    const alreadyTotal = [...already.values()].reduce((a, b) => a + b, 0)
+    creditAfter = round2(usableCreditOn(buckets, existing.sale_date) + alreadyTotal - wanted)
   }
 
   const amounts = computeSaleAmounts({
@@ -884,6 +936,25 @@ export async function updateSale(
     return {
       ok: false,
       error: "มีคนแก้รายการนี้ไปแล้วระหว่างที่คุณกดบันทึก กรุณาปิดแล้วเปิดใหม่",
+    }
+  }
+
+  // สลับการแบ่งใบเครดิตเป็นชุดใหม่ — ลบของเดิมทั้งบิลแล้วเขียนใหม่
+  // (เปลี่ยนเป็นไม่ใช้เครดิตเลยก็ต้องลบ — เครดิตคืนกลับใบเดิมผ่านการลบแถวนี่แหละ)
+  if (creditParts !== null || Number(existing.credit_used ?? 0) > 0) {
+    await supabase.from("sale_credit_allocations").delete().eq("sale_id", id)
+    if (creditParts && creditParts.length > 0) {
+      const { error: allocError } = await supabase.from("sale_credit_allocations").insert(
+        creditParts.map((part) => ({ sale_id: id, topup_id: part.topupId, amount: part.amount }))
+      )
+      if (allocError) {
+        // บิลถูกแก้ไปแล้ว ถอยไม่ได้ — ต้องบอกให้คนรู้แทนที่จะเงียบ (ยอดรายใบจะเพี้ยนจนกว่าจะแก้)
+        return {
+          ok: false,
+          error:
+            "บิลถูกบันทึกแล้ว แต่บันทึกการแบ่งใบเครดิตไม่สำเร็จ — เปิดบิลแล้วกดบันทึกซ้ำอีกครั้ง",
+        }
+      }
     }
   }
 

@@ -68,6 +68,21 @@ function fakeSupabase(tables: Record<string, () => unknown>) {
   }
 }
 
+/** แถวใบเครดิตใน v_topup_balances — โลกใหม่: ด่านเครดิตอ่านรายใบ ไม่ใช่ยอดรวมกระปุก */
+const TOPUP_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+function bucketRow(over: Record<string, unknown>) {
+  return {
+    topup_id: TOPUP_A,
+    tier: "Silver",
+    topup_date: "2026-01-01",
+    expiry_date: "2026-12-31",
+    remaining: 0,
+    recognize_ratio: 1,
+    is_active: true,
+    ...over,
+  }
+}
+
 function baseFormData(fields: Record<string, string>): FormData {
   const fd = new FormData()
   for (const [k, v] of Object.entries(fields)) fd.set(k, v)
@@ -91,9 +106,10 @@ describe("createSale — ด่านเครดิตหมดอายุ", (
         { data: { queue_date: "2026-07-01" } }, // select saleDate จากคิว
         { data: null }, // update ปิดคิวเป็น paid ท้ายฟังก์ชัน
       ]),
-      member_balances: seqTable([
-        { data: { credit_balance: 1000, credit_granted: 1000, cash_paid: 1000, next_expiry: "2026-07-15" } },
+      v_topup_balances: seqTable([
+        { data: [bucketRow({ expiry_date: "2026-07-15", remaining: 1000 })] },
       ]),
+      sale_credit_allocations: seqTable([{ data: null }]),
       profiles: seqTable([{ data: { full_name: "Boss" } }]),
       sales: seqTable([{ data: { id: SALE, receipt_no: "R0001" } }]),
       point_transactions: seqTable([{ data: null }]),
@@ -127,8 +143,8 @@ describe("createSale — ด่านเครดิตหมดอายุ", (
     const tables = {
       services: seqTable([{ data: { name: "นวดไทย", price: 500, commission: 100, duration_min: 60 } }]),
       queue_entries: seqTable([{ data: { queue_date: "2026-07-01" } }]),
-      member_balances: seqTable([
-        { data: { credit_balance: 5000, credit_granted: 5000, cash_paid: 5000, next_expiry: "2026-06-30" } },
+      v_topup_balances: seqTable([
+        { data: [bucketRow({ expiry_date: "2026-06-30", remaining: 5000 })] },
       ]),
       profiles: seqTable([{ data: { full_name: "Boss" } }]),
       sales: seqTable([{ data: { id: SALE, receipt_no: "R0002" } }], written),
@@ -149,8 +165,8 @@ describe("createSale — ด่านเครดิตหมดอายุ", (
 
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toContain("เครดิตหมดอายุเมื่อ 2026-06-30")
-      // ข้อความต้องบอกยอดที่ยังอยู่ครบ เพื่อให้พนักงานชวนลูกค้าเติมแพ็กเกจใหม่ ไม่ใช่บอกว่าเงินหาย
+      expect(r.error).toContain("หมดอายุ")
+      // ข้อความต้องบอกยอดที่ยังอยู่ครบ เพื่อให้พนักงานชวนลูกค้าเติมแพ็กเกจใหม่/ยืดอายุใบ ไม่ใช่บอกว่าเงินหาย
       expect(r.error).toContain("5000")
     }
     // ด่านต้องกันก่อนเขียน — ไม่ใช่ปฏิเสธหลังบิลลงตารางไปแล้ว
@@ -163,8 +179,8 @@ describe("createSale — ด่านเครดิตหมดอายุ", (
     const tables = {
       services: seqTable([{ data: { name: "นวดไทย", price: 500, commission: 100, duration_min: 60 } }]),
       queue_entries: seqTable([{ data: { queue_date: "2026-07-01" } }]),
-      member_balances: seqTable([
-        { data: { credit_balance: 5000, credit_granted: 5000, cash_paid: 5000, next_expiry: "2026-06-30" } },
+      v_topup_balances: seqTable([
+        { data: [bucketRow({ expiry_date: "2026-06-30", remaining: 5000 })] },
       ]),
       profiles: seqTable([{ data: { full_name: "Boss" } }]),
       sales: seqTable([{ data: { id: SALE, receipt_no: "R0003" } }]),
@@ -185,7 +201,7 @@ describe("createSale — ด่านเครดิตหมดอายุ", (
     const r = await createSale(fd)
 
     expect(r.ok).toBe(false)
-    if (!r.ok) expect(r.error).toContain("เครดิตหมดอายุเมื่อ 2026-06-30")
+    if (!r.ok) expect(r.error).toContain("หมดอายุ")
   })
 })
 
@@ -210,9 +226,10 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
         { data: [{ id: SALE }] }, // update สำเร็จ
       ]),
       services: seqTable([{ data: { name: "นวดไทย", price: 500, commission: 100, duration_min: 60 } }]),
-      member_balances: seqTable([
-        { data: { credit_balance: 1000, credit_granted: 1000, cash_paid: 1000, next_expiry: "2026-08-05" } },
+      v_topup_balances: seqTable([
+        { data: [bucketRow({ expiry_date: "2026-08-05", remaining: 1000 })] },
       ]),
+      sale_credit_allocations: seqTable([{ data: [] }, { data: null }, { data: null }]),
       queue_entries: seqTable([{ data: null }]),
       bill_payments: seqTable([{ data: null, count: 0 }]), // sync มิเรอร์การ์ดคิว (ไม่มีการ์ดผูกก็ไม่เป็นไร)
       point_transactions: seqTable([{ data: null }]),
@@ -234,8 +251,14 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
         { data: [{ id: SALE }] },
       ]),
       services: seqTable([{ data: { name: "นวดไทย", price: 300, commission: 100, duration_min: 60 } }]),
-      member_balances: seqTable([
-        { data: { credit_balance: 500, credit_granted: 500, cash_paid: 500, next_expiry: "2026-08-05" } },
+      v_topup_balances: seqTable([
+        { data: [bucketRow({ expiry_date: "2026-08-05", remaining: 500 })] },
+      ]),
+      // select โควตาเดิม → ลบชุดเก่า → เขียนชุดใหม่
+      sale_credit_allocations: seqTable([
+        { data: [{ topup_id: TOPUP_A, amount: 300 }] },
+        { data: null },
+        { data: null },
       ]),
       queue_entries: seqTable([{ data: null }]),
       bill_payments: seqTable([{ data: null, count: 0 }]),
@@ -258,8 +281,8 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
         { data: { sale_date: "2026-08-10", credit_used: 300, customer_id: CUST_OLD, updated_at: "v1" } },
       ]),
       services: seqTable([{ data: { name: "นวดไทย", price: 300, commission: 100, duration_min: 60 } }]),
-      member_balances: seqTable([
-        { data: { credit_balance: 150, credit_granted: 150, cash_paid: 150, next_expiry: "2026-08-05" } },
+      v_topup_balances: seqTable([
+        { data: [bucketRow({ expiry_date: "2026-08-05", remaining: 150 })] },
       ]),
       bill_payments: seqTable([{ data: null, count: 0 }]),
     }
@@ -269,7 +292,9 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
 
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toContain("เครดิตหมดอายุเมื่อ 2026-08-05")
+      // คนละคน → โควตาเดิมของบิลไม่ถูกโหลด ลูกค้าใหม่มีแต่ใบหมดอายุ = ถูกบล็อกด้วยเหตุ "หมดอายุ"
+      expect(r.error).toContain("หมดอายุ")
+      expect(r.error).toContain("150")
     }
   })
 
@@ -282,8 +307,12 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
         { data: { sale_date: "2026-08-10", credit_used: 300, customer_id: CUST, updated_at: "v1" } },
       ]),
       services: seqTable([{ data: { name: "นวดไทย", price: 400, commission: 100, duration_min: 60 } }]),
-      member_balances: seqTable([
-        { data: { credit_balance: 150, credit_granted: 150, cash_paid: 150, next_expiry: "2026-08-05" } },
+      v_topup_balances: seqTable([
+        { data: [bucketRow({ expiry_date: "2026-08-05", remaining: 150 })] },
+      ]),
+      // บิลนี้เคยตัดใบ (หมดอายุแล้ว) ไว้ 300 — เพดานแก้ได้จริงคือโควตาเดิม 300 ไม่ใช่ 150+300
+      sale_credit_allocations: seqTable([
+        { data: [{ topup_id: TOPUP_A, amount: 300 }] },
       ]),
       bill_payments: seqTable([{ data: null, count: 0 }]),
     }
@@ -293,7 +322,8 @@ describe("updateSale — ด่านเครดิตหมดอายุ", (
 
     expect(r.ok).toBe(false)
     if (!r.ok) {
-      expect(r.error).toContain("ยอด 150 ฿")
+      // ใบหมดอายุ → ตัดใหม่เพิ่มไม่ได้ เพดานจริง = โควตาเดิม 300 (ไม่ใช่ 450 ที่รวมยอดใบแช่แข็ง)
+      expect(r.error).toContain("300")
       expect(r.error).not.toContain("450")
     }
   })
