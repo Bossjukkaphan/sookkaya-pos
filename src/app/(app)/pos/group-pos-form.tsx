@@ -8,7 +8,7 @@ import { createSale } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { createClient } from "@/lib/supabase/client"
 import { allocateCredit } from "@/lib/bill"
-import { isCreditExpiredOn, isCreditFrozen } from "@/lib/member-credit"
+import { isCreditExpiredOn } from "@/lib/member-credit"
 import { todayInShopTz } from "@/lib/datetime"
 import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
@@ -131,6 +131,8 @@ export function GroupPosForm({
   const [savingIndex, setSavingIndex] = useState<number | null>(null)
   // แบ่งชำระด้วยเครดิตสมาชิก — ใช้ได้เฉพาะบิลชุดลูกค้าคนเดียว (กลุ่มหลายคนเครดิตผูกรายบุคคล)
   const [creditBalance, setCreditBalance] = useState(0)
+  // ยอดที่ตัดได้จริง (เฉพาะใบที่ยังไม่หมดอายุ/ไม่ถูกปิด) — ระบบแยกก้อนตามใบเติม
+  const [usableBalance, setUsableBalance] = useState(0)
   const [creditExpired, setCreditExpired] = useState(false)
   // เริ่ม "0" เสมอ — ไม่ auto-fill เพดานเครดิตให้แล้ว (สเปก 2026-08-01) พนักงานต้องกดปุ่ม "ใช้เครดิต" เอง
   const [creditUseInput, setCreditUseInput] = useState("0")
@@ -180,11 +182,12 @@ export function GroupPosForm({
       const supabase = createClient()
       const { data } = await supabase
         .from("member_balances")
-        .select("credit_balance, next_expiry")
+        .select("credit_balance, usable_balance, next_expiry")
         .eq("customer_id", billCustomerId)
         .single()
       if (!cancelled) {
         setCreditBalance(Number(data?.credit_balance ?? 0))
+        setUsableBalance(Number(data?.usable_balance ?? 0))
         setCreditExpired(isCreditExpiredOn(data?.next_expiry ?? null, billDate))
       }
     })()
@@ -194,8 +197,8 @@ export function GroupPosForm({
   }, [billCustomerId, billDate])
 
   // ตัวกันจริงอยู่ฝั่ง server (ทุกรายการวิ่งผ่าน createSale) ตรงนี้กันไม่ให้พนักงานเสียเวลากรอก
-  const canUseCredit = Boolean(billCustomerId) && creditBalance > 0 && !creditExpired
-  const creditCap = Math.min(creditBalance, total)
+  const canUseCredit = Boolean(billCustomerId) && usableBalance > 0 && !creditExpired
+  const creditCap = Math.min(usableBalance, total)
   const creditUse = canUseCredit
     ? Math.min(Math.max(0, Number(creditUseInput) || 0), creditCap)
     : 0
@@ -615,10 +618,11 @@ export function GroupPosForm({
         </Label>
       </div>
 
-      {isCreditFrozen(creditBalance, creditExpired) && (
+      {Boolean(billCustomerId) && usableBalance <= 0 && creditBalance > 0 && (
         <p className="text-sm text-amber-700">
-          เครดิตหมดอายุแล้ว — ยอด {formatBaht(creditBalance)} ฿ ยังอยู่ครบ
-          เติมแพ็กเกจใหม่แล้วใช้ได้ทันที
+          เครดิตที่ใช้ได้หมดแล้ว — ยอด {formatBaht(creditBalance)} ฿
+          อยู่ในใบที่หมดอายุ/ปิดใช้งาน (ผู้จัดการยืดอายุใบได้จากหน้าลูกค้า
+          หรือซื้อแพ็กเกจใหม่)
         </p>
       )}
 
@@ -685,7 +689,7 @@ export function GroupPosForm({
                 setPrimaryInput(null)
               }}
             >
-              เครดิต ({formatBaht(creditBalance)})
+              เครดิต ({formatBaht(usableBalance)})
             </Button>
           )}
         </div>

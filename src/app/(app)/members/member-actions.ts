@@ -91,41 +91,21 @@ export async function deleteTopup(
     return { ok: false, error: "ลบได้เฉพาะใบเติมเงินของเดือนปัจจุบัน (เดือนก่อนปิดงบแล้ว)" }
   }
 
-  // ถ้าเครดิตคงเหลือปัจจุบันน้อยกว่าเครดิตของใบนี้ = ส่วนหนึ่งถูกใช้จ่ายไปแล้ว
-  // ลบทั้งใบจะทำยอดคงเหลือติดลบ — ให้ไปลบบิลที่ใช้เครดิตก่อน (หรือปล่อยไว้)
-  const { data: balance } = await supabase
-    .from("member_balances")
-    .select("credit_balance")
-    .eq("customer_id", topup.customer_id)
-    .maybeSingle()
-  const remaining = Number(balance?.credit_balance ?? 0)
-  if (remaining < Number(topup.credit_added)) {
+  // ระบบแยกก้อนตามใบเติม (2026-11-03): บิลระบุชัดว่าตัดจากใบไหน — ใบที่มีบิลตัดอยู่
+  // ลบไม่ได้ตรงๆ (FK restrict กันชั้นสุดท้ายอยู่แล้ว เช็คก่อนเพื่อให้ข้อความอ่านรู้เรื่อง)
+  // คำเตือน "วันหมดอายุกระปุกถอยหลัง" ของยุคกระปุกเดียวหมดความหมายแล้ว — ใบใครใบมัน
+  const { data: allocated } = await supabase
+    .from("sale_credit_allocations")
+    .select("amount")
+    .eq("topup_id", id)
+  const usedFromThis = (allocated ?? []).reduce((a, r) => a + Number(r.amount), 0)
+  if (usedFromThis > 0) {
     return {
       ok: false,
-      error: `ลบไม่ได้ — เครดิตจากใบนี้ถูกใช้ไปแล้วบางส่วน (คงเหลือ ${remaining} จาก ${topup.credit_added} บาท) ต้องลบบิลที่จ่ายด้วยเครดิตของลูกค้าคนนี้ก่อน`,
+      error: `ลบไม่ได้ — ใบนี้ถูกบิลตัดเครดิตไปแล้ว ${usedFromThis} บาท ต้องลบ/แก้บิลเหล่านั้นก่อน (ดูได้จากการใช้แพ็กเกจในหน้าลูกค้า)`,
     }
   }
-
-  // ลบใบที่ถือวันหมดอายุไกลสุดอยู่ = วันหมดอายุของทั้งกระปุกจะถอยหลัง
-  // ลูกค้าอาจกลายเป็นหมดอายุทันที ต้องบอกให้รู้ตัวก่อน ไม่ใช่ให้ไปเจอเอาตอนลูกค้ามาถึงร้าน
-  const { data: expiries } = await supabase
-    .from("member_topups")
-    .select("id, expiry_date")
-    .eq("customer_id", topup.customer_id)
-  const rows = expiries ?? []
-  const furthestOf = (list: typeof rows) =>
-    list.reduce<string | null>(
-      (max, r) => (max === null || String(r.expiry_date) > max ? String(r.expiry_date) : max),
-      null
-    )
-  const expiryNow = furthestOf(rows)
-  const expiryAfter = furthestOf(rows.filter((r) => r.id !== id))
-  if (expiryNow !== null && expiryAfter !== expiryNow && !confirmShorten) {
-    return {
-      ok: false,
-      error: `ลบใบนี้จะทำให้วันหมดอายุเครดิตถอยจาก ${expiryNow} เป็น ${expiryAfter ?? "ไม่มีเครดิตเหลือเลย"} — ถ้าแน่ใจให้กดยืนยันอีกครั้ง`,
-    }
-  }
+  void confirmShorten // คงลายเซ็นเดิมให้หน้าจอเก่าเรียกได้ — ไม่มีคำเตือนสองจังหวะแล้ว
 
   const { error } = await supabase.from("member_topups").delete().eq("id", id)
   if (error) return { ok: false, error: error.message }
@@ -191,5 +171,154 @@ export async function updateTopupPaymentMethod(
   revalidatePath("/today")
   revalidatePath("/reports")
   revalidatePath(`/customers/${topup.customer_id}`)
+  return { ok: true }
+}
+
+/** ผู้จัดการขึ้นไปเท่านั้น — การแก้ใบเครดิตคือการแก้เงิน */
+async function requireManager(): Promise<
+  { ok: true; name: string } | { ok: false; error: string }
+> {
+  const me = await getMyProfile()
+  if (!me || !["admin", "manager"].includes(me.role ?? "")) {
+    return { ok: false, error: "เฉพาะผู้จัดการขึ้นไปแก้ใบเครดิตได้" }
+  }
+  return { ok: true, name: me.full_name ?? "ผู้จัดการ" }
+}
+
+function revalidateTopupPages(customerId: string) {
+  revalidatePath("/members")
+  revalidatePath("/today")
+  revalidatePath("/reports")
+  revalidatePath(`/customers/${customerId}`)
+}
+
+/**
+ * ยืดอายุใบเครดิต (ตั้งวันหมดอายุใหม่) — ทางเดียวที่ใบหมดอายุจะกลับมาใช้ได้
+ * ภายใต้กติกาแยกก้อน (เติมใบใหม่ไม่ฟื้นใบเก่าแล้ว) · ลงประวัติการแก้ไขเสมอ
+ */
+export async function extendTopupExpiry(
+  id: string,
+  newExpiry: string
+): Promise<TopupResult> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newExpiry)) {
+    return { ok: false, error: "วันหมดอายุไม่ถูกต้อง" }
+  }
+  const staff = await requireManager()
+  if (!staff.ok) return staff
+
+  const supabase = await createClient()
+  const { data: topup } = await supabase
+    .from("member_topups")
+    .select("id, customer_id, expiry_date")
+    .eq("id", id)
+    .maybeSingle()
+  if (!topup) return { ok: false, error: "ไม่พบใบเครดิตนี้" }
+
+  const { data: updated, error } = await supabase
+    .from("member_topups")
+    .update({ expiry_date: newExpiry })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (!updated) return { ok: false, error: "แก้ไม่สำเร็จ — สิทธิ์ไม่พอหรือใบถูกลบไปแล้ว" }
+
+  await supabase.from("member_topup_edits").insert({
+    topup_id: id,
+    field: "expiry_date",
+    old_value: String(topup.expiry_date),
+    new_value: newExpiry,
+    edited_by: staff.name,
+  })
+
+  revalidateTopupPages(topup.customer_id)
+  return { ok: true }
+}
+
+/**
+ * ปรับยอดคงเหลือของใบ (บวก/ลบ) — เก็บเป็นรายการปรับปรุงพร้อมเหตุผล ไม่เขียนทับยอด
+ * ยอดคงเหลือ = เติม + ปรับปรุง − ที่บิลตัด → ตรวจย้อนได้เสมอว่าตัวเลขมาจากไหน
+ */
+export async function adjustTopupBalance(
+  id: string,
+  delta: number,
+  reason: string
+): Promise<TopupResult> {
+  if (!Number.isFinite(delta) || delta === 0) {
+    return { ok: false, error: "จำนวนที่ปรับต้องไม่เป็นศูนย์" }
+  }
+  if (!reason.trim()) {
+    return { ok: false, error: "กรุณาระบุเหตุผลที่ปรับยอด (เก็บลงประวัติการแก้ไข)" }
+  }
+  const staff = await requireManager()
+  if (!staff.ok) return staff
+
+  const supabase = await createClient()
+  const { data: topup } = await supabase
+    .from("v_topup_balances")
+    .select("topup_id, customer_id, remaining")
+    .eq("topup_id", id)
+    .maybeSingle()
+  if (!topup) return { ok: false, error: "ไม่พบใบเครดิตนี้" }
+  const newRemaining = Math.round((Number(topup.remaining ?? 0) + delta) * 100) / 100
+  if (newRemaining < 0) {
+    return {
+      ok: false,
+      error: `ปรับแล้วยอดจะติดลบ (${newRemaining}) — ใบนี้เหลือ ${topup.remaining} บาท`,
+    }
+  }
+
+  const { error } = await supabase.from("member_topup_adjustments").insert({
+    topup_id: id,
+    delta: Math.round(delta * 100) / 100,
+    reason: reason.trim(),
+    edited_by: staff.name,
+  })
+  if (error) return { ok: false, error: error.message }
+
+  await supabase.from("member_topup_edits").insert({
+    topup_id: id,
+    field: "remaining",
+    old_value: String(topup.remaining ?? 0),
+    new_value: String(newRemaining),
+    edited_by: staff.name,
+  })
+
+  revalidateTopupPages(String(topup.customer_id))
+  return { ok: true }
+}
+
+/** เปิด/ปิดใช้งานใบ — ปิดแล้วตัดไม่ได้ทันที (ยอดไม่หาย) · ลงประวัติเสมอ */
+export async function setTopupActive(id: string, active: boolean): Promise<TopupResult> {
+  const staff = await requireManager()
+  if (!staff.ok) return staff
+
+  const supabase = await createClient()
+  const { data: topup } = await supabase
+    .from("member_topups")
+    .select("id, customer_id, is_active")
+    .eq("id", id)
+    .maybeSingle()
+  if (!topup) return { ok: false, error: "ไม่พบใบเครดิตนี้" }
+  if (Boolean(topup.is_active) === active) return { ok: true }
+
+  const { data: updated, error } = await supabase
+    .from("member_topups")
+    .update({ is_active: active })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle()
+  if (error) return { ok: false, error: error.message }
+  if (!updated) return { ok: false, error: "แก้ไม่สำเร็จ — สิทธิ์ไม่พอหรือใบถูกลบไปแล้ว" }
+
+  await supabase.from("member_topup_edits").insert({
+    topup_id: id,
+    field: "is_active",
+    old_value: String(Boolean(topup.is_active)),
+    new_value: String(active),
+    edited_by: staff.name,
+  })
+
+  revalidateTopupPages(topup.customer_id)
   return { ok: true }
 }

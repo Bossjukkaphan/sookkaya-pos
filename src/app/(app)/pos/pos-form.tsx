@@ -1,12 +1,18 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { checkPointCoupon, createSale, type CouponCheck } from "../sale-actions"
 import { CustomerPicker } from "./customer-picker"
 import { allocateCredit } from "@/lib/bill"
-import { isCreditFrozen } from "@/lib/member-credit"
+import { getCreditBuckets } from "../credit-actions"
+import {
+  planCreditSplit,
+  usableCreditOn,
+  type SplitPart,
+  type TopupBucket,
+} from "@/lib/topup-credit"
 import { MAX_PAYMENT_LINES, PAYMENT_LINE_METHODS, dueAmount, primaryMethod } from "@/lib/payments"
 import {
   GOWABI_METHOD,
@@ -168,6 +174,10 @@ export function PosForm({
   // แบ่งชำระ: เครดิตสมาชิกของลูกค้าที่เลือก (มาจาก CustomerPicker) + ค่าที่พนักงานแก้เอง
   const [creditBalance, setCreditBalance] = useState(0)
   const [creditExpired, setCreditExpired] = useState(false)
+  // ใบเครดิตรายใบของลูกค้า (ระบบแยกก้อนตามใบเติม 2026-11-03) — โหลดเมื่อเลือกลูกค้า
+  const [buckets, setBuckets] = useState<TopupBucket[]>([])
+  // การแบ่งใบที่พนักงานแก้เอง: null = อัตโนมัติ (ใกล้หมดอายุก่อน) · map topupId→ยอดที่พิมพ์
+  const [manualSplit, setManualSplit] = useState<Record<string, string> | null>(null)
   // เริ่ม "0" เสมอ — ไม่ auto-fill เพดานเครดิตให้แล้ว (สเปก 2026-08-01) พนักงานต้องกดปุ่ม "ใช้เครดิต" เอง
   const [creditUseInput, setCreditUseInput] = useState("0")
   // บรรทัดแบ่งจ่ายเพิ่มเติม (บรรทัดแรกคือปุ่มช่องทางหลักเดิม ยอด = ที่เหลือหลังหักบรรทัดเสริม)
@@ -181,6 +191,22 @@ export function PosForm({
   // ขายสดที่ไม่ผ่านคิวจะไม่มี initial → วันนี้คือวันที่ของบิลอยู่แล้ว พฤติกรรมเดิมไม่เปลี่ยน
   // ใช้ตัดสินว่าเครดิตของลูกค้าหมดอายุ "ณ วันของบิล" หรือยัง ให้ตรงกับด่านฝั่ง server
   const billDate = initial?.queueDate || todayInShopTz()
+
+  // โหลดใบเครดิตทุกครั้งที่เปลี่ยนลูกค้า — ล้างลูกค้าก็ล้างใบด้วย
+  useEffect(() => {
+    let cancelled = false
+    setManualSplit(null)
+    if (!customerId) {
+      setBuckets([])
+      return
+    }
+    getCreditBuckets(customerId).then((list) => {
+      if (!cancelled) setBuckets(list)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [customerId])
 
   const service = useMemo(
     () => services.find((s) => s.id === serviceId),
@@ -278,14 +304,15 @@ export function PosForm({
   // ช่องใช้เครดิตสมาชิกแบ่งชำระ — โชว์เฉพาะเลือกลูกค้าแล้ว + มีเครดิต + ไม่ใช่ Gowabi/KOL
   // + ไม่ใช่บิลคูปองแลกแต้ม (บิลนั้นเก็บ 0 บาทอยู่แล้ว ไม่มีอะไรให้แบ่ง)
   // ตัวกันจริงอยู่ฝั่ง server (createSale) ตรงนี้กันไม่ให้พนักงานเสียเวลากรอกเครดิตที่หมดอายุแล้ว
+  // ยอดที่ตัดได้จริง = รวมเฉพาะใบที่ยังไม่หมดอายุ ณ วันบิล (ใบแช่แข็งไม่นับ แม้ยอดรวมจะมี)
+  const usableCredit = useMemo(() => usableCreditOn(buckets, billDate), [buckets, billDate])
   const canUseCredit =
     Boolean(customerId) &&
-    creditBalance > 0 &&
-    !creditExpired &&
+    usableCredit > 0 &&
     !isGowabi &&
     !isKol &&
     !couponInfo
-  const creditCap = Math.min(creditBalance, billTotalNet)
+  const creditCap = Math.min(usableCredit, billTotalNet)
   const creditUse = canUseCredit
     ? Math.min(Math.max(0, Number(creditUseInput) || 0), creditCap)
     : 0
@@ -304,6 +331,28 @@ export function PosForm({
   // เครดิตใช้บางส่วนแล้วยังไม่ครบบิล — ต้องเก็บเงินจริงส่วนที่เหลือ ช่องทางที่ตัดเครดิตซ้ำ
   // (Member Credit) หรือรับเงินไม่ตรงจากลูกค้า (Gowabi/KOL) เลือกไม่ได้ตอนนี้ (server ก็ปฏิเสธเหมือนกัน)
   const partialCreditActive = canUseCredit && creditUse > 0 && cashDue > 0
+
+  // แผนแบ่งใบอัตโนมัติ (ใกล้หมดอายุก่อน) — สูตรเดียวกับ server เป๊ะ
+  const autoSplit = useMemo(
+    () => (creditUse > 0 ? planCreditSplit({ buckets, amount: creditUse, onDate: billDate }) : null),
+    [buckets, creditUse, billDate]
+  )
+  // การแบ่งที่จะส่งจริง: แก้เอง (บิลรายการเดียวเท่านั้น) หรืออัตโนมัติ
+  // บิลชุด (มี extras) เครดิตถูกเฉลี่ยลงหลายรายการ — ให้ระบบแบ่งใบอัตโนมัติรายบิลเสมอ
+  const manualAllowed = extras.length === 0 && creditUse > 0 && buckets.length > 1
+  const manualParts: SplitPart[] | null =
+    manualAllowed && manualSplit
+      ? Object.entries(manualSplit)
+          .map(([topupId, v]) => ({ topupId, amount: Number(v) || 0 }))
+          .filter((x) => x.amount > 0)
+      : null
+  const manualSum = manualParts
+    ? Math.round(manualParts.reduce((a, x) => a + x.amount, 0) * 100) / 100
+    : 0
+  const manualError =
+    manualParts !== null && manualSum !== Math.round(creditUse * 100) / 100
+      ? `ยอดแบ่งรวม ${manualSum.toLocaleString()} ไม่เท่ายอดเครดิตที่ใช้ ${creditUse.toLocaleString()}`
+      : null
 
   // เครดิตครอบคลุมทั้งบิลพอดี → ช่องทางที่ "จริงๆ" ใช้ต้องเป็น Member Credit เสมอ (บังคับ ไม่ใช่แค่ default)
   // คำนวณระหว่าง render แทนการ setState ใน effect กัน setPaymentMethod ชนของที่ผู้ใช้กดเอง
@@ -588,10 +637,11 @@ export function PosForm({
         requireMember={isMemberCredit}
       />
 
-      {isCreditFrozen(creditBalance, creditExpired) && (
+      {Boolean(customerId) && usableCredit <= 0 && creditBalance > 0 && (
         <p className="text-sm text-amber-700">
-          เครดิตหมดอายุแล้ว — ยอด {formatBaht(creditBalance)} ฿ ยังอยู่ครบ
-          เติมแพ็กเกจใหม่แล้วใช้ได้ทันที
+          เครดิตที่ใช้ได้หมดแล้ว — ยอด {formatBaht(creditBalance)} ฿
+          อยู่ในใบที่หมดอายุ/ปิดใช้งาน (ผู้จัดการยืดอายุใบได้จากหน้าลูกค้า
+          หรือซื้อแพ็กเกจใหม่)
         </p>
       )}
 
@@ -623,6 +673,72 @@ export function PosForm({
               <>เครดิตครอบคลุมทั้งบิล — ช่องทางชำระเป็น Member Credit อัตโนมัติ</>
             )}
           </p>
+
+          {/* แบ่งตัดจากใบไหนบ้าง (ระบบแยกก้อนตามใบเติม) — อัตโนมัติใบใกล้หมดอายุก่อน · แก้เองได้ */}
+          {manualSplit === null && autoSplit?.ok && autoSplit.parts.length > 0 && (
+            <div className="space-y-0.5 text-xs text-slate-600">
+              {autoSplit.parts.map((part) => {
+                const b = buckets.find((x) => x.topupId === part.topupId)
+                return (
+                  <p key={part.topupId}>
+                    ▸ {b?.tier ?? "ใบเติม"} (หมดอายุ {b?.expiryDate ?? "-"}) ตัด{" "}
+                    <span className="font-semibold">{part.amount.toLocaleString()} ฿</span>{" "}
+                    <span className="text-slate-400">เหลือ {(Math.round(((b?.remaining ?? 0) - part.amount) * 100) / 100).toLocaleString()}</span>
+                  </p>
+                )
+              })}
+              {manualAllowed && (
+                <button
+                  type="button"
+                  className="text-violet-700 underline"
+                  onClick={() => {
+                    const init: Record<string, string> = {}
+                    for (const part of autoSplit.parts) init[part.topupId] = String(part.amount)
+                    setManualSplit(init)
+                  }}
+                >
+                  แก้การแบ่งใบเอง
+                </button>
+              )}
+            </div>
+          )}
+          {manualSplit !== null && manualAllowed && (
+            <div className="space-y-1 text-xs">
+              {buckets
+                .filter((b) => b.isActive && b.remaining > 0 && b.expiryDate >= billDate && b.topupDate <= billDate)
+                .map((b) => (
+                  <div key={b.topupId} className="flex items-center justify-between gap-2">
+                    <span className="text-slate-600">
+                      {b.tier} · หมดอายุ {b.expiryDate} · เหลือ {b.remaining.toLocaleString()}
+                    </span>
+                    <Input
+                      inputMode="numeric"
+                      className="h-8 w-24 text-right"
+                      value={manualSplit[b.topupId] ?? ""}
+                      onChange={(e) =>
+                        setManualSplit({ ...manualSplit, [b.topupId]: e.target.value })
+                      }
+                      aria-label={`ยอดตัดจากใบ ${b.tier} หมดอายุ ${b.expiryDate}`}
+                    />
+                  </div>
+                ))}
+              {manualError ? (
+                <p className="font-medium text-red-600">{manualError}</p>
+              ) : (
+                <p className="text-emerald-700">แบ่งครบ {creditUse.toLocaleString()} บาท ✓</p>
+              )}
+              <button
+                type="button"
+                className="text-slate-500 underline"
+                onClick={() => setManualSplit(null)}
+              >
+                กลับไปแบ่งอัตโนมัติ
+              </button>
+            </div>
+          )}
+          {manualParts !== null && manualError === null && (
+            <input type="hidden" name="credit_split" value={JSON.stringify(manualParts)} />
+          )}
         </div>
       )}
 
@@ -771,7 +887,7 @@ export function PosForm({
                 />
                 {isCreditToggle
                   ? canUseCredit
-                    ? `เครดิต (${formatBaht(creditBalance)})`
+                    ? `เครดิต (${formatBaht(usableCredit)})`
                     : "เครดิตสมาชิก"
                   : m}
               </Button>
@@ -1291,7 +1407,9 @@ export function PosForm({
       <Button
         type="submit"
         className={cn("h-14 w-full text-lg")}
-        disabled={pending || !therapistId || !serviceId || !effectivePaymentMethod}
+        disabled={
+          pending || !therapistId || !serviceId || !effectivePaymentMethod || manualError !== null
+        }
       >
         {pending ? "กำลังบันทึก..." : "บันทึกการขาย"}
       </Button>
