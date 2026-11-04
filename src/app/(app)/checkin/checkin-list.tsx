@@ -31,6 +31,7 @@ export function CheckinList({
   staff,
   attendance,
   monthCount,
+  roles,
   planOf = {},
 }: {
   workDate: string
@@ -38,6 +39,8 @@ export function CheckinList({
   staff: Person[]
   attendance: AttendanceRow[]
   monthCount: Record<string, number>
+  /** ตัวเลือกตำแหน่ง — มาจากข้อมูลจริงบวกตำแหน่งพื้นฐาน (ดู staffRoleOptions) */
+  roles: string[]
   /** แผนวันหยุดของวันนี้จากหน้า /shifts — "off" | "leave" ต่อคน */
   planOf?: Record<string, string>
 }) {
@@ -194,7 +197,7 @@ export function CheckinList({
               onChange={(e) => setNewRole(e.target.value)}
               className="h-10 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
             >
-              {["ผู้จัดการ", "ผู้ช่วยผู้จัดการ", "พนักงานต้อนรับ", "พ่อบ้าน", "แม่บ้าน", "อื่นๆ"].map((r) => (
+              {roles.map((r) => (
                 <option key={r} value={r}>
                   {r}
                 </option>
@@ -205,7 +208,8 @@ export function CheckinList({
             </Button>
           </form>
           <p className="px-4 pt-2 text-xs text-slate-400 sm:px-6">
-            พนักงานลาออก: แจ้งผมให้ปิดชื่อออกได้ (ประวัติเข้างานยังเก็บไว้)
+            เปลี่ยนตำแหน่ง ตั้งตำแหน่งใหม่ หรือบันทึกว่าลาออก: ตั้งค่า → แท็บพนักงาน
+            (ประวัติเข้างานยังเก็บไว้ครบ)
           </p>
         </CardContent>
       </Card>
