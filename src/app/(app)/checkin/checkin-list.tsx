@@ -194,7 +194,7 @@ export function CheckinList({
               onChange={(e) => setNewRole(e.target.value)}
               className="h-10 rounded-md border border-input bg-transparent px-2 text-sm outline-none"
             >
-              {["ผู้จัดการ", "ผู้ช่วยผู้จัดการ", "พ่อบ้าน", "แม่บ้าน", "อื่นๆ"].map((r) => (
+              {["ผู้จัดการ", "ผู้ช่วยผู้จัดการ", "พนักงานต้อนรับ", "พ่อบ้าน", "แม่บ้าน", "อื่นๆ"].map((r) => (
                 <option key={r} value={r}>
                   {r}
                 </option>

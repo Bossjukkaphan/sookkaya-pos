@@ -64,7 +64,7 @@ export async function checkOut(attendanceId: string): Promise<Result> {
   return { ok: true }
 }
 
-/** เพิ่มพนักงาน (ผู้จัดการ/ผู้ช่วยผู้จัดการ/พ่อบ้าน/อื่นๆ) */
+/** เพิ่มพนักงาน (ผู้จัดการ/ผู้ช่วยผู้จัดการ/พนักงานต้อนรับ/พ่อบ้าน/แม่บ้าน/อื่นๆ) */
 export async function addStaffMember(name: string, role: string): Promise<Result> {
   const cleanName = name.trim()
   const cleanRole = role.trim()
