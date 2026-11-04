@@ -3,6 +3,7 @@
 import { revalidatePath, updateTag } from "next/cache"
 
 import { promoKey } from "@/lib/promo"
+import { NEW_ROLE_VALUE } from "@/lib/staff-roles"
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import type { TablesInsert } from "@/types/database"
@@ -47,6 +48,46 @@ export async function saveTherapist(formData: FormData): Promise<ActionResult> {
 
   if (error) return fail(error)
   updateTag("therapists")
+  refresh()
+  return { ok: true }
+}
+
+/* ---------------- ทีมงาน (ไม่ใช่หมอนวด) ---------------- */
+
+/**
+ * เพิ่ม/แก้ไขทีมงาน — ชื่อ ตำแหน่ง และสถานะลาออก
+ *
+ * ตำแหน่งเก็บเป็นข้อความอิสระ ร้านตั้งชื่อตำแหน่งใหม่ได้เองโดยไม่ต้องรอแก้โค้ด
+ * (staffRoleOptions จะเอาตำแหน่งที่มีอยู่จริงมาเป็นตัวเลือกให้ครั้งต่อไปเอง)
+ *
+ * "ลาออกแล้ว" = is_active false ไม่ใช่การลบ — ประวัติเข้างานและแผนวันหยุดยังอยู่ครบ
+ * ชื่อหายจากรายการติ๊กเช็คอินและตารางจัดวันหยุดเท่านั้น
+ */
+export async function saveStaffMember(formData: FormData): Promise<ActionResult> {
+  const supabase = await createClient()
+  const id = String(formData.get("id") ?? "").trim()
+  const name = String(formData.get("name") ?? "").trim()
+  const picked = String(formData.get("role") ?? "").trim()
+  const typed = String(formData.get("role_custom") ?? "").trim()
+  const role = picked === NEW_ROLE_VALUE ? typed : picked
+  const status = String(formData.get("status") ?? "active")
+
+  if (!name) return { ok: false, error: "กรุณากรอกชื่อพนักงาน" }
+  if (!role) return { ok: false, error: "กรุณาระบุตำแหน่ง" }
+  if (!["active", "resigned"].includes(status)) {
+    return { ok: false, error: "สถานะไม่ถูกต้อง" }
+  }
+
+  const row = { name, role, is_active: status === "active" }
+  const { error } = id
+    ? await supabase.from("staff_members").update(row).eq("id", id)
+    : await supabase.from("staff_members").insert(row)
+
+  if (error) return fail(error)
+  // หน้าที่โชว์รายชื่อทีมงาน — ต้องเห็นผลทันทีหลังบันทึก ไม่ต้องรอ cache หมดอายุ
+  revalidatePath("/checkin")
+  revalidatePath("/shifts")
+  revalidatePath("/team")
   refresh()
   return { ok: true }
 }

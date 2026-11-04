@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { TherapistsTab } from "./therapists-tab"
+import { StaffTab } from "./staff-tab"
 import { ServicesTab } from "./services-tab"
 import { UsersTab } from "./users-tab"
 import { GeneralTab } from "./general-tab"
@@ -19,6 +20,7 @@ export default async function SettingsPage() {
 
   const [
     { data: therapists },
+    { data: staff },
     { data: services },
     { data: settingsRows },
     { data: allowed },
@@ -32,6 +34,7 @@ export default async function SettingsPage() {
     { data: rewardServices },
   ] = await Promise.all([
     supabase.from("therapists").select("id, name, status").order("name"),
+    supabase.from("staff_members").select("id, name, role, is_active").order("name"),
     supabase
       .from("services")
       .select("id, name, price, commission, is_active")
@@ -99,6 +102,9 @@ export default async function SettingsPage() {
           <TabsTrigger value="therapists" className="flex-1">
             หมอนวด
           </TabsTrigger>
+          <TabsTrigger value="staff" className="flex-1">
+            พนักงาน
+          </TabsTrigger>
           <TabsTrigger value="services" className="flex-1">
             เมนู
           </TabsTrigger>
@@ -132,6 +138,10 @@ export default async function SettingsPage() {
             therapists={therapists ?? []}
             canEdit={canEditCatalog}
           />
+        </TabsContent>
+
+        <TabsContent value="staff" className="pt-4">
+          <StaffTab staff={staff ?? []} canEdit={canEditCatalog} />
         </TabsContent>
 
         <TabsContent value="services" className="pt-4">

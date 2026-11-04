@@ -78,15 +78,3 @@ export async function addStaffMember(name: string, role: string): Promise<Result
   refresh()
   return { ok: true }
 }
-
-/** ปิดพนักงานที่ลาออก — ไม่ลบ ประวัติเข้างานยังอยู่ */
-export async function deactivateStaffMember(id: string): Promise<Result> {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("staff_members")
-    .update({ is_active: false })
-    .eq("id", id)
-  if (error) return { ok: false, error: error.message }
-  refresh()
-  return { ok: true }
-}

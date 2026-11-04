@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
+import { staffRoleOptions } from "@/lib/staff-roles"
 import { CheckinList } from "./checkin-list"
 
 export const metadata = { title: "เข้างาน · สุขกายา POS" }
@@ -121,6 +122,7 @@ export default async function CheckinPage({
         workDate={workDate}
         therapists={therapists ?? []}
         staff={staff ?? []}
+        roles={staffRoleOptions((staff ?? []).map((s) => s.role))}
         attendance={attendance ?? []}
         monthCount={Object.fromEntries(monthCount)}
         planOf={Object.fromEntries(
