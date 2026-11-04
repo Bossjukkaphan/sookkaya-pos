@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
+import { unavailableTherapistIds } from "@/lib/attendance"
 import { getServicesCached, getTherapistsCached } from "@/lib/cached-lookups"
 import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
@@ -35,6 +36,7 @@ export default async function QueuePage({
     { data: beds },
     { data: attendanceRows },
     { count: turnAwayCount },
+    { data: leaveRows },
   ] = await Promise.all([
       getTherapistsCached(),
       getServicesCached(),
@@ -59,6 +61,8 @@ export default async function QueuePage({
         .from("turn_aways")
         .select("id", { count: "exact", head: true })
         .eq("queue_date", boardDate),
+      // แผนลาของวันบอร์ด — คู่กับเช็คอินเพื่อบอกว่า "หมอคนไหนรับคิววันนี้ไม่ได้"
+      supabase.from("shift_plans").select("therapist_id").eq("work_date", boardDate),
     ])
 
   // เงื่อนไขกรองเดิมของหน้า — ย้ายจาก .eq ใน query มาไว้ที่นี่ (ข้อมูลมาจาก cache รวม)
@@ -105,6 +109,11 @@ export default async function QueuePage({
     }
   }
 
+  // หมอที่เช็คอินวันบอร์ด — ใช้ทั้งเป็น prop ตรงๆ และเป็นส่วนหนึ่งของกติกาหมอรับคิวไม่ได้
+  const checkedInIds = (attendanceRows ?? [])
+    .map((a) => a.therapist_id)
+    .filter((id): id is string => Boolean(id))
+
   return (
     <div className="space-y-4">
       {/* ถูกพากลับมาจากหน้าบันทึกขายเดิม — บอกขั้นตอนใหม่ให้ชัดว่าต้องเริ่มจากคิว */}
@@ -141,9 +150,14 @@ export default async function QueuePage({
         initialEntries={entries ?? []}
         boardDate={boardDate}
         isToday={isToday}
-        checkedInTherapistIds={(attendanceRows ?? [])
-          .map((a) => a.therapist_id)
-          .filter((id): id is string => Boolean(id))}
+        checkedInTherapistIds={checkedInIds}
+        unavailableTherapistIds={unavailableTherapistIds({
+          activeIds: (therapists ?? []).map((t) => t.id),
+          checkedInIds,
+          onLeaveIds: (leaveRows ?? [])
+            .map((l) => l.therapist_id)
+            .filter((id): id is string => Boolean(id)),
+        })}
         turnAwayCount={turnAwayCount ?? 0}
         autoOpenAdd={params.add === "1"}
         dueBySaleId={dueBySaleId}

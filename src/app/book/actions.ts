@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/service"
 import { cleanLineDisplayName, pushLineMessage, verifyLineIdToken } from "@/lib/line"
 import { msgCancelled, msgRequested, type BookingInfo } from "@/lib/line-messages"
 import { pushAssistantMessage } from "@/lib/line-assistant"
+import { unavailableTherapistIds } from "@/lib/attendance"
 import { msgShopCancelled, msgShopNewBooking } from "@/lib/line-assistant-messages"
 import {
   canCancelAt, computeSlots, hasRoomAt, isBookableDate,
@@ -138,7 +139,12 @@ export async function linkLineAccount(
 }
 
 /** ความจุ (หมอที่ทำงานวันนั้น) + คิวที่จองไว้แล้ว — ใช้ตัดสินว่าช่องเวลาไหนเต็ม */
-export type DayLoad = { capacity: number; entries: LoadEntry[] }
+export type DayLoad = {
+  capacity: number
+  entries: LoadEntry[]
+  /** หมอที่รับคิววันนั้นไม่ได้ (ไม่ได้เช็คอิน/ลงแผนลา) — ซ่อนจากตัวเลือกใน wizard */
+  unavailableTherapistIds: string[]
+}
 
 /**
  * โหลดความจุ+คิวของหลายวันรวดเดียว (4 query ไม่ว่าจะกี่วัน)
@@ -156,9 +162,9 @@ async function loadDays(
 ): Promise<Record<string, DayLoad>> {
   const from = dates[0]
   const to = dates[dates.length - 1]
-  const [{ count: activeCount }, { data: attendance }, { data: plans }, { data: queue }] =
+  const [{ data: activeTherapists }, { data: attendance }, { data: plans }, { data: queue }] =
     await Promise.all([
-      db.from("therapists").select("id", { count: "exact", head: true }).eq("status", "active"),
+      db.from("therapists").select("id").eq("status", "active"),
       db.from("attendance").select("work_date, therapist_id")
         .gte("work_date", from).lte("work_date", to).not("therapist_id", "is", null),
       db.from("shift_plans").select("work_date, therapist_id")
@@ -187,14 +193,20 @@ async function loadDays(
     entriesByDay.set(q.queue_date, list)
   }
 
+  const activeIds = (activeTherapists ?? []).map((t) => t.id)
   const out: Record<string, DayLoad> = {}
   for (const d of dates) {
     const present = checkedIn.get(d)?.size ?? 0
     out[d] = {
       capacity: present > 0
         ? present
-        : Math.max(0, (activeCount ?? 0) - (onLeave.get(d)?.size ?? 0)),
+        : Math.max(0, activeIds.length - (onLeave.get(d)?.size ?? 0)),
       entries: entriesByDay.get(d) ?? [],
+      unavailableTherapistIds: unavailableTherapistIds({
+        activeIds,
+        checkedInIds: [...(checkedIn.get(d) ?? [])],
+        onLeaveIds: [...(onLeave.get(d) ?? [])],
+      }),
     }
   }
   return out
@@ -301,34 +313,39 @@ export async function createBookingRequest(
       return { ok: false, error: "หมอที่เลือกไม่พร้อมให้จอง รีเฟรชแล้วลองใหม่นะคะ" }
   }
 
-  // เช็คอินรายวัน: วันไหนแอดมินติ๊กเข้างานแล้ว (วันนี้/พรุ่งนี้ล่วงหน้า)
-  // หมอที่ไม่ได้เข้างานวันนั้นรับรีเควสไม่ได้ · ไม่มีใครเข้างานเลย = ปิดรับทั้งวัน
-  const { data: dayAttendance } = await db
-    .from("attendance")
-    .select("therapist_id")
-    .eq("work_date", input.date)
-    .not("therapist_id", "is", null)
-  if ((dayAttendance ?? []).length > 0) {
-    const checkedInIds = new Set((dayAttendance ?? []).map((a) => a.therapist_id))
-    if (therapistIds.some((id) => !checkedInIds.has(id)))
-      return {
-        ok: false,
-        error: "หมอที่เลือกไม่ได้เข้างานวันนั้นค่ะ เลือกหมอท่านอื่นหรือให้ร้านจัดให้นะคะ",
-      }
-  }
-
-  // แผนวันหยุดล่วงหน้า (หน้า /shifts): หมอที่วางแผนหยุด/ลาวันนั้น รับรีเควสไม่ได้
-  // ครอบคลุมวันอนาคตที่ยังไม่มีการเช็คอิน — ลูกค้าไม่ต้องมาถูกยกเลิกทีหลัง
+  // หมอที่ลูกค้ารีเควสต้องรับคิววันนั้นได้จริง — กติกากลางตัวเดียวกับ wizard/บอร์ด
+  // (lib/attendance): วันที่มีการเช็คอิน ยึดเช็คอิน — คนลงแผนลาไว้แต่มาเข้างานจริง รับได้
+  // · วันที่ยังไม่มีเช็คอิน ยึดแผนลาจากหน้า /shifts — ลูกค้าไม่ต้องมาถูกยกเลิกทีหลัง
   if (therapistIds.length > 0) {
-    const { data: dayPlans } = await db
-      .from("shift_plans")
-      .select("therapist_id")
-      .eq("work_date", input.date)
-      .in("therapist_id", therapistIds)
-    if ((dayPlans ?? []).length > 0)
+    const [{ data: dayAttendance, error: attErr }, { data: dayPlans, error: planErr }] =
+      await Promise.all([
+        db
+          .from("attendance")
+          .select("therapist_id")
+          .eq("work_date", input.date)
+          .not("therapist_id", "is", null),
+        db.from("shift_plans").select("therapist_id").eq("work_date", input.date),
+      ])
+    // อ่านตารางไม่สำเร็จ → ปิดไว้ก่อน (fail closed) ห้ามปล่อยรีเควสหมอที่อาจลาหลุดไป
+    if (attErr || planErr)
+      return { ok: false, error: "ตรวจสอบตารางหมอไม่สำเร็จ ลองใหม่อีกครั้งนะคะ" }
+    const checkedInIds = (dayAttendance ?? [])
+      .map((a) => a.therapist_id)
+      .filter((id): id is string => Boolean(id))
+    const unavailable = unavailableTherapistIds({
+      activeIds: therapistIds,
+      checkedInIds,
+      onLeaveIds: (dayPlans ?? [])
+        .map((x) => x.therapist_id)
+        .filter((id): id is string => Boolean(id)),
+    })
+    if (unavailable.length > 0)
       return {
         ok: false,
-        error: "หมอที่เลือกหยุดวันนั้นค่ะ เลือกหมอท่านอื่นหรือให้ร้านจัดให้นะคะ",
+        error:
+          checkedInIds.length > 0
+            ? "หมอที่เลือกไม่ได้เข้างานวันนั้นค่ะ เลือกหมอท่านอื่นหรือให้ร้านจัดให้นะคะ"
+            : "หมอที่เลือกหยุดวันนั้นค่ะ เลือกหมอท่านอื่นหรือให้ร้านจัดให้นะคะ",
       }
   }
 

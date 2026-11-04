@@ -111,6 +111,20 @@ export function BookingWizard({ services, therapists, days }: {
       seats: people.length,
     })
   const slots = date ? slotsFor(date) : []
+  // หมอที่เลือกได้ของวันที่เลือก — ซ่อนคนลา/ไม่เข้างาน (กติกาเดียวกับด่าน server ใน createBookingRequest)
+  const unavailableSet = new Set(date ? (days[date]?.unavailableTherapistIds ?? []) : [])
+  const availableTherapists = therapists.filter((t) => !unavailableSet.has(t.id))
+  // เปลี่ยนวันแล้วหมอที่เคยเลือกไว้ลาวันใหม่ → ล้างทิ้งเงียบๆ ตั้งแต่ตอน render
+  // (ปล่อยค้างไว้จะไปตายตอนกดส่งด้วย error ที่ลูกค้างง)
+  const cleaned = people.some((p) => p.therapistId && unavailableSet.has(p.therapistId))
+  if (cleaned) {
+    setPeople((arr) =>
+      arr.map((x) =>
+        x.therapistId && unavailableSet.has(x.therapistId) ? { ...x, therapistId: null } : x
+      )
+    )
+  }
+
   const dates = Array.from({ length: MAX_ADVANCE_DAYS + 1 }, (_, i) =>
     new Date(Date.parse(`${today}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10)
   ).filter((d) => isBookableDate(d, today))
@@ -266,7 +280,9 @@ export function BookingWizard({ services, therapists, days }: {
         <div className={CARD}>
           <h2 className="mb-1 font-bold">เลือกหมอนวด (ไม่บังคับ)</h2>
           <p className="mb-3 text-xs text-slate-500">
-            เลือกหมอที่ถูกใจได้เลย ไม่มีค่าใช้จ่ายเพิ่ม · ไม่เลือก ร้านจัดให้ค่ะ</p>
+            เลือกหมอที่ถูกใจได้เลย ไม่มีค่าใช้จ่ายเพิ่ม · ไม่เลือก ร้านจัดให้ค่ะ
+            {availableTherapists.length < therapists.length &&
+              " · หมอที่ลา/ไม่เข้างานวันนั้นไม่แสดงค่ะ"}</p>
           {people.map((p, i) => (
             <div key={i} className="mb-3">
               <p className="mb-1 text-sm text-slate-600">ท่านที่ {i + 1}</p>
@@ -274,7 +290,7 @@ export function BookingWizard({ services, therapists, days }: {
                 onChange={(e) => setPeople((arr) =>
                   arr.map((x, j) => (j === i ? { ...x, therapistId: e.target.value || null } : x)))}>
                 <option value="">ให้ร้านจัดให้</option>
-                {therapists.map((t) => (
+                {availableTherapists.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>

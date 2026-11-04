@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
 import { isBookingChannel, isCustomerSource } from "@/lib/customer-source"
 import { formatThaiDate, nowTimeInShopTz, todayInShopTz } from "@/lib/datetime"
+import { therapistUnavailableReason, unavailableTherapistIds } from "@/lib/attendance"
 import {
   BOARD_END_MIN,
   BOARD_START_MIN,
@@ -183,8 +184,64 @@ async function therapistConflictError(
     : null
 }
 
-/** เวลาทำการของบอร์ด 10:00–22:00 — คิวนอกช่วงนี้เคยถูกวาดตกขอบจนมองไม่เห็น
- * (เคสจริง: คีย์ 00:30 แทน 12:30 → การ์ดล่องหน พนักงานคีย์ซ้ำอีกชุด) */
+/** การเข้างานของวันหนึ่ง — โหลดครั้งเดียวต่อวันแล้วเช็คได้หลายคน (กลุ่ม/หลายคิว) */
+type DayAbsence =
+  | { ok: true; hasCheckin: boolean; checkedInIds: string[]; onLeaveIds: string[] }
+  | { ok: false }
+
+async function loadDayAbsence(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  queueDate: string
+): Promise<DayAbsence> {
+  const [{ data: att, error: attErr }, { data: plans, error: planErr }] = await Promise.all([
+    supabase
+      .from("attendance")
+      .select("therapist_id")
+      .eq("work_date", queueDate)
+      .not("therapist_id", "is", null),
+    supabase.from("shift_plans").select("therapist_id").eq("work_date", queueDate),
+  ])
+  // อ่านตารางไม่สำเร็จ → fail closed (แบบเดียวกับ bedConflictError) ห้ามเดาว่าว่าง
+  if (attErr || planErr) return { ok: false }
+  const checkedInIds = (att ?? [])
+    .map((a) => a.therapist_id)
+    .filter((id): id is string => Boolean(id))
+  return {
+    ok: true,
+    hasCheckin: checkedInIds.length > 0,
+    checkedInIds,
+    onLeaveIds: (plans ?? [])
+      .map((x) => x.therapist_id)
+      .filter((id): id is string => Boolean(id)),
+  }
+}
+
+/** หมอคนนี้รับคิววันนั้นได้ไหม — กติกากลาง lib/attendance ตัวเดียวกับ LINE/บอร์ด/ฟอร์ม */
+function absenceErrorFor(
+  day: DayAbsence,
+  therapistId: string | null,
+  queueDate: string
+): string | null {
+  if (!therapistId) return null
+  if (!day.ok) return "ตรวจสอบการเข้างานของหมอไม่สำเร็จ — ลองใหม่อีกครั้ง"
+  const unavailable = unavailableTherapistIds({
+    activeIds: [therapistId],
+    checkedInIds: day.checkedInIds,
+    onLeaveIds: day.onLeaveIds,
+  })
+  return unavailable.length > 0 ? therapistUnavailableReason(day.hasCheckin, queueDate) : null
+}
+
+/** ด่านนี้กัน "เพิ่มคิวให้หมอที่ไม่มา" จากทุกทาง — ฟอร์มปิดปุ่มให้แล้ว แต่หน้าจอค้าง/ยิงตรงต้องโดนกันที่นี่ */
+async function therapistAbsenceError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  therapistId: string | null,
+  queueDate: string
+): Promise<string | null> {
+  if (!therapistId) return null
+  return absenceErrorFor(await loadDayAbsence(supabase, queueDate), therapistId, queueDate)
+}
+
 function startTimeError(startTime: string): string | null {
   const m = timeToMin(startTime)
   if (m < BOARD_START_MIN || m >= BOARD_END_MIN)
@@ -298,6 +355,10 @@ export async function createQueueEntry(form: FormData): Promise<Result> {
     durationMin
   )
   if (therapistError) return { ok: false, error: therapistError }
+  {
+    const absence = await therapistAbsenceError(supabase, therapistId, queueDate)
+    if (absence) return { ok: false, error: absence }
+  }
 
   const linkedCustomerId = await linkOrCreateCustomer(
     supabase,
@@ -450,10 +511,15 @@ export async function createQueueGroup(
 
   // เตียงและหมอมีจำกัด — เช็คชนกับคิวที่มีอยู่ และชนกันเองในกลุ่มเดียวกัน
   // (สองคนเลือกเตียง/หมอเดียวกันเวลาทับกัน — รายการต่อเวลาไม่ชนเพราะเวลาเรียงต่อกัน)
+  // การเข้างานโหลดครั้งเดียวทั้งกลุ่ม — ทุกแถวคือวันเดียวกัน ไม่ยิงซ้ำรายคน
+  const dayAbsence = await loadDayAbsence(supabase, queueDate)
   for (const [i, row] of rows.entries()) {
     // รายการต่อเวลาเริ่มต่อจากใบก่อนหน้า — เวลาอาจไหลเลยเวลาปิดร้าน
     const rowTimeErr = startTimeError(row.start_time)
     if (rowTimeErr) return { ok: false, error: `คนที่ ${i + 1}: ${rowTimeErr}` }
+    // หมอที่ไม่เข้างาน/ลงแผนลาวันนั้น รับคิวไม่ได้ — เช็ครายคนของกลุ่ม
+    const rowAbsence = absenceErrorFor(dayAbsence, row.therapist_id, queueDate)
+    if (rowAbsence) return { ok: false, error: `คนที่ ${i + 1}: ${rowAbsence}` }
     const startMin = timeToMin(row.start_time)
     if (row.bed_id) {
       const bedError = await bedConflictError(
@@ -571,7 +637,7 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
   // เตียงมีจำกัด — แก้เวลา/เปลี่ยนเตียงต้องไม่ชนคิวใบอื่น (ไม่นับใบตัวเอง)
   const { data: current } = await supabase
     .from("queue_entries")
-    .select("queue_date")
+    .select("queue_date, therapist_id")
     .eq("id", id)
     .maybeSingle()
   if (!current) return { ok: false, error: "ไม่พบคิวนี้" }
@@ -594,6 +660,12 @@ export async function updateQueueEntry(id: string, form: FormData): Promise<Resu
     [id]
   )
   if (therapistError) return { ok: false, error: therapistError }
+  // เช็คการเข้างานเฉพาะตอน "เปลี่ยน" หมอ — การ์ดเดิมของหมอที่ลา (เช่นคิวไลน์ที่รับไว้แล้ว)
+  // ต้องยังแก้เวลา/เตียง/หมายเหตุได้ ไม่งั้นพนักงานติดกับ ทำอะไรกับการ์ดไม่ได้เลย
+  if (therapistId !== current.therapist_id) {
+    const absence = await therapistAbsenceError(supabase, therapistId, current.queue_date)
+    if (absence) return { ok: false, error: absence }
+  }
 
   const { error } = await supabase
     .from("queue_entries")
@@ -639,7 +711,7 @@ export async function moveQueueEntry(
   // ลากเลื่อนเวลา/ย้ายช่องหมอ — เตียงเดิมและหมอปลายทางต้องไม่ชนคิวใบอื่น
   const { data: moving } = await supabase
     .from("queue_entries")
-    .select("bed_id, bed_id_2, queue_date, duration_min")
+    .select("bed_id, bed_id_2, queue_date, duration_min, therapist_id")
     .eq("id", id)
     .maybeSingle()
   if (moving) {
@@ -662,6 +734,11 @@ export async function moveQueueEntry(
       [id]
     )
     if (therapistError) return { ok: false, error: therapistError }
+    // ลากในช่องหมอเดิม = แค่เลื่อนเวลา ไม่ใช่มอบคิวให้หมอใหม่ — ไม่ต้องเช็คการเข้างาน
+    if (therapistId !== moving.therapist_id) {
+      const absence = await therapistAbsenceError(supabase, therapistId, moving.queue_date)
+      if (absence) return { ok: false, error: absence }
+    }
   }
 
   const { error } = await supabase
@@ -918,6 +995,21 @@ export async function approveBooking(id: string): Promise<Result> {
     warning = [warning, `⚠️ ${kinds}ของคิวนี้ชนกับคิวอื่น — เปิดการ์ดจัด${kinds}หรือเวลาใหม่ด้วย`]
       .filter(Boolean)
       .join(" · ")
+  }
+  // หมอที่ลูกค้ารีเควสไว้ ลา/ไม่เข้างานวันนั้น (เพิ่งติ๊กหลังลูกค้าจอง) — เตือนไม่บล็อก
+  // ข้อความแยกจากเหตุ "ชนคิว" เพราะวิธีแก้คนละทาง (จัดหมอใหม่ ไม่ใช่เลื่อนเวลา)
+  {
+    const day = set.entries.length
+      ? await loadDayAbsence(supabase, set.entries[0].queue_date)
+      : null
+    const hasAbsent =
+      day !== null &&
+      set.entries.some((e) => absenceErrorFor(day, e.therapist_id, e.queue_date) !== null)
+    if (hasAbsent) {
+      warning = [warning, "⚠️ หมอที่ลูกค้ารีเควสไม่ได้เข้างาน/ลงแผนลาวันนั้น — เปิดการ์ดจัดหมอใหม่ด้วย"]
+        .filter(Boolean)
+        .join(" · ")
+    }
   }
 
   // แจ้งกลุ่มทีมร้าน: คิวนี้ถูกรับแล้ว โดยใคร — ทุกคนเห็นสถานะเดียวกันไม่ต้องถามกันเอง

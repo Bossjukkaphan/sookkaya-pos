@@ -67,6 +67,7 @@ export function QueueFormDialog({
   entries,
   boardDate,
   isToday,
+  unavailableTherapistIds = [],
   entry,
   defaultTherapistId,
   defaultStartTime,
@@ -74,6 +75,8 @@ export function QueueFormDialog({
   onDone,
 }: {
   therapists: Therapist[]
+  /** หมอที่รับคิววันบอร์ดไม่ได้ (ไม่เช็คอิน/ลงแผนลา) — ปุ่มถูกปิดพร้อมป้าย "ลา" */
+  unavailableTherapistIds?: string[]
   services: ServiceOption[]
   beds: Bed[]
   /** คิวของวันบนบอร์ด — ใช้เช็คว่าเตียงไหนถูกจองคร่อมเวลาที่เลือก */
@@ -159,6 +162,7 @@ export function QueueFormDialog({
   // ห้องช่วงครึ่งหลังของคนที่ i — คนแรกคือ state bedId2 ตรงๆ · คนอื่นมาจาก GroupPerson.bedId2
   const bedOf2 = (i: number) =>
     i === 0 ? bedId2 || null : (extraPeople[i - 1].bedId2 ?? null)
+  const absentSet = new Set(unavailableTherapistIds)
   const therapistOf = (i: number) =>
     i === 0 ? therapistId || null : extraPeople[i - 1].therapistId
 
@@ -361,8 +365,9 @@ export function QueueFormDialog({
                   </Button>
                   {therapists.map((t) => {
                     const takenBy = takenByOthers.get(t.id)
+                    const absent = absentSet.has(t.id)
                     const unavailable =
-                      (busyT.has(t.id) || takenBy !== undefined) &&
+                      (busyT.has(t.id) || takenBy !== undefined || absent) &&
                       therapistId !== t.id
                     return (
                       <Button
@@ -374,11 +379,13 @@ export function QueueFormDialog({
                         onClick={() => setTherapistId(t.id)}
                       >
                         {t.name}
-                        {busyT.has(t.id)
-                          ? " · ติดคิว"
-                          : takenBy !== undefined
-                            ? ` · คนที่ ${takenBy}`
-                            : ""}
+                        {absent
+                          ? " · ลา/ไม่เข้างาน"
+                          : busyT.has(t.id)
+                            ? " · ติดคิว"
+                            : takenBy !== undefined
+                              ? ` · คนที่ ${takenBy}`
+                              : ""}
                       </Button>
                     )
                   })}
@@ -706,7 +713,9 @@ export function QueueFormDialog({
                               key={t.id}
                               value={t.id}
                               disabled={
-                                (busyT.has(t.id) || takenBy !== undefined) &&
+                                (busyT.has(t.id) ||
+                                  takenBy !== undefined ||
+                                  absentSet.has(t.id)) &&
                                 p.therapistId !== t.id
                               }
                             >

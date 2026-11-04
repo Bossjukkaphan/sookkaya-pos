@@ -210,6 +210,9 @@ describe("bed_id_2 ตัดทิ้งถ้าเมนูไม่ได้�
           ],
         },
       ]),
+      // ด่านหมอเข้างาน (loadDayAbsence) — วันว่างเปล่า: ไม่มีเช็คอิน/แผนลา = ทุกคนรับคิวได้
+      attendance: seqTable([{ data: [] }]),
+      shift_plans: seqTable([{ data: [] }]),
     }
     vi.mocked(createClient).mockResolvedValue(fakeSupabase(tables) as never)
 

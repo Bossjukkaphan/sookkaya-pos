@@ -112,6 +112,7 @@ export function QueueBoard({
   boardDate,
   isToday,
   checkedInTherapistIds,
+  unavailableTherapistIds = [],
   turnAwayCount,
   autoOpenAdd = false,
   dueBySaleId,
@@ -124,6 +125,8 @@ export function QueueBoard({
   isToday: boolean
   /** หมอที่เช็คอินวันนี้ (หน้า /checkin) — คนที่ไม่อยู่ในลิสต์ = แถวปิดรับคิว */
   checkedInTherapistIds: string[]
+  /** หมอที่รับคิววันบอร์ดไม่ได้ (ไม่เช็คอิน/ลงแผนลา) — ปิดปุ่มในฟอร์มเพิ่ม/แก้คิว */
+  unavailableTherapistIds?: string[]
   turnAwayCount: number
   /** มาจากปุ่ม "จองล่วงหน้า" หน้าบันทึกขาย — เปิดฟอร์มเพิ่มคิวให้เลย */
   autoOpenAdd?: boolean
@@ -371,6 +374,7 @@ export function QueueBoard({
           entries={entries}
           boardDate={boardDate}
           isToday={isToday}
+          unavailableTherapistIds={unavailableTherapistIds}
           entry={form.entry}
           defaultTherapistId={form.therapistId}
           defaultStartTime={form.startTime}
