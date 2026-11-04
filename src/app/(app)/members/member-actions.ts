@@ -223,13 +223,22 @@ export async function extendTopupExpiry(
   if (error) return { ok: false, error: error.message }
   if (!updated) return { ok: false, error: "แก้ไม่สำเร็จ — สิทธิ์ไม่พอหรือใบถูกลบไปแล้ว" }
 
-  await supabase.from("member_topup_edits").insert({
+  // ประวัติต้องคู่กับการแก้เสมอ — เขียน log ไม่สำเร็จ = ย้อนการแก้คืนทั้งหมด
+  // (การแก้เงินที่ไม่มีร่องรอย อันตรายกว่าการแก้ไม่สำเร็จ)
+  const { error: logError } = await supabase.from("member_topup_edits").insert({
     topup_id: id,
     field: "expiry_date",
     old_value: String(topup.expiry_date),
     new_value: newExpiry,
     edited_by: staff.name,
   })
+  if (logError) {
+    await supabase
+      .from("member_topups")
+      .update({ expiry_date: topup.expiry_date })
+      .eq("id", id)
+    return { ok: false, error: "บันทึกประวัติการแก้ไขไม่สำเร็จ — ย้อนการแก้คืนแล้ว ลองใหม่อีกครั้ง" }
+  }
 
   revalidateTopupPages(topup.customer_id)
   return { ok: true }
@@ -268,21 +277,30 @@ export async function adjustTopupBalance(
     }
   }
 
-  const { error } = await supabase.from("member_topup_adjustments").insert({
-    topup_id: id,
-    delta: Math.round(delta * 100) / 100,
-    reason: reason.trim(),
-    edited_by: staff.name,
-  })
-  if (error) return { ok: false, error: error.message }
+  const { data: adjRow, error } = await supabase
+    .from("member_topup_adjustments")
+    .insert({
+      topup_id: id,
+      delta: Math.round(delta * 100) / 100,
+      reason: reason.trim(),
+      edited_by: staff.name,
+    })
+    .select("id")
+    .single()
+  if (error || !adjRow) return { ok: false, error: error?.message ?? "ปรับยอดไม่สำเร็จ" }
 
-  await supabase.from("member_topup_edits").insert({
+  const { error: logError } = await supabase.from("member_topup_edits").insert({
     topup_id: id,
     field: "remaining",
     old_value: String(topup.remaining ?? 0),
     new_value: String(newRemaining),
     edited_by: staff.name,
   })
+  if (logError) {
+    // ประวัติคู่กับการแก้เสมอ — log พลาดก็ถอนรายการปรับยอดคืน
+    await supabase.from("member_topup_adjustments").delete().eq("id", adjRow.id)
+    return { ok: false, error: "บันทึกประวัติการแก้ไขไม่สำเร็จ — ย้อนการปรับยอดคืนแล้ว ลองใหม่อีกครั้ง" }
+  }
 
   revalidateTopupPages(String(topup.customer_id))
   return { ok: true }
@@ -311,13 +329,20 @@ export async function setTopupActive(id: string, active: boolean): Promise<Topup
   if (error) return { ok: false, error: error.message }
   if (!updated) return { ok: false, error: "แก้ไม่สำเร็จ — สิทธิ์ไม่พอหรือใบถูกลบไปแล้ว" }
 
-  await supabase.from("member_topup_edits").insert({
+  const { error: logError } = await supabase.from("member_topup_edits").insert({
     topup_id: id,
     field: "is_active",
     old_value: String(Boolean(topup.is_active)),
     new_value: String(active),
     edited_by: staff.name,
   })
+  if (logError) {
+    await supabase
+      .from("member_topups")
+      .update({ is_active: Boolean(topup.is_active) })
+      .eq("id", id)
+    return { ok: false, error: "บันทึกประวัติการแก้ไขไม่สำเร็จ — ย้อนการแก้คืนแล้ว ลองใหม่อีกครั้ง" }
+  }
 
   revalidateTopupPages(topup.customer_id)
   return { ok: true }

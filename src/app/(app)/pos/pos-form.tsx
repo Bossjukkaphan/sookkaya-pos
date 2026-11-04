@@ -173,7 +173,6 @@ export function PosForm({
   const [checkingCoupon, setCheckingCoupon] = useState(false)
   // แบ่งชำระ: เครดิตสมาชิกของลูกค้าที่เลือก (มาจาก CustomerPicker) + ค่าที่พนักงานแก้เอง
   const [creditBalance, setCreditBalance] = useState(0)
-  const [creditExpired, setCreditExpired] = useState(false)
   // ใบเครดิตรายใบของลูกค้า (ระบบแยกก้อนตามใบเติม 2026-11-03) — โหลดเมื่อเลือกลูกค้า
   const [buckets, setBuckets] = useState<TopupBucket[]>([])
   // การแบ่งใบที่พนักงานแก้เอง: null = อัตโนมัติ (ใกล้หมดอายุก่อน) · map topupId→ยอดที่พิมพ์
@@ -411,7 +410,6 @@ export function PosForm({
     setCouponInfo(null)
     setCouponCode("")
     setCreditBalance(0)
-    setCreditExpired(false)
     setCreditUseInput("0")
     setExtraPayments([])
     setPrimaryInput(null)
@@ -632,7 +630,6 @@ export function PosForm({
         }}
         onPhoneChange={setCustomerPhone}
         onBalanceChange={setCreditBalance}
-        onCreditExpiredChange={setCreditExpired}
         billDate={billDate}
         requireMember={isMemberCredit}
       />

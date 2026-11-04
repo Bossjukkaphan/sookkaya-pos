@@ -11,7 +11,7 @@ import {
   setTopupActive,
 } from "../members/member-actions"
 import { formatBaht } from "@/lib/constants"
-import { formatThaiDate } from "@/lib/datetime"
+import { formatThaiDate, todayInShopTz } from "@/lib/datetime"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -75,12 +75,12 @@ function EditDialog({ t, onDone }: { t: TopupView; onDone: () => void }) {
   const expiryChanged = expiry !== t.expiryDate
   const activeChanged = active !== t.isActive
 
-  // ยืดอายุด่วน: +N วันจากวันหมดอายุเดิม (หรือวันนี้ ถ้าหมดอายุไปแล้ว)
+  // ยืดอายุด่วน: +N วันจากวันหมดอายุเดิม (หรือวันนี้ตามเวลาร้าน ถ้าหมดอายุไปแล้ว)
+  // เทียบ/บวกบนสตริง YYYY-MM-DD ที่ตรึง UTC เที่ยงคืน — new Date() ตรงๆ เพี้ยนข้ามวันช่วงเช้าไทย
   const quickExtend = (days: number) => {
-    const base = new Date(`${expiry}T00:00:00Z`)
-    const today = new Date()
-    const from = base.getTime() > today.getTime() ? base : today
-    const d = new Date(from.getTime() + days * 86_400_000)
+    const today = todayInShopTz()
+    const base = expiry > today ? expiry : today
+    const d = new Date(Date.parse(`${base}T00:00:00Z`) + days * 86_400_000)
     setExpiry(d.toISOString().slice(0, 10))
   }
 
@@ -90,18 +90,24 @@ function EditDialog({ t, onDone }: { t: TopupView; onDone: () => void }) {
         toast.error("ปรับยอดคงเหลือต้องระบุเหตุผล (เก็บลงประวัติการแก้ไข)")
         return
       }
+      // สามแอคชันไม่ atomic ต่อกัน — ถ้าตัวหลังพลาด ตัวก่อนหน้าสำเร็จไปแล้ว
+      // ต้องรีเฟรชให้เห็นสถานะจริง + บอกชัดว่าส่วนไหนบันทึกไปแล้ว
+      const fail = (msg: string) => {
+        toast.error(`${msg} — การแก้ไขข้อก่อนหน้า (ถ้ามี) ถูกบันทึกไปแล้ว`)
+        onDone()
+      }
       if (expiryChanged) {
         const r = await extendTopupExpiry(t.topupId, expiry)
-        if (!r.ok) return void toast.error(r.error)
+        if (!r.ok) return void fail(r.error)
       }
       if (remainingChanged) {
         const delta = Math.round((Number(remainingInput) - t.remaining) * 100) / 100
         const r = await adjustTopupBalance(t.topupId, delta, reason)
-        if (!r.ok) return void toast.error(r.error)
+        if (!r.ok) return void fail(r.error)
       }
       if (activeChanged) {
         const r = await setTopupActive(t.topupId, active)
-        if (!r.ok) return void toast.error(r.error)
+        if (!r.ok) return void fail(r.error)
       }
       toast.success("บันทึกการแก้ไขแพ็กเกจแล้ว")
       setOpen(false)

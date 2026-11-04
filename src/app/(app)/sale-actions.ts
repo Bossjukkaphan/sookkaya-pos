@@ -13,7 +13,10 @@ import {
 } from "@/lib/constants"
 import { computeSaleAmounts } from "@/lib/sale-math"
 import {
+  bucketUsableOn,
+  mapTopupBucketRow,
   planCreditSplit,
+  round2,
   usableCreditOn,
   validateSplit,
   weightedRecognizeRatio,
@@ -102,8 +105,6 @@ function toNumber(value: FormDataEntryValue | null, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback
 }
 
-const round2 = (n: number) => Math.round(n * 100) / 100
-
 /** ใบเครดิตทุกใบของลูกค้า (จาก view ยอดรายใบ) — แปลงเป็นรูปที่ตรรกะแบ่งใบใช้ */
 async function loadTopupBuckets(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -113,15 +114,7 @@ async function loadTopupBuckets(
     .from("v_topup_balances")
     .select("topup_id, tier, topup_date, expiry_date, remaining, recognize_ratio, is_active")
     .eq("customer_id", customerId)
-  return (data ?? []).map((r) => ({
-    topupId: String(r.topup_id),
-    tier: String(r.tier ?? ""),
-    topupDate: String(r.topup_date ?? ""),
-    expiryDate: String(r.expiry_date ?? ""),
-    remaining: Number(r.remaining ?? 0),
-    recognizeRatio: Number(r.recognize_ratio ?? 1),
-    isActive: Boolean(r.is_active),
-  }))
+  return (data ?? []).map(mapTopupBucketRow)
 }
 
 /** การแบ่งใบที่พนักงานแก้เองจากหน้า POS — JSON [{topupId, amount}] · null = ให้ระบบจัดอัตโนมัติ */
@@ -458,10 +451,16 @@ export async function createSale(formData: FormData): Promise<SaleResult> {
       }))
     )
     if (allocError) {
-      await supabase.from("sales").delete().eq("id", inserted.id)
+      const { error: rollbackError } = await supabase
+        .from("sales")
+        .delete()
+        .eq("id", inserted.id)
+      // ถ้าถอนบิลไม่สำเร็จด้วย ห้ามโกหกว่ายกเลิกแล้ว — พนักงานจะคีย์ซ้ำกลายเป็นบิลคู่
       return {
         ok: false,
-        error: "บันทึกการแบ่งใบเครดิตไม่สำเร็จ — ยกเลิกบิลให้แล้ว ลองใหม่อีกครั้ง",
+        error: rollbackError
+          ? `บันทึกการแบ่งใบเครดิตไม่สำเร็จ และถอนบิลอัตโนมัติไม่สำเร็จ — แจ้งผู้จัดการลบบิล ${inserted.receipt_no ?? ""} ก่อนคีย์ใหม่`
+          : "บันทึกการแบ่งใบเครดิตไม่สำเร็จ — ยกเลิกบิลให้แล้ว ลองใหม่อีกครั้ง",
       }
     }
   }
@@ -854,8 +853,22 @@ export async function updateSale(
     }
     creditParts = split.parts
     memberRatio = weightedRecognizeRatio(split.parts, buckets)
-    const alreadyTotal = [...already.values()].reduce((a, b) => a + b, 0)
-    creditAfter = round2(usableCreditOn(buckets, existing.sale_date) + alreadyTotal - wanted)
+    // เครดิตคงเหลือบนใบเสร็จ = ยอดที่ "ยังใช้ต่อได้จริง" หลังบิลนี้เท่านั้น — คิดรายใบ:
+    //   ใบใช้ได้: คงเหลือปัจจุบัน + โควตาเดิมของบิลนี้ (เงินที่การแก้ปล่อยคืน) − ยอดตัดใหม่
+    //   ใบหมดอายุ/ปิด: ไม่นับเลย — เงินที่คืนเข้า/ค้างอยู่ในใบพวกนั้นคือเงินแช่แข็ง ไม่ใช่เงินใช้ได้
+    // (ห้ามสัญญาเงินที่ลูกค้าใช้ไม่ได้จริงบนใบเสร็จ)
+    const byId = new Map(buckets.map((b) => [b.topupId, b]))
+    const usableDrawn = split.parts.reduce((sum, part) => {
+      const b = byId.get(part.topupId)
+      return b && bucketUsableOn(b, existing.sale_date) ? sum + part.amount : sum
+    }, 0)
+    const usableQuotaBack = [...already.entries()].reduce((sum, [topupId, amt]) => {
+      const b = byId.get(topupId)
+      return b && bucketUsableOn(b, existing.sale_date) ? sum + amt : sum
+    }, 0)
+    creditAfter = round2(
+      usableCreditOn(buckets, existing.sale_date) + usableQuotaBack - usableDrawn
+    )
   }
 
   const amounts = computeSaleAmounts({
@@ -942,7 +955,18 @@ export async function updateSale(
   // สลับการแบ่งใบเครดิตเป็นชุดใหม่ — ลบของเดิมทั้งบิลแล้วเขียนใหม่
   // (เปลี่ยนเป็นไม่ใช้เครดิตเลยก็ต้องลบ — เครดิตคืนกลับใบเดิมผ่านการลบแถวนี่แหละ)
   if (creditParts !== null || Number(existing.credit_used ?? 0) > 0) {
-    await supabase.from("sale_credit_allocations").delete().eq("sale_id", id)
+    const { error: clearError } = await supabase
+      .from("sale_credit_allocations")
+      .delete()
+      .eq("sale_id", id)
+    if (clearError) {
+      // ลบชุดเก่าไม่สำเร็จ → ห้ามเขียนชุดใหม่ทับ (จะกลายเป็นสองชุดซ้อน หักยอดลูกค้าซ้ำ)
+      return {
+        ok: false,
+        error:
+          "บิลถูกบันทึกแล้ว แต่สลับการแบ่งใบเครดิตไม่สำเร็จ — เปิดบิลแล้วกดบันทึกซ้ำอีกครั้ง",
+      }
+    }
     if (creditParts && creditParts.length > 0) {
       const { error: allocError } = await supabase.from("sale_credit_allocations").insert(
         creditParts.map((part) => ({ sale_id: id, topup_id: part.topupId, amount: part.amount }))

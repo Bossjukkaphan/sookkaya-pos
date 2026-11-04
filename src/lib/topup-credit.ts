@@ -13,7 +13,29 @@
  * รอบนี้การแบ่งถูกบันทึกจริงเป็นรายบิลใน sale_credit_allocations ตั้งแต่ตอนขาย
  */
 
-const round2 = (n: number) => Math.round(n * 100) / 100
+export const round2 = (n: number) => Math.round(n * 100) / 100
+
+/** แปลงแถว v_topup_balances → TopupBucket — ตัวเดียวทั้งฝั่ง server และ action ฝั่งจอ
+ * (เคยมีสองสำเนา เปลี่ยนคอลัมน์แล้วแก้ไม่ครบ = พรีวิวกับด่านจริงเห็นคนละข้อมูล) */
+export function mapTopupBucketRow(r: {
+  topup_id: unknown
+  tier: unknown
+  topup_date: unknown
+  expiry_date: unknown
+  remaining: unknown
+  recognize_ratio: unknown
+  is_active: unknown
+}): TopupBucket {
+  return {
+    topupId: String(r.topup_id),
+    tier: String(r.tier ?? ""),
+    topupDate: String(r.topup_date ?? ""),
+    expiryDate: String(r.expiry_date ?? ""),
+    remaining: Number(r.remaining ?? 0),
+    recognizeRatio: Number(r.recognize_ratio ?? 1),
+    isActive: Boolean(r.is_active),
+  }
+}
 
 export type TopupBucket = {
   topupId: string

@@ -1,11 +1,19 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Pencil } from "lucide-react"
 import { toast } from "sonner"
 
 import { updateSale } from "../sale-actions"
+import { getCreditBuckets, getSaleAllocations } from "../credit-actions"
+import {
+  planCreditSplit,
+  round2,
+  usableCreditOn,
+  weightedRecognizeRatio,
+  type TopupBucket,
+} from "@/lib/topup-credit"
 import { deleteBillPayment, updateBillPaymentAmount, updateBillPaymentMethod } from "../payment-actions"
 import { PAYMENT_AMOUNT_EDIT_REASONS, type PaymentAmountEditReason } from "@/lib/payments"
 import { CollectDueDialog } from "../collect-due-dialog"
@@ -212,6 +220,9 @@ function EditSaleForm({
     sale.payment_method === GOWABI_METHOD ? String(sale.net_amount) : ""
   )
   const [isRequest, setIsRequest] = useState(sale.is_request)
+  // ใบเครดิตรายใบ + โควตาที่บิลนี้ตัดไว้ — คิดเพดาน/พรีวิวแบบเดียวกับ updateSale ฝั่ง server
+  const [buckets, setBuckets] = useState<TopupBucket[] | null>(null)
+  const [saleAlloc, setSaleAlloc] = useState<{ topupId: string; amount: number }[]>([])
   const [privateRoom, setPrivateRoom] = useState(sale.room_fee > 0)
   const [customerId, setCustomerId] = useState(sale.customer_id ?? "")
   const [customerName, setCustomerName] = useState(sale.customer_name ?? "")
@@ -229,6 +240,29 @@ function EditSaleForm({
   const isGowabi = paymentMethod === GOWABI_METHOD
   const isKol = paymentMethod === "KOL"
   const isMemberCredit = paymentMethod === MEMBER_CREDIT_METHOD
+
+  useEffect(() => {
+    let cancelled = false
+    if (!customerId) {
+      setBuckets([])
+      return
+    }
+    getCreditBuckets(customerId).then((list) => {
+      if (!cancelled) setBuckets(list)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [customerId])
+  useEffect(() => {
+    let cancelled = false
+    getSaleAllocations(sale.id).then((rows) => {
+      if (!cancelled) setSaleAlloc(rows)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [sale.id])
 
   // โชว์ช่องกรอกเมื่อบิลนี้เคยตัดเครดิตอยู่แล้ว (ให้แก้/ล้างได้เสมอ) หรือกำลังผูกลูกค้าอยู่ตอนนี้
   // + ช่องทางเป็นเงินจริง — Member Credit ตัดเต็มบิลอยู่แล้ว ส่วน Gowabi/KOL server ปฏิเสธถ้ามีเครดิตปนมา
@@ -294,10 +328,26 @@ function EditSaleForm({
     ]
   }, [services, sale.service_id, sale.service_name])
 
-  const ratio =
+  const potRatio =
     balance && balance.credit_granted > 0
       ? balance.cash_paid / balance.credit_granted
       : 1
+  // โควตาเดิมคืนได้เฉพาะลูกค้าคนเดิม (กติกาเดียวกับ updateSale)
+  const sameCustomer = customerId === sale.customer_id
+  const alreadyMap = useMemo(() => {
+    const m = new Map<string, number>()
+    if (sameCustomer) {
+      for (const a of saleAlloc) m.set(a.topupId, round2((m.get(a.topupId) ?? 0) + a.amount))
+    }
+    return m
+  }, [saleAlloc, sameCustomer])
+  const alreadyTotal = [...alreadyMap.values()].reduce((a, b) => a + b, 0)
+  // เพดานที่ server จะยอมรับจริง = ใบที่ใช้ได้ ณ วันบิล + โควตาที่บิลนี้ตัดไว้
+  // (เดิมโชว์ยอดรวมกระปุกที่รวมใบแช่แข็ง — พนักงานพิมพ์ตามแล้วถูกปฏิเสธตอนบันทึก)
+  const creditEditCap =
+    buckets === null
+      ? null
+      : round2(usableCreditOn(buckets, sale.sale_date) + alreadyTotal)
 
   // เครดิตแช่แข็ง ณ วันของบิลใบนี้ (ไม่ใช่วันนี้) — ตัดสินด้วยตัวเดียวกับด่านฝั่ง server ใน updateSale
   // ถ้าไม่บอกตรงนี้ กล่องแก้ไขจะโชว์ "แก้เป็นได้สูงสุด X ฿" เขียวสนิทแล้วปล่อยให้พนักงานพิมพ์เลข
@@ -308,6 +358,29 @@ function EditSaleForm({
     ? `เครดิตหมดอายุแล้ว (${balance.next_expiry ?? "ไม่เคยเติมเงิน"}) — ยอด ${formatBaht(balance.credit_balance)} ฿ ยังอยู่ครบแต่ใช้ไม่ได้ ` +
       `แก้ให้ตัดเพิ่มจาก ${formatBaht(sale.credit_used)} ฿ ไม่ได้จนกว่าลูกค้าจะเติมแพ็กเกจใหม่ (ตัดเท่าเดิมหรือน้อยลงยังทำได้)`
     : ""
+
+  // ratio ถ่วงน้ำหนักตามใบที่ "จะ" ถูกตัดจริง — จำลองแผนแบ่งเดียวกับ updateSale
+  // (ใบยังโหลดไม่เสร็จ → ใช้ ratio เหมารวมเดิมชั่วคราว โหลดเสร็จแล้วเลขตรง server เป๊ะ)
+  const wantedCredit = isMemberCredit
+    ? Math.max(
+        0,
+        (service?.price ?? 0) -
+          Math.max(0, Number(discount) || 0) +
+          (privateRoom ? PRIVATE_ROOM_FEE : 0)
+      )
+    : creditRequestedValue
+  const weightedPreviewRatio = useMemo(() => {
+    if (wantedCredit <= 0) return null
+    if (buckets === null) return potRatio
+    const plan = planCreditSplit({
+      buckets,
+      amount: wantedCredit,
+      onDate: sale.sale_date,
+      already: alreadyMap,
+    })
+    return plan.ok ? weightedRecognizeRatio(plan.parts, buckets) : potRatio
+  }, [wantedCredit, buckets, sale.sale_date, alreadyMap, potRatio])
+  const displayRatio = weightedPreviewRatio ?? potRatio
 
   // พรีวิวใช้ฟังก์ชันเดียวกับที่ server ใช้ตอนบันทึก ตัวเลขจึงไม่มีทางขัดกัน
   const preview = useMemo(
@@ -321,7 +394,7 @@ function EditSaleForm({
         requestFee: REQUEST_FEE,
         roomFee: privateRoom ? PRIVATE_ROOM_FEE : 0,
         serviceCommission: service?.commission ?? 0,
-        memberRatio: isMemberCredit ? ratio : null,
+        memberRatio: weightedPreviewRatio,
         creditRequested: creditRequestedValue,
       }),
     [
@@ -332,8 +405,7 @@ function EditSaleForm({
       isGowabi,
       isRequest,
       privateRoom,
-      isMemberCredit,
-      ratio,
+      weightedPreviewRatio,
       creditRequestedValue,
     ]
   )
@@ -517,10 +589,10 @@ function EditSaleForm({
             onChange={(e) => setCreditUse(e.target.value)}
             placeholder="0"
           />
-          {customerId === sale.customer_id && balance && (
+          {customerId === sale.customer_id && creditEditCap !== null && (
             <p className="text-xs text-slate-500">
-              เครดิตคงเหลือ {formatBaht(balance.credit_balance + sale.credit_used)} ฿
-              (รวมที่รายการนี้ตัดไปแล้ว)
+              แก้ยอดเครดิตได้สูงสุด {formatBaht(creditEditCap)} ฿
+              (ใบที่ใช้ได้ ณ วันบิล + ที่รายการนี้ตัดไว้แล้ว)
             </p>
           )}
           {customerId === sale.customer_id && creditFrozen && (
@@ -689,12 +761,12 @@ function EditSaleForm({
               <p className="font-medium">❄️ {frozenNotice}</p>
             ) : (
               <p className="font-medium text-emerald-900">
-                แก้เป็นได้สูงสุด {formatBaht(balance.credit_balance + sale.credit_used)} ฿
+                แก้เป็นได้สูงสุด {formatBaht(creditEditCap ?? balance.credit_balance + sale.credit_used)} ฿
               </p>
             )}
-            {ratio < 1 && (
+            {displayRatio < 1 && (
               <p className="mt-1 text-amber-700">
-                สัดส่วนรับรู้รายได้ตอนนี้คือ {Math.round(ratio * 100)}% —
+                สัดส่วนรับรู้รายได้ตอนนี้คือ {Math.round(displayRatio * 100)}% —
                 ถ้าลูกค้าเติมเงินหลังวันที่ขาย ตัวเลขรายได้รับรู้ของรายการนี้จะเปลี่ยนหลังกดบันทึก
                 (ตอนนี้ {formatBaht(sale.revenue_recognize)} ฿)
               </p>
