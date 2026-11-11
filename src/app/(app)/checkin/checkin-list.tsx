@@ -5,11 +5,12 @@ import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { addStaffMember, checkOut, toggleCheckin } from "./checkin-actions"
+import { splitByCallIn } from "@/lib/staff-roster"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 
-type Person = { id: string; name: string; role?: string }
+type Person = { id: string; name: string; role?: string; is_part_time?: boolean }
 type AttendanceRow = {
   id: string
   therapist_id: string | null
@@ -104,7 +105,7 @@ export function CheckinList({
             className={`h-4 w-4 shrink-0 rounded-full border-4 ${
               row
                 ? "border-emerald-500"
-                : plan
+                : plan || person.is_part_time
                   ? "border-slate-300"
                   : "border-red-300"
             }`}
@@ -123,7 +124,9 @@ export function CheckinList({
                   ? plan === "leave"
                     ? "🏖️ ลา (ตามแผน)"
                     : "😴 หยุดตามแผน"
-                  : "ยังไม่เช็คอิน"}
+                  : person.is_part_time
+                    ? "เรียกเมื่อต้องการ"
+                    : "ยังไม่เช็คอิน"}
               {days > 0 && ` · เดือนนี้มา ${days} วัน`}
             </p>
           </div>
@@ -154,7 +157,10 @@ export function CheckinList({
   }
 
   const therapistIn = therapists.filter((t) => byTherapist.has(t.id)).length
-  const staffIn = staff.filter((s) => byStaff.has(s.id)).length
+  // พาร์ทไทม์ไม่เข้าตัวหาร — ไม่งั้นตัวเลข "มา x/N" จะดูเหมือนขาดคนทุกวัน
+  const { regular: regularStaff, onCall: onCallStaff } = splitByCallIn(staff)
+  const staffIn = regularStaff.filter((s) => byStaff.has(s.id)).length
+  const onCallIn = onCallStaff.filter((s) => byStaff.has(s.id)).length
 
   return (
     <div className="space-y-4">
@@ -175,7 +181,7 @@ export function CheckinList({
       <Card>
         <CardHeader className="pb-1">
           <CardTitle className="text-base">
-            🧑‍💼 พนักงาน ({staffIn}/{staff.length} มา)
+            🧑‍💼 พนักงาน ({staffIn}/{regularStaff.length} มา)
           </CardTitle>
         </CardHeader>
         <CardContent className="px-0">
@@ -184,7 +190,17 @@ export function CheckinList({
               ยังไม่มีพนักงานในระบบ — เพิ่มด้านล่างได้เลย
             </p>
           )}
-          <ul className="divide-y">{staff.map((s) => renderRow(s, "staff"))}</ul>
+          <ul className="divide-y">{regularStaff.map((s) => renderRow(s, "staff"))}</ul>
+
+          {onCallStaff.length > 0 && (
+            <>
+              <p className="border-t bg-amber-50/60 px-4 py-1.5 text-xs text-amber-800 sm:px-6">
+                🕘 พาร์ทไทม์ — เรียกเป็นครั้งคราว ({onCallIn} มาวันนี้) ·
+                ไม่ถูกนับว่าขาดงานในวันที่ไม่ได้เรียก
+              </p>
+              <ul className="divide-y">{onCallStaff.map((s) => renderRow(s, "staff"))}</ul>
+            </>
+          )}
           <form onSubmit={submitStaff} className="flex flex-wrap items-center gap-2 border-t px-4 pt-3 sm:px-6">
             <Input
               value={newName}

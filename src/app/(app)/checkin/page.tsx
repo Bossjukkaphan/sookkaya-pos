@@ -39,7 +39,7 @@ export default async function CheckinPage({
         .order("name"),
       supabase
         .from("staff_members")
-        .select("id, name, role")
+        .select("id, name, role, is_part_time")
         .eq("is_active", true)
         .order("sort")
         .order("name"),

@@ -1502,6 +1502,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_part_time: boolean
           name: string
           role: string
           sort: number
@@ -1511,6 +1512,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_part_time?: boolean
           name: string
           role: string
           sort?: number
@@ -1520,6 +1522,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_part_time?: boolean
           name?: string
           role?: string
           sort?: number

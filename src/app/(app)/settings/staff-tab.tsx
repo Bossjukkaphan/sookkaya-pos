@@ -12,7 +12,13 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 
-type Staff = { id: string; name: string; role: string; is_active: boolean }
+type Staff = {
+  id: string
+  name: string
+  role: string
+  is_active: boolean
+  is_part_time: boolean
+}
 
 /**
  * จัดการทีมงานที่ไม่ใช่หมอนวด — เพิ่มคน เปลี่ยนตำแหน่ง และบันทึกว่าลาออก
@@ -124,6 +130,22 @@ export function StaffTab({ staff, canEdit }: { staff: Staff[]; canEdit: boolean 
           </div>
         </fieldset>
 
+        <label className="flex cursor-pointer items-start gap-3 rounded-md border p-3 has-[:checked]:border-amber-500 has-[:checked]:bg-amber-50">
+          <input
+            type="checkbox"
+            name="is_part_time"
+            defaultChecked={s?.is_part_time ?? false}
+            className="mt-1"
+          />
+          <span className="text-sm">
+            <span className="font-medium">พาร์ทไทม์ — เรียกเป็นครั้งคราว</span>
+            <span className="mt-0.5 block text-xs text-slate-600">
+              ชื่อยังอยู่ให้ติ๊กเข้างานได้ทุกวันที่เขามา แต่วันที่ไม่ได้เรียกจะไม่ถูกนับว่าขาดงาน
+              และไม่ต้องลงวันหยุดล่วงหน้าให้
+            </span>
+          </span>
+        </label>
+
         <div className="flex gap-2">
           <Button type="submit" className="h-12 flex-1" disabled={pending}>
             {pending ? "กำลังบันทึก..." : "บันทึก"}
@@ -166,6 +188,14 @@ export function StaffTab({ staff, canEdit }: { staff: Staff[]; canEdit: boolean 
               <span className="min-w-0 truncate font-medium">
                 {s.name}
                 <span className="ml-1 font-normal text-slate-500">· {s.role}</span>
+                {s.is_part_time && (
+                  <Badge
+                    variant="outline"
+                    className="ml-2 border-amber-300 bg-amber-50 font-normal text-amber-700"
+                  >
+                    พาร์ทไทม์
+                  </Badge>
+                )}
               </span>
               {canEdit && (
                 <Button variant="ghost" size="sm" onClick={() => startEdit(s)}>
