@@ -6,7 +6,7 @@ import { useState, useTransition } from "react"
 import { toast } from "sonner"
 
 import { saveCrmContact, sendCrmLineMessage, type ContactResult } from "./crm-actions"
-import { crmMessage, LINE_MESSAGE_MAX } from "@/lib/crm"
+import { crmMessage, LINE_MESSAGE_MAX, type CrmListType } from "@/lib/crm"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -26,6 +26,9 @@ export type CrmRow = {
   reason: string
   /** มีค่า = ลูกค้าเคยผูกไลน์ → โชว์ปุ่มส่งไลน์ (ผูกหลายไลน์ใช้ตัวล่าสุด) */
   lineUserId?: string
+  /** ข้อความเฉพาะรายที่หน้า server เตรียมไว้ (เช่นลิสต์เครดิตใส่ยอด/วันหมดจริง)
+   *  — ไม่มีค่าค่อยตกไปใช้เทมเพลตกลางตามประเภทลิสต์ */
+  message?: string
 }
 
 const RESULT_LABEL: Record<ContactResult, string> = {
@@ -41,7 +44,7 @@ export function CrmList({
   listType,
 }: {
   rows: CrmRow[]
-  listType: "birthday" | "winback" | "new_follow"
+  listType: CrmListType
 }) {
   const router = useRouter()
   const [openResult, setOpenResult] = useState<string | null>(null)
@@ -55,7 +58,7 @@ export function CrmList({
 
   function openLineDialog(row: CrmRow) {
     setLineTarget(row)
-    setLineText(crmMessage(listType, row.nickname || row.name))
+    setLineText(row.message ?? crmMessage(listType, row.nickname || row.name))
   }
 
   function sendLine() {
@@ -81,7 +84,7 @@ export function CrmList({
   }
 
   function copyMessage(row: CrmRow) {
-    const msg = crmMessage(listType, row.nickname || row.name)
+    const msg = row.message ?? crmMessage(listType, row.nickname || row.name)
     navigator.clipboard
       .writeText(msg)
       .then(() => toast.success("คัดลอกข้อความแล้ว — ไปวางในไลน์/SMS ได้เลย"))
@@ -135,12 +138,15 @@ export function CrmList({
                   </Link>
                   <p className="text-xs text-slate-500">{row.reason}</p>
                 </div>
-                <a
-                  href={`tel:${row.phone}`}
-                  className="shrink-0 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
-                >
-                  📞 โทร
-                </a>
+                {/* สมาชิกบางคนไม่มีเบอร์ (เช่นสมัครผ่านไลน์ล้วน) — ไม่มีก็ซ่อนปุ่มโทร เหลือทางไลน์ */}
+                {row.phone && (
+                  <a
+                    href={`tel:${row.phone}`}
+                    className="shrink-0 rounded-full bg-emerald-600 px-4 py-2 text-sm font-medium text-white"
+                  >
+                    📞 โทร
+                  </a>
+                )}
               </div>
               {openResult === row.customerId ? (
                 <div className="flex flex-wrap gap-1.5">

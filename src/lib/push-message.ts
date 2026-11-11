@@ -58,6 +58,26 @@ export function pendingReminderPayload(
   }
 }
 
+/** เครดิตสมาชิกใกล้หมดอายุ — เตือนพนักงานตอนเช้าให้ชวนลูกค้ามาใช้ก่อนหมด
+ *  ไม่มีใครเข้าเงื่อนไข = null (ตัวเรียกจะได้ไม่ส่งอะไรเลย ไม่ใช่ส่งข้อความว่าง) */
+export function creditExpiryPushPayload(
+  items: { name: string; total: number; daysLeft: number }[]
+): PushPayload | null {
+  if (items.length === 0) return null
+  const first = items[0]
+  const firstLabel =
+    `${first.name} ฿${first.total.toLocaleString("th-TH")}` +
+    (first.daysLeft <= 0 ? " หมดวันนี้!" : ` เหลือ ${first.daysLeft} วัน`)
+  const more = items.length > 1 ? ` และอีก ${items.length - 1} คน` : ""
+  return {
+    title: "⏳ เครดิตสมาชิกใกล้หมดอายุ",
+    body: `${firstLabel}${more} — แตะเพื่อเปิดหน้าดูแลลูกค้า ชวนมาใช้ก่อนหมด`,
+    url: "/crm",
+    // วันเดียวกันเตือนซ้ำทับอันเดิมเสมอ
+    tag: "credit-expiry",
+  }
+}
+
 /** วันเกิดลูกค้าวันนี้ — เตือนพนักงานตอนเช้าให้ทักก่อนร้านวุ่น
  *  ไม่มีใครวันเกิด = null (ตัวเรียกจะได้ไม่ส่งอะไรเลย ไม่ใช่ส่งข้อความว่าง) */
 export function birthdayPushPayload(names: string[]): PushPayload | null {

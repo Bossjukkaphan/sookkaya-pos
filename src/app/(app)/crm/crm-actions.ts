@@ -9,10 +9,11 @@ import { validateCrmLineText, type CrmListType } from "@/lib/crm"
 
 export type ContactResult = "contacted" | "booked" | "declined" | "wrong_number"
 
-/** บันทึกผลการติดต่อ — แถวจะหลุดจากลิสต์ทันที กันติดต่อซ้ำซ้อน 30 วัน */
+/** บันทึกผลการติดต่อ — แถวจะหลุดจากลิสต์ทันที กันติดต่อซ้ำซ้อน 30 วัน
+ *  (credit_expiry มีข้อยกเว้น: ใบที่เข้าโซนแดงโผล่กลับมาอีกครั้ง — ดู lib/credit-expiry.ts) */
 export async function saveCrmContact(
   customerId: string,
-  listType: "birthday" | "winback" | "new_follow",
+  listType: CrmListType,
   result: ContactResult
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = await createClient()

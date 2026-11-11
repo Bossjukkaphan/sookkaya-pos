@@ -64,9 +64,31 @@ export function msgNewFollow(name: string | null | undefined): string {
   )
 }
 
-export type CrmListType = "birthday" | "winback" | "new_follow"
+/** เชิญมาใช้เครดิตก่อนหมดอายุ — มี detail = ระบุยอด/วันจริงของลูกค้าคนนั้น (ลิสต์หน้า /crm
+ *  ส่ง detail มาเสมอ เวอร์ชันไม่มี detail เป็น fallback ของ dispatcher เท่านั้น) */
+export function msgCreditExpiry(
+  name: string | null | undefined,
+  detail?: { amountBaht: string; expiryThai: string; daysLeft: number }
+): string {
+  const line = detail
+    ? `เครดิตสมาชิกของคุณยังคงเหลือ ${detail.amountBaht} บาท และจะหมดอายุ` +
+      (detail.daysLeft <= 0
+        ? `วันนี้ (${detail.expiryThai}) เป็นวันสุดท้าย`
+        : `วันที่ ${detail.expiryThai} นี้ (อีก ${detail.daysLeft} วัน)`) +
+      ` นะคะ`
+    : `เครดิตสมาชิกของคุณกำลังจะหมดอายุเร็วๆ นี้นะคะ`
+  return (
+    `สวัสดีค่ะคุณ ${who(name)} 🌿 จาก SOOKKAYA ค่ะ\n\n` +
+    `ขออนุญาตแจ้งว่า${line}\n\n` +
+    `อย่าลืมแวะมาผ่อนคลายใช้เครดิตให้คุ้มก่อนหมดอายุนะคะ 💆‍♀️✨ ` +
+    `จองคิวล่วงหน้าได้เลยที่: ${BOOKING_LINK} ค่ะ`
+  )
+}
 
-/** เลือกเทมเพลตตามประเภทลิสต์ — ที่เดียว ใช้ทั้งปุ่มคัดลอกและปุ่มส่งไลน์ */
+export type CrmListType = "birthday" | "winback" | "new_follow" | "credit_expiry"
+
+/** เลือกเทมเพลตตามประเภทลิสต์ — ที่เดียว ใช้ทั้งปุ่มคัดลอกและปุ่มส่งไลน์
+ *  (credit_expiry ปกติใช้ข้อความเฉพาะรายที่หน้า /crm เตรียมให้แทน — ดู CrmRow.message) */
 export function crmMessage(
   listType: CrmListType,
   name: string | null | undefined
@@ -75,7 +97,9 @@ export function crmMessage(
     ? msgBirthday(name)
     : listType === "winback"
       ? msgWinback(name)
-      : msgNewFollow(name)
+      : listType === "credit_expiry"
+        ? msgCreditExpiry(name)
+        : msgNewFollow(name)
 }
 
 /** เตือนทีมร้านตอนเช้าว่าวันนี้มีลูกค้าวันเกิด — ส่งเข้ากลุ่มไลน์ทีมร้านผ่าน OA ผู้ช่วย */

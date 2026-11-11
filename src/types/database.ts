@@ -264,6 +264,38 @@ export type Database = {
         }
         Relationships: []
       }
+      credit_expiry_alerts: {
+        Row: {
+          expiry_date: string
+          sent_at: string
+          source: string
+          threshold: number
+          topup_id: string
+        }
+        Insert: {
+          expiry_date: string
+          sent_at?: string
+          source: string
+          threshold: number
+          topup_id: string
+        }
+        Update: {
+          expiry_date?: string
+          sent_at?: string
+          source?: string
+          threshold?: number
+          topup_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_expiry_alerts_topup_id_fkey"
+            columns: ["topup_id"]
+            isOneToOne: false
+            referencedRelation: "member_topups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_contacts: {
         Row: {
           created_at: string

@@ -2,9 +2,16 @@ import Link from "next/link"
 
 import { createClient } from "@/lib/supabase/server"
 import { getMyProfile } from "@/lib/auth"
-import { todayInShopTz, formatThaiDate } from "@/lib/datetime"
+import { todayInShopTz, formatThaiDate, shopDateOf } from "@/lib/datetime"
 import { formatBaht } from "@/lib/constants"
-import { birthdayWithinDays, daysUntilBirthday } from "@/lib/crm"
+import { birthdayWithinDays, daysUntilBirthday, msgCreditExpiry } from "@/lib/crm"
+import {
+  EXPIRY_WINDOW_DAYS,
+  addDaysIso,
+  creditExpiryContactSuppressed,
+  expiryUrgency,
+  groupExpiringByCustomer,
+} from "@/lib/credit-expiry"
 import { birthdayCoverage } from "@/lib/birthday-coverage"
 import { daysSince, dormantCutoff } from "@/lib/insights"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -81,7 +88,7 @@ export default async function CrmPage({
   const coverageSince = `${new Date(
     Date.parse(`${today}T00:00:00Z`) - (COVERAGE_DAYS + 8) * 86400000
   ).toISOString().slice(0, 10)}T00:00:00+07:00`
-  const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }, { data: lineAccounts }, { data: birthdayContacts }] =
+  const [{ data: birthdayCustomers }, { data: dormant }, { data: newcomers }, { data: recentContacts }, { data: lineAccounts }, { data: birthdayContacts }, { data: expiringBuckets }] =
     await Promise.all([
       supabase
         .from("customers")
@@ -106,7 +113,7 @@ export default async function CrmPage({
         .limit(LIST_CAP * 2),
       supabase
         .from("crm_contacts")
-        .select("customer_id, list_type")
+        .select("customer_id, list_type, created_at")
         .gte("created_at", cooldownSince),
       supabase
         .from("line_accounts")
@@ -119,6 +126,14 @@ export default async function CrmPage({
         .select("customer_id, created_at, result")
         .eq("list_type", "birthday")
         .gte("created_at", coverageSince),
+      // ใบเติมที่จะหมดอายุใน 30 วัน — ลิสต์ "เครดิตใกล้หมดอายุ" (ดู lib/credit-expiry.ts)
+      supabase
+        .from("v_topup_balances")
+        .select("topup_id, customer_id, expiry_date, remaining")
+        .eq("is_active", true)
+        .gt("remaining", 0)
+        .gte("expiry_date", today)
+        .lte("expiry_date", addDaysIso(today, EXPIRY_WINDOW_DAYS)),
     ])
 
   const contacted = new Set(
@@ -164,6 +179,66 @@ export default async function CrmPage({
     .sort((a, b) => a.days - b.days)
     .slice(0, LIST_CAP)
     .map((x) => x.row)
+
+  // ลิสต์เครดิตใกล้หมดอายุ — กติกาซ่อน/โผล่ต่างจากลิสต์อื่น (เข้าโซนแดงโผล่กลับมาอีกครั้ง)
+  // จึงไม่ใช้ set `contacted` ข้างบน แต่ดูวันที่ติดต่อจริงตามเวลาร้านผ่าน creditExpiryContactSuppressed
+  const creditContactDates = new Map<string, string[]>()
+  for (const c of recentContacts ?? []) {
+    if (c.list_type !== "credit_expiry") continue
+    const dates = creditContactDates.get(c.customer_id) ?? []
+    dates.push(shopDateOf(new Date(c.created_at)))
+    creditContactDates.set(c.customer_id, dates)
+  }
+  const expiringVisible = groupExpiringByCustomer(
+    (expiringBuckets ?? [])
+      .filter((b) => b.topup_id && b.customer_id && b.expiry_date)
+      .map((b) => ({
+        topupId: String(b.topup_id),
+        customerId: String(b.customer_id),
+        expiryDate: String(b.expiry_date),
+        remaining: Number(b.remaining ?? 0),
+      })),
+    today
+  )
+    .filter(
+      (e) =>
+        !creditExpiryContactSuppressed({
+          nearestExpiry: e.nearestExpiry,
+          today,
+          contactDates: creditContactDates.get(e.customerId) ?? [],
+        })
+    )
+    .slice(0, LIST_CAP)
+
+  // ชื่อ/เบอร์ของลูกค้าในลิสต์เครดิต — ลูกค้าถือแพ็กเกจมีไม่กี่คน คิวรีตามรายชื่อพอ
+  const { data: creditCustomers } = expiringVisible.length
+    ? await supabase
+        .from("customers")
+        .select("id, name, nickname, phone")
+        .in("id", expiringVisible.map((e) => e.customerId))
+    : { data: [] as { id: string; name: string; nickname: string | null; phone: string | null }[] }
+  const creditCustomerById = new Map((creditCustomers ?? []).map((c) => [c.id, c]))
+
+  const creditRows: CrmRow[] = expiringVisible.map((e) => {
+    const c = creditCustomerById.get(e.customerId)
+    const u = expiryUrgency(e.daysLeft)
+    return {
+      customerId: e.customerId,
+      name: c?.name ?? "ไม่ระบุชื่อ",
+      nickname: c?.nickname ?? null,
+      phone: c?.phone ?? "",
+      reason:
+        `${u.icon} ฿${formatBaht(e.total)} จะหมดอายุ ${formatThaiDate(e.nearestExpiry)} · ${u.label}` +
+        (e.bucketCount > 1 ? ` · ${e.bucketCount} ใบ` : ""),
+      lineUserId: lineByCustomer.get(e.customerId),
+      // ข้อความพร้อมส่ง ใส่ยอด/วันหมดจริงของคนนั้น — ปุ่มคัดลอก/ส่งไลน์ใช้ตัวนี้
+      message: msgCreditExpiry(c?.nickname || c?.name, {
+        amountBaht: formatBaht(e.total),
+        expiryThai: formatThaiDate(e.nearestExpiry),
+        daysLeft: e.daysLeft,
+      }),
+    }
+  })
 
   const winbackRows: CrmRow[] = (dormant ?? [])
     .filter((c) => c.customer_id && !contacted.has(`winback|${c.customer_id}`))
@@ -213,6 +288,21 @@ export default async function CrmPage({
               เก็บวันเกิดเพิ่มได้ในหน้าแก้ไขข้อมูลลูกค้า
             </p>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-sky-200">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">
+            ⏳ เครดิตใกล้หมดอายุ ({creditRows.length})
+          </CardTitle>
+          <p className="text-xs text-slate-500">
+            ใบเติมที่จะหมดอายุใน {EXPIRY_WINDOW_DAYS} วัน — ชวนมาใช้ก่อนเครดิตหาย ·
+            🔴 ≤7 วัน · 🟠 ≤14 · 🟡 ≤30 · ติดต่อแล้วจะเด้งกลับมาอีกครั้งช่วง 7 วันสุดท้าย
+          </p>
+        </CardHeader>
+        <CardContent>
+          <CrmList rows={creditRows} listType="credit_expiry" />
         </CardContent>
       </Card>
 
