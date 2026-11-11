@@ -2,7 +2,13 @@
 
 import { useMemo, useState } from "react"
 
-import { filterMembers, sortMembers, type MemberListItem, type MemberSort } from "@/lib/member-list"
+import {
+  filterMembers,
+  sortMembers,
+  type ExpiryFilter,
+  type MemberListItem,
+  type MemberSort,
+} from "@/lib/member-list"
 import { tierLabel } from "@/lib/tier-colors"
 import { MemberRow } from "./member-row"
 import { Input } from "@/components/ui/input"
@@ -17,33 +23,41 @@ const SORT_LABEL: Record<MemberSort, string> = {
   expiry_soon: "ใกล้หมดอายุก่อน",
 }
 
+const EXPIRY_LABEL: Record<ExpiryFilter, string> = {
+  all: "ทั้งหมด",
+  d7: "🔴 ≤7 วัน",
+  d14: "🟠 ≤14 วัน",
+  d30: "🟡 ≤30 วัน",
+  frozen: "🧊 แช่แข็ง",
+}
+
 /**
  * ค้นหา/กรอง tier/เรียงลำดับฝั่งเบราว์เซอร์ — จำนวนสมาชิกที่มีเครดิตมีแค่หลักสิบคน
  * ไม่คุ้มยิง query ใหม่ทุกครั้งที่พิมพ์
  */
-export function MemberList({
-  members,
-  today,
-}: {
-  members: MemberListItem[]
-  /** ใช้คำนวณ "ใกล้หมดอายุ" ให้ตรงกับหน้าอื่นที่คิดจากวันนี้ (Asia/Bangkok) */
-  today: string
-}) {
+export function MemberList({ members }: { members: MemberListItem[] }) {
   const [term, setTerm] = useState("")
   const [tier, setTier] = useState("")
   const [sort, setSort] = useState<MemberSort>("name")
+  const [expiry, setExpiry] = useState<ExpiryFilter>("all")
 
   const tiers = useMemo(
     () => [...new Set(members.map((m) => m.tier).filter((t): t is string => !!t))].sort(),
     [members]
   )
 
-  const shown = useMemo(
-    () => sortMembers(filterMembers(members, term, tier), sort),
-    [members, term, tier, sort]
-  )
+  const shown = useMemo(() => {
+    const filtered = filterMembers(members, term, tier, expiry)
+    // กดชิปโซนหมดอายุ = อยากเห็นคนด่วนก่อนอยู่แล้ว — สลับเรียงให้เองถ้ายังเรียงแบบตั้งต้น
+    const effectiveSort = expiry !== "all" && sort === "name" ? "expiry_soon" : sort
+    return sortMembers(filtered, effectiveSort)
+  }, [members, term, tier, sort, expiry])
 
-  const thirtyDaysOut = addDays(today, 30)
+  // จำนวนต่อชิป — เห็นก่อนกดว่ามีกี่คน (นับหลังกรองคำค้น/ระดับ แต่ไม่นับชิปตัวเอง)
+  const chipCount = useMemo(() => {
+    const base = filterMembers(members, term, tier, "all")
+    return (f: ExpiryFilter) => filterMembers(base, "", "", f).length
+  }, [members, term, tier])
 
   return (
     <div className="space-y-3">
@@ -84,13 +98,34 @@ export function MemberList({
         </select>
       </div>
 
+      {/* ชิปกรองสถานะหมดอายุ — คิดจาก "ใบใกล้สุด" รายใบ ตรงกับหน้าดูแลลูกค้า/แจ้งเตือนเช้า */}
+      <div className="flex flex-wrap gap-1.5">
+        {(Object.keys(EXPIRY_LABEL) as ExpiryFilter[]).map((f) => (
+          <button
+            key={f}
+            type="button"
+            onClick={() => setExpiry(f)}
+            className={`rounded-full border px-3 py-1.5 text-xs ${
+              expiry === f
+                ? "border-amber-600 bg-amber-600 font-medium text-white"
+                : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            {EXPIRY_LABEL[f]}
+            {f !== "all" && ` (${chipCount(f)})`}
+          </button>
+        ))}
+      </div>
+
       <p className="text-xs text-slate-500">
         แสดง {shown.length} จาก {members.length} คน
       </p>
 
       {shown.length === 0 ? (
         <p className="py-8 text-center text-sm text-slate-500">
-          {term || tier ? "ไม่พบสมาชิกตามเงื่อนไข" : "ยังไม่มีสมาชิกที่มีเครดิตคงเหลือ"}
+          {term || tier || expiry !== "all"
+            ? "ไม่พบสมาชิกตามเงื่อนไข"
+            : "ยังไม่มีสมาชิกที่มีเครดิตคงเหลือ"}
         </p>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
@@ -103,7 +138,8 @@ export function MemberList({
                 tier={m.tier}
                 balance={m.balance}
                 nextExpiry={m.nextExpiry}
-                expiringSoon={!!m.nextExpiry && m.nextExpiry <= thirtyDaysOut}
+                daysLeft={m.daysLeft}
+                expiringAmount={m.expiringAmount}
                 expired={m.expired}
               />
             </li>
@@ -112,10 +148,4 @@ export function MemberList({
       )}
     </div>
   )
-}
-
-function addDays(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
 }

@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { formatBaht } from "@/lib/constants"
 import { formatThaiDate } from "@/lib/datetime"
+import { expiryUrgency, EXPIRY_WINDOW_DAYS } from "@/lib/credit-expiry"
 import { creditBucket } from "@/lib/member-credit"
 import { TIER_COLOR, TIER_COLOR_DEFAULT, tierLabel } from "@/lib/tier-colors"
 import { Card, CardContent } from "@/components/ui/card"
@@ -18,7 +19,8 @@ export function MemberRow({
   tier,
   balance,
   nextExpiry,
-  expiringSoon,
+  daysLeft,
+  expiringAmount,
   expired = false,
 }: {
   customerId: string
@@ -27,8 +29,11 @@ export function MemberRow({
   /** ระดับจากใบเติมเงินล่าสุด — null เมื่อไม่พบประวัติเติม */
   tier: string | null
   balance: number
+  /** วันหมดอายุของ "ใบใกล้สุด" ที่ยังใช้ได้ (คิดรายใบ — ไม่ใช่ next_expiry ของ view) */
   nextExpiry: string | null
-  expiringSoon: boolean
+  daysLeft: number | null
+  /** ยอดรวมใบที่จะหมดภายใน 30 วัน — >0 = ขึ้นคำเตือนพร้อมยอดที่เสี่ยงหาย */
+  expiringAmount: number
   /** เครดิตแช่แข็ง (หมดอายุแล้วแต่ยอดยังอยู่) — default false ให้ผู้เรียกเดิมยังคอมไพล์ผ่าน */
   expired?: boolean
 }) {
@@ -64,16 +69,17 @@ export function MemberRow({
                 </Badge>
               )}
             </div>
-            {nextExpiry && (
-              <p
-                className={
-                  expiringSoon ? "text-sm text-amber-700" : "text-sm text-slate-500"
-                }
-              >
-                หมดอายุ {formatThaiDate(nextExpiry)}
-                {expiringSoon && " ⚠️"}
+            {/* ใบใกล้สุดใน 30 วัน = เตือนพร้อมยอดที่เสี่ยงหาย · ไกลกว่านั้นโชว์วันเฉยๆ */}
+            {nextExpiry && daysLeft !== null && daysLeft <= EXPIRY_WINDOW_DAYS ? (
+              <p className="text-sm text-amber-700">
+                {expiryUrgency(daysLeft).icon} ฿{formatBaht(expiringAmount)} จะหมด{" "}
+                {formatThaiDate(nextExpiry)} · {expiryUrgency(daysLeft).label}
               </p>
-            )}
+            ) : nextExpiry ? (
+              <p className="text-sm text-slate-500">
+                ใบใกล้สุดหมดอายุ {formatThaiDate(nextExpiry)}
+              </p>
+            ) : null}
           </div>
           <div className="shrink-0 text-right">
             {/* ใกล้หมด/หมดอายุแล้วเป็นสีเตือน bucket เดียวกับหน้าภาพรวม */}

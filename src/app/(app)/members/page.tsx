@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import type { MemberListItem } from "@/lib/member-list"
 import { isCreditFrozen } from "@/lib/member-credit"
+import { summarizeMemberExpiry } from "@/lib/credit-expiry"
 
 export const metadata = { title: "สมาชิก · สุขกายา POS" }
 
@@ -20,7 +21,7 @@ export default async function MembersPage() {
   // 1,000 แถวของ supabase-js ไปแล้ว ถ้าดึงทั้งหมดมากรองในหน้าเว็บ สมาชิกที่ชื่อเรียงท้ายสุด
   // จะถูกตัดทิ้งเงียบๆ แล้วยอดเครดิตคงค้างจะต่ำกว่าความจริงโดยไม่มีอะไรเตือน
   // จึงต้องกรองใน SQL ให้เหลือเฉพาะคนที่มีเครดิตจริง (42 แถว)
-  const [{ data: active }, { data: topups }] = await Promise.all([
+  const [{ data: active }, { data: topups }, { data: usableBuckets }] = await Promise.all([
     supabase
       .from("member_balances")
       .select("customer_id, name, nickname, phone, credit_balance, next_expiry, credit_expired")
@@ -31,6 +32,15 @@ export default async function MembersPage() {
       .select("id, topup_date, tier, cash_received, credit_added, bonus_added, expiry_date, customer_id, payment_method")
       .order("topup_date", { ascending: false })
       .limit(30),
+    // ใบที่ยังใช้ได้รายใบ — "ใกล้หมดอายุ" ต้องคิดจากใบใกล้สุด ไม่ใช่ next_expiry ของ
+    // member_balances ซึ่งเป็นใบไกลสุด (ไว้คิดสูตรแช่แข็ง) ไม่งั้นคนที่มีใบจะหมดใน 5 วัน
+    // แต่มีอีกใบอยู่ได้เป็นปี จะไม่ถูกเตือนเลย — ตรรกะเดียวกับหน้า /crm และ cron เช้า
+    supabase
+      .from("v_topup_balances")
+      .select("topup_id, customer_id, expiry_date, remaining")
+      .eq("is_active", true)
+      .gt("remaining", 0)
+      .gte("expiry_date", today),
   ])
 
   const members = active ?? []
@@ -46,17 +56,23 @@ export default async function MembersPage() {
   const frozenCredit = members
     .filter((m) => isCreditFrozen(m.credit_balance ?? 0, m.credit_expired ?? false))
     .reduce((sum, m) => sum + (m.credit_balance ?? 0), 0)
-  // "ใกล้หมดอายุ" ต้องยังไม่หมดอายุ — เงื่อนไข next_expiry <= อีก 30 วัน เป็นจริงกับทุกวันในอดีตด้วย
-  // คนที่แช่แข็งไปแล้วจึงเคยถูกนับซ้ำทั้งในการ์ด "แช่แข็ง Y ฿" และการ์ด "ใกล้หมดอายุ" บนจอเดียวกัน
-  // ทั้งที่เป็นคนละกลุ่มคนละงาน (แช่แข็ง = ชวนเติมเพื่อปลดล็อก · ใกล้หมด = ชวนใช้ก่อนหมด)
-  // แยกด้วย isCreditFrozen ตัวเดียวกับสองบรรทัดข้างบน — Overview/Daily Report แยกด้วย
-  // .eq("credit_expired", false) ที่ฝั่ง SQL ด้วยเหตุผลเดียวกัน
-  const expiringSoonCount = members.filter(
-    (m) =>
-      !!m.next_expiry &&
-      m.next_expiry <= addDays(today, 30) &&
-      !isCreditFrozen(m.credit_balance ?? 0, m.credit_expired ?? false)
-  ).length
+  // "ใกล้หมดอายุ" คิดจากใบใกล้สุดรายใบ (summarizeMemberExpiry) — เดิมคิดจาก next_expiry
+  // ของ member_balances ซึ่งเป็นใบไกลสุด ทำให้นับขาดคนที่ใบแรกกำลังจะหมดแต่มีใบยาวค้ำอยู่
+  // คนแช่แข็งไม่มีใบที่ยังใช้ได้ จึงหลุดจากแผนที่นี้เองโดยไม่ต้องเช็ค isCreditFrozen ซ้ำ
+  const expirySummary = summarizeMemberExpiry(
+    (usableBuckets ?? [])
+      .filter((b) => b.topup_id && b.customer_id && b.expiry_date)
+      .map((b) => ({
+        topupId: String(b.topup_id),
+        customerId: String(b.customer_id),
+        expiryDate: String(b.expiry_date),
+        remaining: Number(b.remaining ?? 0),
+      })),
+    today
+  )
+  const expiringMembers = [...expirySummary.values()].filter((s) => s.expiringAmount > 0)
+  const expiringSoonCount = expiringMembers.length
+  const expiringSoonTotal = expiringMembers.reduce((sum, s) => sum + s.expiringAmount, 0)
 
   // ประวัติการเติมเงินอาจมีคนที่ใช้เครดิตหมดแล้ว ซึ่งไม่อยู่ในรายการข้างบน
   // จึงดึงชื่อจากตาราง customers เฉพาะ id ที่ปรากฏในประวัติ 30 รายการล่าสุด
@@ -98,16 +114,22 @@ export default async function MembersPage() {
       .map(([tier, n]) => `${tier} ${n}`)
       .join(" · ") || "—"
 
-  const memberItems: MemberListItem[] = members.map((m) => ({
-    customerId: m.customer_id ?? "",
-    name: m.name ?? "ไม่ระบุชื่อ",
-    nickname: m.nickname,
-    phone: m.phone,
-    tier: m.customer_id ? (tierOf.get(m.customer_id) ?? null) : null,
-    balance: m.credit_balance ?? 0,
-    nextExpiry: m.next_expiry,
-    expired: m.credit_expired ?? false,
-  }))
+  const memberItems: MemberListItem[] = members.map((m) => {
+    const s = m.customer_id ? expirySummary.get(m.customer_id) : undefined
+    return {
+      customerId: m.customer_id ?? "",
+      name: m.name ?? "ไม่ระบุชื่อ",
+      nickname: m.nickname,
+      phone: m.phone,
+      tier: m.customer_id ? (tierOf.get(m.customer_id) ?? null) : null,
+      balance: m.credit_balance ?? 0,
+      // ใบใกล้สุดที่ยังใช้ได้ — คนแช่แข็ง (ไม่มีใบใช้ได้) เป็น null ให้ชิป "แช่แข็ง" จับแทน
+      nextExpiry: s?.nearestExpiry ?? null,
+      daysLeft: s?.daysLeft ?? null,
+      expiringAmount: s?.expiringAmount ?? 0,
+      expired: isCreditFrozen(m.credit_balance ?? 0, m.credit_expired ?? false),
+    }
+  })
 
   const topupRows: TopupRow[] = (topups ?? []).map((t) => ({
     id: t.id,
@@ -134,7 +156,12 @@ export default async function MembersPage() {
         />
         <StatCard
           label="ใกล้หมดอายุ (30 วัน)"
-          value={`${expiringSoonCount} คน`}
+          value={
+            expiringSoonCount > 0
+              ? `${expiringSoonCount} คน · ${formatBaht(expiringSoonTotal)} ฿`
+              : "0 คน"
+          }
+          hint="คิดจากใบเติมใกล้สุดรายใบ — กรองรายชื่อได้ในแท็บสมาชิก"
           tone={expiringSoonCount > 0 ? "warn" : "normal"}
         />
         <StatCard label="แยกตามระดับ" value={tierSummary} />
@@ -158,7 +185,7 @@ export default async function MembersPage() {
         </TabsContent>
 
         <TabsContent value="members" className="pt-4">
-          <MemberList members={memberItems} today={today} />
+          <MemberList members={memberItems} />
         </TabsContent>
 
         <TabsContent value="history" className="pt-4">
@@ -174,10 +201,4 @@ export default async function MembersPage() {
       </Tabs>
     </div>
   )
-}
-
-function addDays(isoDate: string, days: number): string {
-  const d = new Date(`${isoDate}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + days)
-  return d.toISOString().slice(0, 10)
 }

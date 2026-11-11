@@ -9,6 +9,8 @@ const M = (over: Partial<MemberListItem>): MemberListItem => ({
   tier: null,
   balance: 0,
   nextExpiry: null,
+  daysLeft: null,
+  expiringAmount: 0,
   ...over,
 })
 
@@ -42,6 +44,38 @@ describe("filterMembers", () => {
 
   it("ไม่พิมพ์อะไรและไม่กรอง tier คืนทุกคน", () => {
     expect(filterMembers(members, "", "")).toHaveLength(3)
+  })
+})
+
+describe("filterMembers — ชิปกรองสถานะหมดอายุ (คิดจากใบใกล้สุด)", () => {
+  const members = [
+    M({ customerId: "red", daysLeft: 5, nextExpiry: "2026-11-16", expiringAmount: 2960 }),
+    M({ customerId: "orange", daysLeft: 12, nextExpiry: "2026-11-23", expiringAmount: 1500 }),
+    M({ customerId: "yellow", daysLeft: 28, nextExpiry: "2026-12-09", expiringAmount: 900 }),
+    M({ customerId: "far", daysLeft: 200, nextExpiry: "2027-05-30", expiringAmount: 0 }),
+    M({ customerId: "frozen", daysLeft: null, nextExpiry: null, expired: true }),
+  ]
+  const ids = (expiry: Parameters<typeof filterMembers>[3]) =>
+    filterMembers(members, "", "", expiry).map((m) => m.customerId)
+
+  it("ขอบโซนถูกต้อง: ≤7 / ≤14 / ≤30 สะสมกันเป็นชั้น", () => {
+    expect(ids("d7")).toEqual(["red"])
+    expect(ids("d14")).toEqual(["red", "orange"])
+    expect(ids("d30")).toEqual(["red", "orange", "yellow"])
+  })
+
+  it("frozen = เฉพาะเครดิตแช่แข็ง · all = ทุกคน · คนแช่แข็งไม่โผล่ในโซนวัน", () => {
+    expect(ids("frozen")).toEqual(["frozen"])
+    expect(ids("all")).toHaveLength(5)
+    expect(ids("d30")).not.toContain("frozen")
+  })
+
+  it("ใช้ร่วมกับค้นหา/กรองระดับได้", () => {
+    const mixed = [
+      M({ customerId: "1", name: "เบล", tier: "Gold", daysLeft: 3, nextExpiry: "2026-11-14", expiringAmount: 500 }),
+      M({ customerId: "2", name: "เบล", tier: "Silver", daysLeft: 3, nextExpiry: "2026-11-14", expiringAmount: 500 }),
+    ]
+    expect(filterMembers(mixed, "เบล", "Gold", "d7").map((m) => m.customerId)).toEqual(["1"])
   })
 })
 

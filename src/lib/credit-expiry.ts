@@ -83,6 +83,45 @@ export function groupExpiringByCustomer(
   )
 }
 
+export type MemberExpirySummary = {
+  /** วันหมดอายุของ "ใบใกล้สุด" ที่ยังใช้ได้ — ไม่ใช่ next_expiry ของ member_balances
+   *  ซึ่งเป็นใบไกลสุด (ไว้คิดสูตรแช่แข็ง) ใช้คนละงานกัน ห้ามสลับ */
+  nearestExpiry: string
+  daysLeft: number
+  /** ยอดรวมใบที่จะหมดภายใน 30 วัน (0 = ใบใกล้สุดยังอยู่ไกล) */
+  expiringAmount: number
+}
+
+/** สรุปต่อสมาชิกจากใบที่ยังใช้ได้ (เปิดใช้ + มียอด + ยังไม่หมดอายุ) — หน้า /members ใช้
+ *  โชว์/กรอง/เรียง "ใกล้หมดอายุ" ให้ตรงกับหน้า /crm และ cron ที่คิดรายใบเหมือนกัน */
+export function summarizeMemberExpiry(
+  rows: ExpiringBucketRow[],
+  today: string
+): Map<string, MemberExpirySummary> {
+  const out = new Map<string, MemberExpirySummary>()
+  for (const r of rows) {
+    if (r.remaining <= 0) continue
+    const d = daysLeft(r.expiryDate, today)
+    if (d < 0) continue
+    const expiring = d <= EXPIRY_WINDOW_DAYS ? r.remaining : 0
+    const cur = out.get(r.customerId)
+    if (!cur) {
+      out.set(r.customerId, {
+        nearestExpiry: r.expiryDate,
+        daysLeft: d,
+        expiringAmount: round2(expiring),
+      })
+    } else {
+      cur.expiringAmount = round2(cur.expiringAmount + expiring)
+      if (r.expiryDate < cur.nearestExpiry) {
+        cur.nearestExpiry = r.expiryDate
+        cur.daysLeft = d
+      }
+    }
+  }
+  return out
+}
+
 /** ไอคอน + คำบอกความด่วนตามโซน — ใช้ในลิสต์หน้า /crm */
 export function expiryUrgency(d: number): { icon: string; label: string } {
   if (d <= 0) return { icon: "🔴", label: "หมดอายุวันนี้!" }

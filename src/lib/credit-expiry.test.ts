@@ -8,6 +8,7 @@ import {
   expiryUrgency,
   groupExpiringByCustomer,
   msgCreditExpiryStaff,
+  summarizeMemberExpiry,
 } from "./credit-expiry"
 
 describe("daysLeft / addDaysIso", () => {
@@ -136,6 +137,55 @@ describe("dueThresholds — หลักไมล์ D-30/14/7/3 เตือน
 
   it("หมดอายุวันนี้ (0 วัน) ยังเตือนได้ — เช้านี้คือโอกาสสุดท้าย", () => {
     expect(dueThresholds(0, new Set([30, 14, 7]))).toEqual([3])
+  })
+})
+
+describe("summarizeMemberExpiry — สรุปใบใกล้สุดต่อสมาชิก (หน้า /members)", () => {
+  const today = "2026-11-11"
+
+  it("ใบใกล้สุดชนะ แม้ใบไกลจะยอดใหญ่กว่า · ยอดเร่งด่วนนับเฉพาะใบใน 30 วัน", () => {
+    const m = summarizeMemberExpiry(
+      [
+        { topupId: "t1", customerId: "a", expiryDate: "2027-05-30", remaining: 9000 },
+        { topupId: "t2", customerId: "a", expiryDate: "2026-11-17", remaining: 2960 },
+      ],
+      today
+    )
+    expect(m.get("a")).toEqual({
+      nearestExpiry: "2026-11-17",
+      daysLeft: 6,
+      expiringAmount: 2960,
+    })
+  })
+
+  it("ทุกใบอยู่ไกล = expiringAmount 0 แต่ยังรู้วันใบใกล้สุด · ใบหมดแล้ว/ยอดศูนย์ไม่นับ", () => {
+    const m = summarizeMemberExpiry(
+      [
+        { topupId: "t1", customerId: "b", expiryDate: "2027-03-01", remaining: 1000 },
+        { topupId: "t2", customerId: "c", expiryDate: "2026-11-01", remaining: 500 }, // หมดแล้ว
+        { topupId: "t3", customerId: "d", expiryDate: "2026-11-20", remaining: 0 },
+      ],
+      today
+    )
+    expect(m.get("b")?.expiringAmount).toBe(0)
+    expect(m.get("b")?.nearestExpiry).toBe("2027-03-01")
+    expect(m.has("c")).toBe(false)
+    expect(m.has("d")).toBe(false)
+  })
+
+  it("สองใบใกล้หมดทั้งคู่ = ยอดเร่งด่วนรวมกัน", () => {
+    const m = summarizeMemberExpiry(
+      [
+        { topupId: "t1", customerId: "a", expiryDate: "2026-11-15", remaining: 300 },
+        { topupId: "t2", customerId: "a", expiryDate: "2026-12-05", remaining: 700 },
+      ],
+      today
+    )
+    expect(m.get("a")).toEqual({
+      nearestExpiry: "2026-11-15",
+      daysLeft: 4,
+      expiringAmount: 1000,
+    })
   })
 })
 
