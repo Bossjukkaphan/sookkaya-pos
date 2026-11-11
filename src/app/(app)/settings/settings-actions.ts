@@ -62,6 +62,9 @@ export async function saveTherapist(formData: FormData): Promise<ActionResult> {
  *
  * "ลาออกแล้ว" = is_active false ไม่ใช่การลบ — ประวัติเข้างานและแผนวันหยุดยังอยู่ครบ
  * ชื่อหายจากรายการติ๊กเช็คอินและตารางจัดวันหยุดเท่านั้น
+ *
+ * "พาร์ทไทม์" เป็นคนละคำถามกับลาออก: ยังอยู่กับร้าน แต่ไม่ได้คาดหวังว่าจะมาทุกวัน
+ * จึงไม่ถูกนับว่าขาดงานในหน้าเข้างาน และไม่ต้องลงวันหยุดล่วงหน้าให้
  */
 export async function saveStaffMember(formData: FormData): Promise<ActionResult> {
   const supabase = await createClient()
@@ -71,6 +74,7 @@ export async function saveStaffMember(formData: FormData): Promise<ActionResult>
   const typed = String(formData.get("role_custom") ?? "").trim()
   const role = picked === NEW_ROLE_VALUE ? typed : picked
   const status = String(formData.get("status") ?? "active")
+  const isPartTime = formData.get("is_part_time") === "on"
 
   if (!name) return { ok: false, error: "กรุณากรอกชื่อพนักงาน" }
   if (!role) return { ok: false, error: "กรุณาระบุตำแหน่ง" }
@@ -78,7 +82,12 @@ export async function saveStaffMember(formData: FormData): Promise<ActionResult>
     return { ok: false, error: "สถานะไม่ถูกต้อง" }
   }
 
-  const row = { name, role, is_active: status === "active" }
+  const row = {
+    name,
+    role,
+    is_active: status === "active",
+    is_part_time: isPartTime,
+  }
   const { error } = id
     ? await supabase.from("staff_members").update(row).eq("id", id)
     : await supabase.from("staff_members").insert(row)

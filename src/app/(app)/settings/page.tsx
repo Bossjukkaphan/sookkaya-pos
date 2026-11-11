@@ -34,7 +34,7 @@ export default async function SettingsPage() {
     { data: rewardServices },
   ] = await Promise.all([
     supabase.from("therapists").select("id, name, status").order("name"),
-    supabase.from("staff_members").select("id, name, role, is_active").order("name"),
+    supabase.from("staff_members").select("id, name, role, is_active, is_part_time").order("name"),
     supabase
       .from("services")
       .select("id, name, price, commission, is_active")

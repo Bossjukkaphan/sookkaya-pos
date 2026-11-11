@@ -43,6 +43,8 @@ export default async function ShiftsPage({
       .from("staff_members")
       .select("id, name, role")
       .eq("is_active", true)
+      // พาร์ทไทม์ไม่ต้องลงวันหยุด — เขาไม่ได้ถูกคาดหวังว่าจะมาทุกวันอยู่แล้ว
+      .eq("is_part_time", false)
       .order("sort")
       .order("name"),
     supabase
